@@ -81,6 +81,7 @@ them is checkable without a mailbox.
 | `Threading\ThreadGrouper` | message rows in, conversations out |
 | `Content\CidReplacer` | `cid:` references in an HTML body → data URLs or real URLs |
 | `Search\ResultMerger` | hits from the mailbox and from an archive, de-duplicated |
+| `Health\HealthStatus` / `HealthRules` | what `health_status` may say, and when a mailbox counts as slow |
 | `Folders\FolderNames` | which folder is trash, drafts, sent — by name, in several languages and IMAP's modified UTF-7 |
 
 Two shapes recur, and both are deliberate.
