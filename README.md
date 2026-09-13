@@ -69,6 +69,36 @@ Package code reads core fields through `MailAccount::column()` /
 `$account->field('imap_host')`, so it never needs to know what the product
 calls them. Fields you do not map keep the package name.
 
+## The rules that come with it
+
+Beyond storing settings, the package carries the parts of a mail browser that
+are the same everywhere — pure logic, no IMAP, no database, so every one of
+them is checkable without a mailbox.
+
+| | |
+|---|---|
+| `Threading\ThreadKey` | which conversation a message belongs to (RFC 5322 headers) |
+| `Threading\ThreadGrouper` | message rows in, conversations out |
+| `Content\CidReplacer` | `cid:` references in an HTML body → data URLs or real URLs |
+| `Search\ResultMerger` | hits from the mailbox and from an archive, de-duplicated |
+| `Folders\FolderNames` | which folder is trash, drafts, sent — by name, in several languages and IMAP's modified UTF-7 |
+
+Two shapes recur, and both are deliberate.
+
+**Rows in, rows out.** Anything that would need the product's own tables takes
+them as plain arrays instead: `ThreadGrouper` receives the product's stored
+replies, `ResultMerger` its archive hits. The package never learns what those
+tables look like — which is the only reason it fits more than one product.
+
+**The lookup is passed in.** `ThreadKey::resolveAgainst()` needs to know whether
+a message is already known; that is a query, so the caller hands one in. A
+package that guessed the message table would fit exactly the product it was
+extracted from.
+
+**No user-facing text.** A conversation without a subject gets `null`, not a
+label. What a reader sees instead is the product's decision, in the product's
+language.
+
 ## What is core, and what is not
 
 Core is what a protocol client needs in order to connect and send — an external

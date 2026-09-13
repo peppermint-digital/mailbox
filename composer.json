@@ -1,6 +1,6 @@
 {
     "name": "peppermint/mailbox",
-    "description": "Mailboxes and a mail browser as a shared package — with a choosable store for the credentials.",
+    "description": "Mailboxes as a shared package: settings with a choosable store, plus the mail-browser logic that is the same everywhere — threading, inline images, search merging, folder rules.",
     "type": "library",
     "license": "proprietary",
     "require": {
