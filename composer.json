@@ -2,7 +2,7 @@
     "name": "peppermint/mailbox",
     "description": "Mailboxes as a shared package: settings with a choosable store, plus the mail-browser logic that is the same everywhere — threading, inline images, search merging, folder rules.",
     "type": "library",
-    "license": "proprietary",
+    "license": "MIT",
     "require": {
         "php": "^8.2",
         "illuminate/support": "^11.0|^12.0|^13.0",
@@ -10,7 +10,8 @@
     },
     "suggest": {
         "peppermint/ai-brain-bridge": "Postfach-Einstellungen zentral aus AI Brain lesen statt lokal zu halten.",
-        "laravel/mcp": "Stellt die Postfächer als MCP-Werkzeuge bereit."
+        "laravel/mcp": "Stellt die Postfächer als MCP-Werkzeuge bereit.",
+        "directorytree/imapengine": "Nur für Peppermint\\Mailbox\\Imap\\MessageFormatter — der einzige Teil, der IMAP kennt."
     },
     "autoload": {
         "psr-4": {
@@ -27,7 +28,8 @@
     "minimum-stability": "stable",
     "require-dev": {
         "orchestra/testbench": "^10.0|^11.0",
-        "pestphp/pest": "^4.0"
+        "pestphp/pest": "^4.0",
+        "directorytree/imapengine": "^1.0"
     },
     "config": {
         "allow-plugins": {
