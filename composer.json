@@ -1,0 +1,43 @@
+{
+    "name": "peppermint/mailbox",
+    "description": "Mailboxes and a mail browser as a shared package — with a choosable store for the credentials.",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.2",
+        "illuminate/support": "^11.0|^12.0|^13.0",
+        "illuminate/database": "^11.0|^12.0|^13.0"
+    },
+    "suggest": {
+        "peppermint/ai-brain-bridge": "Postfach-Einstellungen zentral aus AI Brain lesen statt lokal zu halten.",
+        "laravel/mcp": "Stellt die Postfächer als MCP-Werkzeuge bereit."
+    },
+    "autoload": {
+        "psr-4": {
+            "Peppermint\\Mailbox\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Peppermint\\Mailbox\\MailboxServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "require-dev": {
+        "orchestra/testbench": "^10.0|^11.0",
+        "pestphp/pest": "^4.0"
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "phpstan/extension-installer": true
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Peppermint\\Mailbox\\Tests\\": "tests/"
+        }
+    }
+}
