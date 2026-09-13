@@ -2,7 +2,10 @@
 
 namespace Peppermint\Mailbox\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * A mailbox — the core every consuming product shares.
@@ -22,6 +25,13 @@ use Illuminate\Database\Eloquent\Model;
  * products invented them independently, with identical names. Two
  * implementations converging on the same five names is the strongest evidence
  * that it would look the same everywhere.
+ *
+ * ## Shared mailboxes
+ *
+ * A mailbox without an owner is shared — a team address several people work
+ * in, not a private one. That is not a detail on top: asking for "the
+ * mailboxes of this person" and getting only the private ones is the wrong
+ * answer in every product that has a team address, which is all of them.
  *
  * ## Adoption
  *
@@ -77,6 +87,85 @@ class MailAccount extends Model
     public function field(string $name): mixed
     {
         return $this->getAttribute(static::column($name));
+    }
+
+    /**
+     * A mailbox with no owner is a shared one.
+     */
+    public function isShared(): bool
+    {
+        return $this->getAttribute(static::column('user_id')) === null;
+    }
+
+    /**
+     * Everything this person may work in: their own mailboxes plus the shared
+     * ones they are allowed to use.
+     *
+     * Three levels, and the third is the one that is easy to miss:
+     *
+     * 1. own — owner is this person
+     * 2. shared without an access list — everybody (a team address nobody
+     *    restricted stays open; anything else would silently take mailboxes
+     *    away on the day the feature is switched on)
+     * 3. shared with an access list — only the people on it
+     *
+     * Products without access lists leave `sharing.table` at null and get
+     * levels 1 and 2. Nothing here assumes a User class: the package has no
+     * business knowing what a product calls its people.
+     */
+    public function scopeAccessibleBy(Builder $query, int|string $userId): Builder
+    {
+        $owner = static::column('user_id');
+
+        return $query->where(function (Builder $scope) use ($owner, $userId): void {
+            $scope->where($owner, $userId)
+                ->orWhere(function (Builder $shared) use ($owner, $userId): void {
+                    $shared->whereNull($owner);
+
+                    $liste = static::sharingTable();
+
+                    if ($liste === null) {
+                        return;
+                    }
+
+                    [$kontoSpalte, $nutzerSpalte] = static::sharingKeys();
+
+                    $shared->where(function (Builder $sichtbar) use ($liste, $kontoSpalte, $nutzerSpalte, $userId): void {
+                        $sichtbar
+                            // No entry at all: open to everyone.
+                            ->whereNotExists(fn ($frage) => $frage->select(DB::raw(1))->from($liste)
+                                ->whereColumn($kontoSpalte, $this->getTable().'.id'))
+                            ->orWhereExists(fn ($frage) => $frage->select(DB::raw(1))->from($liste)
+                                ->whereColumn($kontoSpalte, $this->getTable().'.id')
+                                ->where($nutzerSpalte, $userId));
+                    });
+                });
+        });
+    }
+
+    /**
+     * The access-list table, or null when this product has none — including
+     * the case where it is configured but not migrated yet, because a query
+     * against a missing table fails harder than a missing feature.
+     */
+    public static function sharingTable(): ?string
+    {
+        $table = config('mailbox.sharing.table');
+
+        if ($table === null || ! Schema::hasTable($table)) {
+            return null;
+        }
+
+        return $table;
+    }
+
+    /** @return array{0: string, 1: string} */
+    public static function sharingKeys(): array
+    {
+        return [
+            config('mailbox.sharing.account_key', 'mail_account_id'),
+            config('mailbox.sharing.user_key', 'user_id'),
+        ];
     }
 
     /**

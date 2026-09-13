@@ -60,6 +60,27 @@ return [
     ],
 
     /*
+    |--------------------------------------------------------------------------
+    | Shared mailboxes
+    |--------------------------------------------------------------------------
+    |
+    | A mailbox without an owner is shared — a team address. Who may work in it
+    | is the product's business, so the package only asks where the list is.
+    |
+    | `table => null` means the product has no access lists: shared mailboxes
+    | are open to everyone. With a table configured, a shared mailbox that has
+    | NO entry stays open to everyone, and one WITH entries is limited to the
+    | people listed. Switching the feature on therefore never takes a mailbox
+    | away from someone overnight.
+    |
+    */
+    'sharing' => [
+        'table' => 'mail_account_user',
+        'account_key' => 'mail_account_id',
+        'user_key' => 'user_id',
+    ],
+
+    /*
     | Turn off when the tables already exist and are mapped above.
     */
     'run_migrations' => env('MAILBOX_RUN_MIGRATIONS', true),

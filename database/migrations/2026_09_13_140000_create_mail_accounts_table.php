@@ -91,10 +91,26 @@ return new class extends Migration
 
             $table->unique(['email', 'user_id']);
         });
+
+        // Who may work in a shared mailbox. Deliberately a separate table and
+        // not a column: a team address has several people, and an account with
+        // NO entry here stays open to everyone.
+        Schema::create(config('mailbox.sharing.table', 'mail_account_user'), function (Blueprint $table): void {
+            $table->foreignId(config('mailbox.sharing.account_key', 'mail_account_id'))
+                ->constrained(config('mailbox.tables.accounts', 'mail_accounts'))
+                ->cascadeOnDelete();
+            $table->unsignedBigInteger(config('mailbox.sharing.user_key', 'user_id'));
+
+            $table->primary([
+                config('mailbox.sharing.account_key', 'mail_account_id'),
+                config('mailbox.sharing.user_key', 'user_id'),
+            ]);
+        });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists(config('mailbox.sharing.table', 'mail_account_user'));
         Schema::dropIfExists(config('mailbox.tables.accounts', 'mail_accounts'));
     }
 };
