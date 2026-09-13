@@ -82,6 +82,7 @@ them is checkable without a mailbox.
 | `Content\CidReplacer` | `cid:` references in an HTML body → data URLs or real URLs |
 | `Search\ResultMerger` | hits from the mailbox and from an archive, de-duplicated |
 | `Health\HealthStatus` / `HealthRules` | what `health_status` may say, and when a mailbox counts as slow |
+| `Index\MessageLocator` | finding a message the header index misplaced |
 | `Imap\MessageFormatter` | an IMAP message → rows (needs `directorytree/imapengine`, a `suggest`) |
 | `Folders\FolderNames` | which folder is trash, drafts, sent — by name, in several languages and IMAP's modified UTF-7 |
 
