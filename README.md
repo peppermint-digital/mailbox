@@ -115,6 +115,27 @@ five health fields independently, with identical names — `health_status`,
 implementations converging on the same five names is the strongest evidence
 that it would look the same everywhere.
 
+## The JavaScript half
+
+`@peppermint-digital/mailbox` carries the browser-side logic that is the same
+everywhere. Same rule as on the PHP side: **no user-facing text**. Quoting an
+original asks the product for its words and its date format, because "Am …
+schrieb …" is a sentence in one language and this package does not get to pick
+it.
+
+```bash
+npm install github:peppermint-digital/mailbox
+```
+
+```ts
+import { buildReplyQuote } from '@peppermint-digital/mailbox';
+
+buildReplyQuote(source, {
+    labels: { repliedOn: (date, sender) => `Am ${date} schrieb ${sender}:`, /* … */ },
+    formatDate: (iso) => new Date(iso).toLocaleString('de-DE'),
+});
+```
+
 ## Tests
 
 ```bash
