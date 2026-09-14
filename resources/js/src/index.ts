@@ -9,4 +9,5 @@ export * from './InlineReplyPanel';
 export { default as InlineReplyPanel } from './InlineReplyPanel';
 export * from './addresses';
 export * from './folders';
+export * from './rows';
 export * from './bulk';
