@@ -77,6 +77,14 @@ export interface MailboxList<M extends RowMessage> {
     patchRow: (uid: number, changes: Partial<M>) => void;
     /** Drops rows the mailbox no longer holds, and corrects the total. */
     removeRows: (uids: Iterable<number>) => void;
+    /**
+     * Shows rows that did not come from `source.list` — search results, most
+     * often. Always flat: hits come from every folder, conversations only ever
+     * from one, so they cannot be grouped.
+     */
+    showRows: (rows: M[], total: number) => void;
+    /** Empties both lists — switching accounts, so the old one stops showing through. */
+    clear: () => void;
     clearFailure: () => void;
 }
 
@@ -187,10 +195,30 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
         });
     }, []);
 
+    const showRows = useCallback((rows: M[], gesamt: number) => {
+        // Not through `load`: these rows have no page and no folder behind them.
+        // Bumping the run counter stops an in-flight load from overwriting them.
+        laufNr.current++;
+        setMessages(rows);
+        setThreads([]);
+        setTotal(gesamt);
+        setPage(1);
+        setLoading(false);
+        setRefreshing(false);
+    }, []);
+
+    const clear = useCallback(() => {
+        laufNr.current++;
+        setMessages([]);
+        setThreads([]);
+        setTotal(0);
+        setPage(1);
+    }, []);
+
     const clearFailure = useCallback(() => setFailure(null), []);
 
     return {
         messages, threads, total, page, grouped, loading, refreshing, failure,
-        load, refresh, setGrouped, patchRow, removeRows, clearFailure,
+        load, refresh, setGrouped, patchRow, removeRows, showRows, clear, clearFailure,
     };
 }

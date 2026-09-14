@@ -196,3 +196,50 @@ describe('useMailboxList', () => {
         unmount();
     });
 });
+
+describe('rows that did not come from the source', () => {
+    it('shows search results flat, whatever mode was on', async () => {
+        // Hits come from every folder; conversations only ever from one.
+        const source = { list: vi.fn(async () => ({ messages: [], threads: [thread('t1', msg(9))], total: 1 })) };
+        const { ref, unmount } = mount(source, true);
+
+        await act(async () => { await ref.current.load({ accountId: 1, folder: 'INBOX', grouped: true }); });
+        expect(ref.current.threads).toHaveLength(1);
+
+        act(() => { ref.current.showRows([msg(5), msg(6)], 2); });
+
+        expect(ref.current.messages).toHaveLength(2);
+        expect(ref.current.threads).toHaveLength(0);
+        expect(ref.current.total).toBe(2);
+        unmount();
+    });
+
+    it('is not overwritten by a load that was still in flight', async () => {
+        let antworten: ((p: { messages: RowMessage[]; threads: never[]; total: number }) => void) | null = null;
+        const source = { list: vi.fn(() => new Promise<never>((res) => { antworten = res as never; })) };
+        const { ref, unmount } = mount(source as never);
+
+        await act(async () => {
+            const laeuft = ref.current.load({ accountId: 1, folder: 'INBOX' });
+            ref.current.showRows([msg(5)], 1);
+            antworten!({ messages: [msg(1)], threads: [], total: 9 });
+            await laeuft;
+        });
+
+        expect(ref.current.messages.map((m) => m.uid)).toEqual([5]);
+        unmount();
+    });
+
+    it('empties both lists when the account changes', async () => {
+        const source = { list: vi.fn(async () => seite([msg(1)], 7)) };
+        const { ref, unmount } = mount(source);
+
+        await act(async () => { await ref.current.load({ accountId: 1, folder: 'INBOX' }); });
+        act(() => { ref.current.clear(); });
+
+        expect(ref.current.messages).toHaveLength(0);
+        expect(ref.current.threads).toHaveLength(0);
+        expect(ref.current.total).toBe(0);
+        unmount();
+    });
+});
