@@ -44,6 +44,16 @@ class MailAccount extends Model
 {
     protected $guarded = [];
 
+    /**
+     * Did this account come from elsewhere?
+     *
+     * The difference decides how {@see field()} reads. The column map
+     * describes THIS product's table — central data always carries the
+     * package's own field names. Reading both the same way yields a silent
+     * `null`, and with it "differs" for every single field.
+     */
+    protected bool $remote = false;
+
     protected $hidden = ['password', 'oauth_client_secret', 'oauth_access_token', 'oauth_refresh_token'];
 
     /**
@@ -86,7 +96,13 @@ class MailAccount extends Model
      */
     public function field(string $name): mixed
     {
-        return $this->getAttribute(static::column($name));
+        return $this->getAttribute($this->remote ? $name : static::column($name));
+    }
+
+    /** Did this account come from the central store? */
+    public function isRemote(): bool
+    {
+        return $this->remote;
     }
 
     /**
@@ -183,6 +199,7 @@ class MailAccount extends Model
         $account = new self;
         $account->forceFill($data);
         $account->exists = false;
+        $account->remote = true;
 
         return $account;
     }

@@ -17,7 +17,13 @@ it('reads core fields through the product own column names', function () {
         // Unmapped fields keep the package name.
         ->and(MailAccount::column('smtp_host'))->toBe('smtp_host');
 
-    $account = MailAccount::fromRemote(['email_address' => 'office@example.test', 'host' => 'imap.example.test']);
+    // Bewusst KEIN fromRemote: Zentrale Daten tragen die Feldnamen des
+    // Pakets, die Abbildung beschreibt die eigene TABELLE. Der Test stand
+    // vorher andersherum da und hat damit einen Fehler festgeschrieben —
+    // siehe RemoteFieldsTest.
+    $account = new MailAccount;
+    $account->setAttribute('email_address', 'office@example.test');
+    $account->setAttribute('host', 'imap.example.test');
 
     expect($account->field('email'))->toBe('office@example.test')
         ->and($account->field('imap_host'))->toBe('imap.example.test');
