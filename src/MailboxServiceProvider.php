@@ -3,6 +3,7 @@
 namespace Peppermint\Mailbox;
 
 use Illuminate\Support\Facades\Log;
+use Peppermint\Mailbox\Console\InstallCommand;
 use Illuminate\Support\ServiceProvider;
 use Peppermint\Mailbox\Contracts\AccountStore;
 use Peppermint\Mailbox\Stores\BrainAccountStore;
@@ -25,6 +26,10 @@ class MailboxServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__.'/../config/mailbox.php' => config_path('mailbox.php'),
         ], 'mailbox-config');
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([InstallCommand::class]);
+        }
 
         if (config('mailbox.run_migrations', true)) {
             $this->loadMigrationsFrom(__DIR__.'/../database/migrations');

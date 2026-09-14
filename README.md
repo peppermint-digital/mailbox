@@ -18,10 +18,21 @@ names a product already uses.
 
 ```bash
 composer require peppermint/mailbox
+php artisan mailbox:install
 ```
 
-That is enough. The package runs standalone with its own table and has no idea
-AI Brain exists.
+The second command does the three things that are easy to miss: it publishes
+the config, installs the JavaScript half, and teaches Tailwind to look inside
+the package. That last one matters more than it sounds — Tailwind v4 does not
+scan `node_modules`, so without a `@source` line every class that appears ONLY
+in this package is dropped. Nothing fails: the page builds, the component
+appears, it just sits wrong.
+
+Running it twice changes nothing. `--no-npm` skips the JavaScript half for a
+backend-only installation.
+
+The package runs standalone with its own table and has no idea AI Brain
+exists.
 
 ## Where the settings live
 
