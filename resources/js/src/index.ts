@@ -20,3 +20,4 @@ export * from './MailMessageView';
 export { default as MailMessageView } from './MailMessageView';
 export * from './bulk';
 export * from './transport';
+export * from './useMailboxList';
