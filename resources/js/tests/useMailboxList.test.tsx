@@ -301,3 +301,55 @@ describe('patching a row inside a conversation', () => {
         unmount();
     });
 });
+
+describe('a message that left the mailbox', () => {
+    const flach = () => ({ list: vi.fn(async () => seite([msg(1), msg(2), msg(3)], 9)) });
+
+    it('is taken out of the flat list without asking the server again', async () => {
+        const source = flach();
+        const { ref, unmount } = mount(source);
+        await act(async () => { await ref.current.load({ accountId: 1, folder: 'INBOX' }); });
+
+        await act(async () => { await ref.current.messageLeft(2); });
+
+        expect(ref.current.messages.map((m) => m.uid)).toEqual([1, 3]);
+        expect(ref.current.total).toBe(8);
+        expect(source.list).toHaveBeenCalledOnce();
+        unmount();
+    });
+
+    it('makes the conversation list come back from the server', async () => {
+        // A conversation is a bundle; removing one message by uid would leave a
+        // row that lies about what it holds. The Vue version did exactly that.
+        const source = { list: vi.fn(async () => ({ messages: [], threads: [thread('t1', msg(1))], total: 1 })) };
+        const { ref, unmount } = mount(source, true);
+        await act(async () => { await ref.current.load({ accountId: 1, folder: 'INBOX', grouped: true }); });
+
+        await act(async () => { await ref.current.messageLeft(1); });
+
+        expect(source.list).toHaveBeenCalledTimes(2);
+        expect(source.list.mock.calls[1][0]).toMatchObject({ folder: 'INBOX', grouped: true, refresh: true });
+        unmount();
+    });
+
+    it('reloads what was last asked for, without being told again', async () => {
+        const source = { list: vi.fn(async () => seite([msg(1)])) };
+        const { ref, unmount } = mount(source);
+        await act(async () => { await ref.current.load({ accountId: 7, folder: 'Archiv', page: 3 }); });
+
+        await act(async () => { await ref.current.reload(); });
+
+        expect(source.list.mock.calls[1][0]).toMatchObject({ accountId: 7, folder: 'Archiv', page: 3 });
+        unmount();
+    });
+
+    it('reloads nothing when nothing was ever loaded', async () => {
+        const source = { list: vi.fn(async () => seite([])) };
+        const { ref, unmount } = mount(source);
+
+        await act(async () => { await ref.current.reload(); });
+
+        expect(source.list).not.toHaveBeenCalled();
+        unmount();
+    });
+});

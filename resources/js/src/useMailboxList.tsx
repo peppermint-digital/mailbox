@@ -71,6 +71,18 @@ export interface MailboxList<M extends RowMessage> {
     load: (options?: Partial<ListParams> & { refresh?: boolean }) => Promise<void>;
     /** Reloads the current page, bypassing the product's cache. */
     refresh: (accountId: number | string, folder: string) => Promise<void>;
+    /** Loads the same page again — the hook remembers what it last asked for. */
+    reload: (options?: { refresh?: boolean }) => Promise<void>;
+    /**
+     * A message left the mailbox — moved, archived, deleted.
+     *
+     * In conversation mode the row lives in `threads`, where it cannot be
+     * removed by uid: a conversation is a bundle, and taking one message out
+     * of it changes what the row says about itself. So the list comes back
+     * from the server. The Vue version removed from the flat list only, and a
+     * conversation archived on its own stayed visible until a reload.
+     */
+    messageLeft: (uid: number) => Promise<void>;
     /** Switches between conversations and single messages, starting at page 1. */
     setGrouped: (grouped: boolean, accountId: number | string, folder: string) => Promise<void>;
     /**
@@ -115,6 +127,9 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
     // overwrite it when it finally answers.
     const laufNr = useRef(0);
 
+    // What the last load asked for, so a reload does not need it passed again.
+    const zuletzt = useRef<ListParams | null>(null);
+
     const load = useCallback(
         async (options: Partial<ListParams> & { refresh?: boolean } = {}) => {
             const params: ListParams = {
@@ -128,6 +143,8 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
             if (!params.accountId || !params.folder) {
                 return;
             }
+
+            zuletzt.current = params;
 
             const meiner = ++laufNr.current;
 
@@ -185,6 +202,17 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
         async (next: boolean, accountId: number | string, folder: string) => {
             // Page 3 of conversations is not page 3 of messages, so start over.
             await load({ accountId, folder, page: 1, grouped: next });
+        },
+        [load],
+    );
+
+    const reload = useCallback(
+        async (options: { refresh?: boolean } = {}) => {
+            if (!zuletzt.current) {
+                return;
+            }
+
+            await load({ ...zuletzt.current, refresh: options.refresh ?? true });
         },
         [load],
     );
@@ -258,10 +286,22 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
         setPage(1);
     }, []);
 
+    const messageLeft = useCallback(
+        async (uid: number) => {
+            if (grouped) {
+                await reload({ refresh: true });
+                return;
+            }
+
+            removeRows([uid]);
+        },
+        [grouped, reload, removeRows],
+    );
+
     const clearFailure = useCallback(() => setFailure(null), []);
 
     return {
         messages, threads, total, page, grouped, loading, refreshing, failure,
-        load, refresh, setGrouped, patchRow, patchRowById, removeRows, showRows, clear, clearFailure,
+        load, refresh, reload, messageLeft, setGrouped, patchRow, patchRowById, removeRows, showRows, clear, clearFailure,
     };
 }
