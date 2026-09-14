@@ -57,7 +57,7 @@ export interface EmailAddress {
     name: string;
 }
 
-interface RecipientSuggestion extends EmailAddress {
+export interface RecipientSuggestion extends EmailAddress {
     source?: string;
     company?: string | null;
 }
