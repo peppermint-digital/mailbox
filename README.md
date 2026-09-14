@@ -147,9 +147,64 @@ buildReplyQuote(source, {
 });
 ```
 
+### What the list half brings
+
+A mailbox list looks like one list and is really two, switched by a flag: flat
+messages, or conversations with expandable members. `rows.ts` holds the rules
+for getting from one to the other — every one of which has a way of going wrong
+quietly.
+
+```ts
+import { buildDisplayRows, navigableRows, bulkTargets } from '@peppermint-digital/mailbox';
+
+const rows = buildDisplayRows({
+    messages, threads, groupByThread, isSearchMode, expandedThreads,
+    // Your product's own notion of a filter. WHERE it applies — to conversation
+    // heads, never to their members — is decided here.
+    filter: assignedToMe ? (m) => m.assignedTo === me : undefined,
+    toRow: yourThreadMessageToRow,
+});
+```
+
+| | |
+|---|---|
+| `buildDisplayRows` | flat list or conversations; search stays flat either way |
+| `unreadCountOf` | how many are unread, not just *that* something is |
+| `navigableRows` | what the keyboard may land on |
+| `bulkTargets` | what a tick really hits — the conversation, except in search |
+| `threadActionUids` / `threadOf` | what archiving the open conversation moves |
+| `canOpenMessage` / `hasUsableUid` | whether a row may be sent to the mailbox at all |
+
+Three of these earn their place by being easy to get wrong:
+
+- **Search is always flat.** Hits come from every folder, conversations only
+  ever from the open one. Mixing them puts rows in a list that cannot hold them.
+- **The keyboard skips stored replies.** They cannot be opened, so an arrow key
+  landing on one looks like the keyboard is stuck.
+- **`UID FETCH 0` is not "nothing happens"**, it is `message set is invalid`. A
+  conversation member without its own uid becomes a row with uid 0, and the
+  guard belongs before the request rather than after the error.
+
+### Folders
+
+```ts
+import { looksLikeFolder, classifyFolder, isProtectedFolder } from '@peppermint-digital/mailbox';
+
+looksLikeFolder({ path: 'Entw&APw-rfe' }, 'Drafts');          // true
+looksLikeFolder({ path: 'Kladde', flags: ['\\Drafts'] }, 'Drafts'); // true
+```
+
+**Flags first, names second.** A server that sets `\Drafts` has answered the
+question. Where the mark is missing, the alias table decides — the same table
+`Folders\FolderNames` uses on the PHP side, including the IMAP modified UTF-7
+spellings (`Entw&APw-rfe`, `Gel&APY-schte Elemente`) that a hand-written pattern
+misses.
+
 ## Tests
 
 ```bash
 composer install
-vendor/bin/pest
+vendor/bin/pest      # PHP half
+npm install
+npm test             # JavaScript half
 ```
