@@ -65,6 +65,13 @@ export interface MailMessageListLabels {
     flagged: string;
     /** Accessible label of the attachment clip. */
     hasAttachments: string;
+    /**
+     * Accessible name of a row's checkbox, e.g. (subject) => `Select "${subject}"`.
+     *
+     * An icon-only checkbox with no name is announced as "checkbox" and nothing
+     * else — in a list of twenty rows that is twenty identical controls.
+     */
+    selectMessage: (subject: string) => string;
 }
 
 export interface MailMessageListProps<M extends RowMessage> {
@@ -154,6 +161,7 @@ export function MailMessageList<M extends RowMessage>({
                         ) : (
                             <span onClick={(event) => event.stopPropagation()} className="mt-1 shrink-0">
                                 <Checkbox
+                                    aria-label={labels.selectMessage(row.msg.subject)}
                                     checked={ticked.has(row.msg.uid)}
                                     onCheckedChange={(value) => onToggleSelect?.(row.msg.uid, value === true)}
                                 />

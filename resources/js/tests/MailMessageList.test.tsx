@@ -19,6 +19,7 @@ const labels: MailMessageListLabels = {
     foundInFolder: (f) => `Gefunden in ${f}`,
     flagged: 'Markiert',
     hasAttachments: 'Anhänge',
+    selectMessage: (betreff) => `„${betreff}" auswählen`,
 };
 
 function msg(overrides: Partial<RowMessage> = {}): RowMessage {
@@ -41,6 +42,14 @@ const base = {
 };
 
 describe('MailMessageList', () => {
+    it('names every checkbox by the message it selects', () => {
+        // Without it, twenty rows carry twenty controls announced as "checkbox".
+        const { container, unmount } = render(<MailMessageList {...base} rows={[row()]} />);
+
+        expect(container.querySelector('[data-slot="checkbox"]')?.getAttribute('aria-label')).toBe('„Betreff" auswählen');
+        unmount();
+    });
+
     it('shows sender, subject and preview', () => {
         const { container, unmount } = render(<MailMessageList {...base} rows={[row()]} />);
 
