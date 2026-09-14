@@ -148,6 +148,30 @@ export function buildDisplayRows<M extends RowMessage>(options: BuildDisplayRows
 }
 
 /**
+ * Does this message carry a uid the mailbox can act on?
+ *
+ * A row built from a conversation member that has no uid of its own gets 0 —
+ * and `UID FETCH 0` is not "nothing happens", it is `message set is invalid`.
+ * Negative values are equally meaningless; both are excluded here rather than
+ * by truthiness, which lets a negative number through.
+ */
+export function hasUsableUid(message: Pick<RowMessage, 'uid'>): boolean {
+    return typeof message.uid === 'number' && message.uid > 0;
+}
+
+/**
+ * May this message be opened at all?
+ *
+ * Two ways exist: it sits in the mailbox (usable uid), or it sits in the
+ * application's own archive (`stored_id`). A message with neither is a row
+ * that renders fine and cannot be fetched — the guard belongs before the
+ * request, not after the error.
+ */
+export function canOpenMessage(message: Pick<RowMessage, 'uid' | 'stored_id'>): boolean {
+    return Boolean(message.stored_id) || hasUsableUid(message);
+}
+
+/**
  * How many messages of a conversation are still unread.
  *
  * `has_unread` only says *that* something arrived. In a conversation of twelve
@@ -211,8 +235,8 @@ export function bulkTargets<M extends RowMessage>(options: BulkTargetsOptions<M>
         }
 
         for (const message of thread.messages) {
-            if (message.source !== 'stored' && message.uid) {
-                all.add(message.uid);
+            if (message.source !== 'stored' && hasUsableUid(message as RowMessage)) {
+                all.add(message.uid as number);
             }
         }
     }
@@ -232,7 +256,7 @@ export function threadActionUids<M extends RowMessage>(thread: Thread<M> | null,
         return fallbackUid ? [fallbackUid] : [];
     }
 
-    return [...new Set(thread.messages.filter((message) => message.source !== 'stored' && message.uid).map((message) => message.uid as number))];
+    return [...new Set(thread.messages.filter((message) => message.source !== 'stored' && hasUsableUid(message as RowMessage)).map((message) => message.uid as number))];
 }
 
 /** The conversation the open message sits in, or null outside conversation mode. */

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
     buildDisplayRows,
     bulkTargets,
+    canOpenMessage,
+    hasUsableUid,
     navigableRows,
     threadActionUids,
     threadOf,
@@ -335,5 +337,45 @@ describe('threadOf', () => {
 
     it('has no conversation when conversations are off', () => {
         expect(threadOf([thread()], 2, false, false)).toBeNull();
+    });
+});
+
+describe('hasUsableUid', () => {
+    it('accepts a real uid', () => {
+        expect(hasUsableUid({ uid: 1 })).toBe(true);
+    });
+
+    it('rejects 0 — UID FETCH 0 is "message set is invalid", not "nothing"', () => {
+        expect(hasUsableUid({ uid: 0 })).toBe(false);
+    });
+
+    it('rejects a negative uid, which plain truthiness would let through', () => {
+        expect(hasUsableUid({ uid: -1 })).toBe(false);
+    });
+});
+
+describe('canOpenMessage', () => {
+    it('opens a message that sits in the mailbox', () => {
+        expect(canOpenMessage({ uid: 7 })).toBe(true);
+    });
+
+    it('opens a stored message even without a uid', () => {
+        expect(canOpenMessage({ uid: 0, stored_id: 12 })).toBe(true);
+    });
+
+    it('refuses a message with neither', () => {
+        expect(canOpenMessage({ uid: 0 })).toBe(false);
+    });
+});
+
+describe('bulkTargets and threadActionUids agree with the guard', () => {
+    const negative = thread({ messages: [{ uid: 1 }, { uid: -5 }] });
+
+    it('bulkTargets leaves a negative uid out', () => {
+        expect(bulkTargets({ selectedUids: [1], threads: [negative], groupByThread: true, isSearchMode: false })).toEqual([1]);
+    });
+
+    it('threadActionUids leaves a negative uid out', () => {
+        expect(threadActionUids(negative, 1)).toEqual([1]);
     });
 });
