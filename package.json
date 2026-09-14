@@ -25,6 +25,7 @@
     },
     "devDependencies": {
         "@types/react": "^19.3.0",
+        "jsdom": "^30.0.1",
         "react": "^19.3.0",
         "tsup": "^8.0.0",
         "typescript": "^5.4.0",
