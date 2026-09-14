@@ -30,3 +30,4 @@ export * from './input';
 export * from './label';
 export * from './select';
 export { cn } from './utils';
+export * from './checkbox';
