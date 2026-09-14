@@ -19,10 +19,10 @@
  * of a package that runs on its own, and it is the cheaper half of the trade.
  */
 /*
- * Bewusst NICHT aus dem Paket-Einstieg heraus weiterexportiert: Wer im Produkt
- * einen Knopf braucht, nimmt seinen eigenen. Zwei Button-Fassungen auf
- * derselben Seite waeren genau die Doppelung, gegen die das Paket antritt —
- * hier sind sie nur Baumaterial der paketeigenen Ansichten.
+ * Deliberately NOT re-exported from the package entry: a product that needs a
+ * button takes its own. Two versions of the same button on one page would be
+ * exactly the duplication this package exists to remove — here they are only
+ * the material the package's own views are built from.
  */
 export * from './badge';
 export * from './button';
