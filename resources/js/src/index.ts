@@ -23,3 +23,4 @@ export * from './transport';
 export * from './useMailboxList';
 export * from './useMailboxFolders';
 export * from './useOpenMessage';
+export * from './useMessageSelection';
