@@ -1,6 +1,6 @@
 {
     "name": "@peppermint-digital/mailbox",
-    "version": "0.24.0",
+    "version": "0.25.0",
     "description": "Mail browser logic to go with the PHP package: quoting an original message, without a word of user-facing text.",
     "license": "MIT",
     "type": "module",
@@ -30,16 +30,18 @@
     "devDependencies": {
         "@inertiajs/react": "^3.7.1",
         "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
         "jsdom": "^30.0.1",
         "react": "^19.3.0",
+        "react-dom": "^19.3.0",
         "tsup": "^8.0.0",
         "typescript": "^5.4.0",
         "vitest": "^5.0.0"
     },
     "peerDependencies": {
+        "@inertiajs/react": "^2 || ^3",
         "react": "^18 || ^19",
-        "react-dom": "^18 || ^19",
-        "@inertiajs/react": "^2 || ^3"
+        "react-dom": "^18 || ^19"
     },
     "dependencies": {
         "@radix-ui/react-label": "^2.1.15",
