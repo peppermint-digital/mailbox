@@ -73,8 +73,21 @@ export interface MailboxList<M extends RowMessage> {
     refresh: (accountId: number | string, folder: string) => Promise<void>;
     /** Switches between conversations and single messages, starting at page 1. */
     setGrouped: (grouped: boolean, accountId: number | string, folder: string) => Promise<void>;
-    /** Changes one row in whichever list holds it. */
+    /**
+     * Changes one row wherever it sits — flat list, conversation head, or
+     * conversation member. The unread dot of a conversation is recomputed
+     * from its members, because that is what it means.
+     */
     patchRow: (uid: number, changes: Partial<M>) => void;
+    /**
+     * Changes a row found by message id rather than uid.
+     *
+     * A conversation row is a copy built while rendering; setting a field on
+     * the object the view handed out changes nothing anyone sees. Anything
+     * keyed by the message itself — an assignment, a link to a task — has to
+     * go back in by id.
+     */
+    patchRowById: (messageId: string, changes: Partial<M>) => void;
     /** Drops rows the mailbox no longer holds, and corrects the total. */
     removeRows: (uids: Iterable<number>) => void;
     /**
@@ -177,9 +190,39 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
     );
 
     const patchRow = useCallback((uid: number, changes: Partial<M>) => {
-        setMessages((before) => before.map((m) => (m.uid === uid ? { ...m, ...changes } : m)));
+        setMessages((before) => (before.some((m) => m.uid === uid) ? before.map((m) => (m.uid === uid ? { ...m, ...changes } : m)) : before));
+
         setThreads((before) =>
-            before.map((t) => (t.latest && t.latest.uid === uid ? { ...t, latest: { ...t.latest, ...changes } } : t)),
+            before.map((thread) => {
+                const inMembers = thread.messages.some((m) => m.uid === uid);
+                const isHead = thread.latest?.uid === uid;
+
+                if (!inMembers && !isHead) {
+                    return thread;
+                }
+
+                const members = inMembers
+                    ? thread.messages.map((m) => (m.uid === uid ? { ...m, ...changes } : m))
+                    : thread.messages;
+
+                return {
+                    ...thread,
+                    messages: members,
+                    latest: isHead && thread.latest ? { ...thread.latest, ...changes } : thread.latest,
+                    // The dot on a conversation row hangs on `has_unread`, so it
+                    // has to follow what its members now say.
+                    has_unread: inMembers ? members.some((m) => m.is_read === false) : thread.has_unread,
+                };
+            }),
+        );
+    }, []);
+
+    const patchRowById = useCallback((messageId: string, changes: Partial<M>) => {
+        setMessages((before) => before.map((m) => (m.message_id === messageId ? { ...m, ...changes } : m)));
+        setThreads((before) =>
+            before.map((thread) =>
+                thread.latest?.message_id === messageId ? { ...thread, latest: { ...thread.latest, ...changes } } : thread,
+            ),
         );
     }, []);
 
@@ -219,6 +262,6 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
 
     return {
         messages, threads, total, page, grouped, loading, refreshing, failure,
-        load, refresh, setGrouped, patchRow, removeRows, showRows, clear, clearFailure,
+        load, refresh, setGrouped, patchRow, patchRowById, removeRows, showRows, clear, clearFailure,
     };
 }

@@ -243,3 +243,61 @@ describe('rows that did not come from the source', () => {
         unmount();
     });
 });
+
+describe('patching a row inside a conversation', () => {
+    function kette(): Thread<RowMessage> {
+        return {
+            thread_id: 't1', subject: 'K', message_count: 2, latest_date: null, has_unread: true,
+            messages: [msg(1, { is_read: false }), msg(2, { is_read: false })],
+            latest: msg(2, { is_read: false }),
+        };
+    }
+
+    const quelle = () => ({ list: vi.fn(async () => ({ messages: [], threads: [kette()], total: 1 })) });
+
+    it('reaches a member, not just the head', async () => {
+        const { ref, unmount } = mount(quelle(), true);
+        await act(async () => { await ref.current.load({ accountId: 1, folder: 'INBOX', grouped: true }); });
+
+        act(() => { ref.current.patchRow(1, { is_read: true } as never); });
+
+        expect(ref.current.threads[0].messages[0].is_read).toBe(true);
+        unmount();
+    });
+
+    it('recomputes the unread dot from what the members now say', async () => {
+        // The dot means "something in here is unread" — it has to follow.
+        const { ref, unmount } = mount(quelle(), true);
+        await act(async () => { await ref.current.load({ accountId: 1, folder: 'INBOX', grouped: true }); });
+
+        act(() => { ref.current.patchRow(1, { is_read: true } as never); });
+        expect(ref.current.threads[0].has_unread).toBe(true);
+
+        act(() => { ref.current.patchRow(2, { is_read: true } as never); });
+        expect(ref.current.threads[0].has_unread).toBe(false);
+        unmount();
+    });
+
+    it('leaves conversations the uid does not belong to alone', async () => {
+        const { ref, unmount } = mount(quelle(), true);
+        await act(async () => { await ref.current.load({ accountId: 1, folder: 'INBOX', grouped: true }); });
+        const vorher = ref.current.threads[0];
+
+        act(() => { ref.current.patchRow(999, { is_read: true } as never); });
+
+        expect(ref.current.threads[0]).toBe(vorher);
+        unmount();
+    });
+
+    it('patches by message id, because a conversation row is a copy', async () => {
+        const mitId = { ...kette(), latest: msg(2, { message_id: '<x@y>' }) };
+        const src = { list: vi.fn(async () => ({ messages: [], threads: [mitId], total: 1 })) };
+        const { ref, unmount } = mount(src, true);
+        await act(async () => { await ref.current.load({ accountId: 1, folder: 'INBOX', grouped: true }); });
+
+        act(() => { ref.current.patchRowById('<x@y>', { subject: 'zugewiesen' } as never); });
+
+        expect(ref.current.threads[0].latest?.subject).toBe('zugewiesen');
+        unmount();
+    });
+});
