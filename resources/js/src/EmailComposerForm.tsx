@@ -365,17 +365,16 @@ export function EmailComposerForm({
     const { signatures, load: loadSignatures, defaultSignature } = signatureSource;
     const [selectedSignatureId, setSelectedSignatureId] = useState<number | null>(null);
     const [loadedFor, setGeladenFuer] = useState<string | null>(null);
-    const angewendetFuerRef = useRef<string | null>(null);
+    const appliedForRef = useRef<string | null>(null);
 
     const bodyHtmlRef = useRef(bodyHtml);
     const applySignatureRef = useRef(applySignature);
     const activeFieldRef = useRef<Field | null>(null);
 
     /*
-     * Spiegel der jeweils juengsten Werte. Bewusst OHNE Abhaengigkeitsliste und
-     * als ERSTER Effekt der Komponente: Effekte laufen in der Reihenfolge ihrer
-     * Deklaration, damit sehen die folgenden Effekte im selben Durchlauf schon
-     * den aktuellen Stand.
+     * Mirrors of the latest values. Deliberately WITHOUT a dependency list and
+     * as the component's FIRST effect: effects run in declaration order, so the
+     * ones below already see the current state in the same pass.
      */
     useEffect(() => {
         bodyHtmlRef.current = bodyHtml;
@@ -398,21 +397,20 @@ export function EmailComposerForm({
     }, [signatureAccountId, loadSignatures]);
 
     /*
-     * Die Vorgabe-Signatur wird in einem EIGENEN Effekt gesetzt, nicht direkt
-     * nach `load()`: `defaultSignature()` liest den Zustand des Hakens, und der
-     * ist im selben Durchlauf noch der alte. Der Merker sorgt dafuer, dass das
-     * je Konto genau einmal passiert — sonst wuerde ein neu erzeugter
-     * `onBodyHtmlChange`-Rueckruf des Aufrufers den geschriebenen Text
-     * ueberbuegeln.
+     * The default signature is applied in its OWN effect, not right after
+     * `load()`: `defaultSignature()` reads the checkbox state, which in the
+     * same pass is still the old one. The marker makes this happen exactly
+     * once per account — otherwise a freshly created `onBodyHtmlChange`
+     * callback from the caller would steamroll text the user already wrote.
      */
     useEffect(() => {
-        if (loadedFor === null || angewendetFuerRef.current === loadedFor) {
+        if (loadedFor === null || appliedForRef.current === loadedFor) {
             return;
         }
-        angewendetFuerRef.current = loadedFor;
+        appliedForRef.current = loadedFor;
 
-        // Beim Fortsetzen eines Entwurfs bleibt der Text unangetastet; die
-        // Liste wird trotzdem geladen, damit das Auswahlfeld gefuellt ist.
+        // Continuing a draft leaves its text alone; the list is still loaded
+        // so the picker has something to show.
         if (!applySignatureRef.current) {
             return;
         }
@@ -482,10 +480,10 @@ export function EmailComposerForm({
         [inputs, lists, setList, setInput],
     );
 
-    // --- Vervollstaendigung ---------------------------------------------
-    // Der lokale Vorrat (Kollegen, letzte Empfaenger, Verlauf) wird einmal
-    // geladen und sofort im Browser gefiltert. Verzeichnisse ausserhalb
-    // The wider directory is asked for with a delay and appended below.
+    // --- Completion ------------------------------------------------------
+    // The local pool (colleagues, recent recipients, history) is loaded once
+    // and filtered in the browser straight away. The wider directory is asked
+    // for with a delay and appended below.
     const [recipientPool, setRecipientPool] = useState<RecipientSuggestion[]>([]);
     const [externalPool, setExternalPool] = useState<RecipientSuggestion[]>([]);
     const [activeField, setActiveField] = useState<Field | null>(null);
@@ -507,9 +505,9 @@ export function EmailComposerForm({
     }, []);
 
     /*
-     * Verzoegerte Abfrage des externen Verzeichnisses. Zeitgeber UND Anfrage
-     * haengen in der Aufraeumfunktion: sonst schreibt eine spaet eintreffende
-     * Antwort noch in eine laengst ausgehaengte Komponente.
+     * Delayed lookup in the external directory. BOTH the timer and the request
+     * are torn down in the cleanup: otherwise a late answer writes into a
+     * component that unmounted long ago.
      */
     useEffect(() => {
         const field = activeFieldRef.current;
@@ -535,9 +533,9 @@ export function EmailComposerForm({
             clearTimeout(timer);
             abort.abort();
         };
-        // `activeFieldRef` steht bewusst nicht in der Liste: ein blosser
-        // Feldwechsel ohne Tastendruck loeste in der Vue-Fassung ebenfalls
-        // keine Abfrage aus.
+        // `activeFieldRef` is deliberately not in the list: moving between
+        // fields without typing did not trigger a lookup in the Vue version
+        // either.
     }, [inputs]);
 
     const suggestionsFor = useCallback(
@@ -571,10 +569,10 @@ export function EmailComposerForm({
                 setList(field, [...liste, { email: recipient.email, name: recipient.name ?? '' }]);
             }
             setInput(field, '');
-            // Das Field bleibt fokussiert (der Mausdruck wird unterdrueckt), also
-            // bleibt es auch „aktiv" — sonst zeigt die Vervollstaendigung fuer den
-            // naechsten Empfaenger erst nach erneutem Hineinklicken wieder etwas.
-            // The list disappears anyway, because the input is empty now.
+            // The field keeps focus (mousedown is suppressed), so it stays
+            // "active" — otherwise completion for the next recipient would only
+            // come back after clicking into the field again. The list disappears
+            // anyway, because the input is empty now.
             setActiveField(field);
         },
         [lists, setList, setInput],
@@ -610,8 +608,8 @@ export function EmailComposerForm({
     };
 
     const onDragLeave = (event: DragEvent<HTMLDivElement>) => {
-        // Nur zuruecksetzen, wenn die Ablagezone ganz verlassen wird — nicht
-        // beim Ueberqueren von Kindelementen.
+        // Only reset when the drop zone is left entirely — not while crossing
+        // its own children.
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
             setIsDragging(false);
         }
@@ -623,14 +621,14 @@ export function EmailComposerForm({
         if (!allowAttachments) {
             return;
         }
-        // Was im Editor abgelegt wird, behandelt dieser selbst (eingebettete
-        // Bilder) — sonst haengt es doppelt.
+        // What is dropped on the editor is the editor's business (inline
+        // images) — otherwise it would be attached twice.
         if ((event.target as HTMLElement)?.closest?.('.tiptap-email-editor')) {
             return;
         }
-        const dateien = Array.from(event.dataTransfer?.files ?? []);
-        if (dateien.length > 0) {
-            onAttachmentsChange?.([...attachments, ...dateien]);
+        const files = Array.from(event.dataTransfer?.files ?? []);
+        if (files.length > 0) {
+            onAttachmentsChange?.([...attachments, ...files]);
         }
     };
 
