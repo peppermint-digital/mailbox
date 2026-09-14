@@ -83,6 +83,10 @@ export interface MailboxList<M extends RowMessage> {
      * conversation archived on its own stayed visible until a reload.
      */
     messageLeft: (uid: number) => Promise<void>;
+    /** The same for several at once — a bulk move, archive or delete. */
+    messagesLeft: (uids: Iterable<number>) => Promise<void>;
+    /** Applies the same change to several rows, without reloading. */
+    patchRows: (uids: Iterable<number>, changes: Partial<M>) => void;
     /** Switches between conversations and single messages, starting at page 1. */
     setGrouped: (grouped: boolean, accountId: number | string, folder: string) => Promise<void>;
     /**
@@ -245,6 +249,15 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
         );
     }, []);
 
+    const patchRows = useCallback(
+        (uids: Iterable<number>, changes: Partial<M>) => {
+            for (const uid of uids) {
+                patchRow(uid, changes);
+            }
+        },
+        [patchRow],
+    );
+
     const patchRowById = useCallback((messageId: string, changes: Partial<M>) => {
         setMessages((before) => before.map((m) => (m.message_id === messageId ? { ...m, ...changes } : m)));
         setThreads((before) =>
@@ -286,22 +299,24 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
         setPage(1);
     }, []);
 
-    const messageLeft = useCallback(
-        async (uid: number) => {
+    const messagesLeft = useCallback(
+        async (uids: Iterable<number>) => {
             if (grouped) {
                 await reload({ refresh: true });
                 return;
             }
 
-            removeRows([uid]);
+            removeRows(uids);
         },
         [grouped, reload, removeRows],
     );
+
+    const messageLeft = useCallback((uid: number) => messagesLeft([uid]), [messagesLeft]);
 
     const clearFailure = useCallback(() => setFailure(null), []);
 
     return {
         messages, threads, total, page, grouped, loading, refreshing, failure,
-        load, refresh, reload, messageLeft, setGrouped, patchRow, patchRowById, removeRows, showRows, clear, clearFailure,
+        load, refresh, reload, messageLeft, messagesLeft, setGrouped, patchRow, patchRows, patchRowById, removeRows, showRows, clear, clearFailure,
     };
 }

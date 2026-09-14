@@ -353,3 +353,40 @@ describe('a message that left the mailbox', () => {
         unmount();
     });
 });
+
+describe('several messages at once', () => {
+    it('takes them all out of the flat list in one go', async () => {
+        const source = { list: vi.fn(async () => seite([msg(1), msg(2), msg(3), msg(4)], 20)) };
+        const { ref, unmount } = mount(source);
+        await act(async () => { await ref.current.load({ accountId: 1, folder: 'INBOX' }); });
+
+        await act(async () => { await ref.current.messagesLeft([2, 4]); });
+
+        expect(ref.current.messages.map((m) => m.uid)).toEqual([1, 3]);
+        expect(ref.current.total).toBe(18);
+        expect(source.list).toHaveBeenCalledOnce();
+        unmount();
+    });
+
+    it('reloads once for a whole bulk, not once per message', async () => {
+        const source = { list: vi.fn(async () => ({ messages: [], threads: [thread('t1', msg(1))], total: 1 })) };
+        const { ref, unmount } = mount(source, true);
+        await act(async () => { await ref.current.load({ accountId: 1, folder: 'INBOX', grouped: true }); });
+
+        await act(async () => { await ref.current.messagesLeft([1, 2, 3]); });
+
+        expect(source.list).toHaveBeenCalledTimes(2);
+        unmount();
+    });
+
+    it('changes several rows at once', async () => {
+        const source = { list: vi.fn(async () => seite([msg(1, { is_read: false }), msg(2, { is_read: false }), msg(3, { is_read: false })])) };
+        const { ref, unmount } = mount(source);
+        await act(async () => { await ref.current.load({ accountId: 1, folder: 'INBOX' }); });
+
+        act(() => { ref.current.patchRows([1, 3], { is_read: true } as never); });
+
+        expect(ref.current.messages.map((m) => m.is_read)).toEqual([true, false, true]);
+        unmount();
+    });
+});
