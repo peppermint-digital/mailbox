@@ -4,3 +4,6 @@ export * from './EmailBodyViewer';
 export { default as EmailBodyViewer } from './EmailBodyViewer';
 export * from './EmailComposerForm';
 export { default as EmailComposerForm } from './EmailComposerForm';
+export * from './replyRecipients';
+export * from './InlineReplyPanel';
+export { default as InlineReplyPanel } from './InlineReplyPanel';
