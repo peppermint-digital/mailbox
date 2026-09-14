@@ -22,3 +22,4 @@ export * from './bulk';
 export * from './transport';
 export * from './useMailboxList';
 export * from './useMailboxFolders';
+export * from './useOpenMessage';
