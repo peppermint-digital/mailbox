@@ -36,9 +36,12 @@ class ConnectionSettings
     public static function for(MailAccount $account, int $timeout = 120): self
     {
         $common = [
-            'host' => (string) $account->field('host'),
-            'port' => (int) $account->field('port'),
-            'encryption' => (string) $account->field('encryption'),
+            // `imap_host` first: a mail account has an IMAP host AND an SMTP
+            // host, and both this package's consumers as well as AI Brain name
+            // them apart. A bare `host` is accepted for settings that do not.
+            'host' => (string) ($account->field('imap_host') ?: $account->field('host')),
+            'port' => (int) ($account->field('imap_port') ?: $account->field('port')),
+            'encryption' => (string) ($account->field('imap_encryption') ?: $account->field('encryption')),
             'validate_cert' => true,
             'timeout' => $timeout,
         ];

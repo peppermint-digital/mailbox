@@ -75,6 +75,38 @@ describe('Zugangsdaten fuer eine Verbindung', function () {
     });
 });
 
+describe('wie die Server-Felder heissen', function () {
+    it('nimmt imap_host, imap_port und imap_encryption, wenn es sie gibt', function () {
+        // Ein Postfach hat einen IMAP- UND einen SMTP-Server. Beide Abnehmer
+        // dieses Pakets und AI Brain benennen sie getrennt; wer nur `host`
+        // liest, verbindet sich gegen einen leeren String.
+        $w = ConnectionSettings::for(konto([
+            'imap_host' => 'imap.example.org',
+            'imap_port' => 143,
+            'imap_encryption' => 'tls',
+            'host' => null, 'port' => null, 'encryption' => null,
+        ]))->values;
+
+        expect($w['host'])->toBe('imap.example.org');
+        expect($w['port'])->toBe(143);
+        expect($w['encryption'])->toBe('tls');
+    });
+
+    it('faellt auf die schlichten Namen zurueck, wo es keine getrennten gibt', function () {
+        $w = ConnectionSettings::for(konto(['host' => 'mail.example.org', 'port' => 993, 'encryption' => 'ssl']))->values;
+
+        expect($w['host'])->toBe('mail.example.org');
+    });
+
+    it('zieht die IMAP-Angabe vor, wenn beide da sind', function () {
+        $w = ConnectionSettings::for(konto([
+            'host' => 'smtp.falsch.de', 'imap_host' => 'imap.richtig.de',
+        ]))->values;
+
+        expect($w['host'])->toBe('imap.richtig.de');
+    });
+});
+
 describe('wann ein Token erneuert werden muss', function () {
     it('sagt nein bei Passwort-Konten', function () {
         expect(konto()->isTokenExpiringSoon())->toBeFalse();
