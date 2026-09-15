@@ -27,6 +27,17 @@ return [
     'brain_tool' => env('MAILBOX_BRAIN_TOOL', 'mail-account-settings-tool'),
 
     /*
+    |--------------------------------------------------------------------------
+    | The mailbox agent
+    |--------------------------------------------------------------------------
+    |
+    | The tool that hands out the conversation with the agent working this
+    | mailbox. Without the bridge installed, nothing here is reached and the
+    | browser simply has no assistant.
+    */
+    'chat_tool' => env('MAILBOX_CHAT_TOOL', 'mailbox-chat-tool'),
+
+    /*
     | How long a central state is kept locally. This is the answer to "what if
     | the central system is down": the lookup freezes on the last known good
     | state instead of failing. Only success is cached.

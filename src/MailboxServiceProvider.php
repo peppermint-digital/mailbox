@@ -5,6 +5,7 @@ namespace Peppermint\Mailbox;
 use Illuminate\Support\Facades\Log;
 use Peppermint\Mailbox\Console\InstallCommand;
 use Illuminate\Support\ServiceProvider;
+use Peppermint\Mailbox\Brain\MailboxChat;
 use Peppermint\Mailbox\Contracts\AccountStore;
 use Peppermint\Mailbox\Stores\BrainAccountStore;
 use Peppermint\Mailbox\Stores\LocalAccountStore;
@@ -19,6 +20,8 @@ class MailboxServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__.'/../config/mailbox.php', 'mailbox');
 
         $this->app->singleton(AccountStore::class, fn (): AccountStore => $this->store());
+
+        $this->app->singleton(MailboxChat::class, fn (): MailboxChat => $this->chat());
     }
 
     public function boot(): void
@@ -91,6 +94,35 @@ class MailboxServiceProvider extends ServiceProvider
                 }
             },
             (int) config('mailbox.cache_ttl', 900),
+        );
+    }
+
+    /**
+     * The chat with the mailbox agent — or a version that stays quiet.
+     *
+     * Without the bridge there is no Brain to talk to. The chat then answers an
+     * empty conversation rather than throwing: a product that installs the
+     * package alone gets a mail browser, just without an assistant, and nothing
+     * in it fails.
+     */
+    private function chat(): MailboxChat
+    {
+        if (! class_exists(self::BRIDGE)) {
+            return new MailboxChat(fn (string $email): ?array => null, fn (int $chatId, string $content): ?array => null);
+        }
+
+        $bridge = self::BRIDGE;
+        $tool = (string) config('mailbox.chat_tool', 'mailbox-chat-tool');
+
+        return new MailboxChat(
+            // Service mode: the chat belongs to the MAILBOX, not to whoever is
+            // logged in right now. Two people looking at the same shared mailbox
+            // have to see the same conversation — a per-user chat would split it
+            // in two and neither would know the other half exists.
+            fn (string $email): ?array => $bridge::asService(
+                fn (): array => $bridge::call($tool, ['email' => $email]),
+            ),
+            fn (int $chatId, string $content): ?array => $bridge::channel('*')->reply($chatId, $content),
         );
     }
 }
