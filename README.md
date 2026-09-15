@@ -200,6 +200,76 @@ question. Where the mark is missing, the alias table decides — the same table
 spellings (`Entw&APw-rfe`, `Gel&APY-schte Elemente`) that a hand-written pattern
 misses.
 
+### Putting a whole mail browser together
+
+Four components and five hooks. The components render, the hooks hold state
+and talk to your endpoints — you supply the addresses, they supply the
+sequence.
+
+```tsx
+import {
+    MailboxBrowser, MailFolderList, MailMessageList, MailMessageView,
+    useMailboxFolders, useMailboxList, useMessageSelection, useOpenMessage,
+} from '@peppermint-digital/mailbox';
+
+const folders  = useMailboxFolders({ source: yourFolderEndpoints });
+const list     = useMailboxList({ source: yourMessageEndpoints });
+const opened   = useOpenMessage({ source: yourMessageEndpoint });
+const selected = useMessageSelection({ threads: list.threads, grouped: list.grouped, isSearchMode });
+
+<MailboxBrowser
+    showFolders={sidebarOpen}
+    folders={<MailFolderList folders={folders.folders} labels={…} onSelect={…} />}
+    list={<MailMessageList rows={rows} labels={…} onOpen={…} />}
+    view={<MailMessageView message={opened.message} labels={…} />}
+    aside={yourOwnColumn}
+/>
+```
+
+| Hook | Holds |
+|---|---|
+| `useMailboxList` | messages, conversations, paging, the two loading states |
+| `useMailboxFolders` | the sidebar, the move targets |
+| `useOpenMessage` | the one message that is open, and which folder it really sits in |
+| `useMessageSelection` | what is ticked, which conversations are open |
+
+#### What every source must decide
+
+Each hook takes a `source` whose methods you write — that is where your URLs
+live. Two answers are expected of them, and keeping them apart matters more
+than it looks:
+
+```ts
+async list(params) {
+    const response = await fetch(yourUrl(params));
+    const data = await response.json();
+
+    // The server answered and refused — it usually knows why.
+    if (!data.success) {
+        return { failure: data.message };
+    }
+
+    return { messages: data.messages, threads: data.threads ?? [], total: data.total };
+    // Throwing instead means the request never arrived. The hooks report that
+    // as a different kind, because a refusal has a reason and a dead line
+    // does not.
+}
+```
+
+#### Three behaviours worth knowing before you wire them
+
+**Nothing is shown that was overtaken.** Click two folders quickly and the
+second wins, even if the first answers last. Every hook carries a run counter;
+a late answer to an old question is dropped rather than rendered.
+
+**A failed reload keeps the rows that were there.** An empty list and a broken
+connection look identical to a reader, so the hook refuses to make one look
+like the other.
+
+**A message that left the mailbox is `list.messageLeft(uid)`, not
+`removeRows`.** In conversation mode the row lives in a bundle whose count and
+unread dot would start lying — so the list comes back from the server instead.
+
 ## Tests
 
 ```bash
