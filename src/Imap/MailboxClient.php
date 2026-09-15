@@ -46,6 +46,8 @@ class MailboxClient
          * @var null|\Closure(array): \DirectoryTree\ImapEngine\MailboxInterface
          */
         private readonly ?\Closure $connector = null,
+        /** Turns an IMAP message into rows; swappable for a product that needs more. */
+        private readonly MessageFormatter $formatter = new MessageFormatter,
     ) {
         if (! $connector && ! class_exists(Mailbox::class)) {
             throw new RuntimeException(
@@ -167,6 +169,60 @@ class MailboxClient
             $this->refuseSystemFolder($folder);
 
             $folder->delete();
+        });
+    }
+
+    /**
+     * Kopfzeilen-Zeilen eines Ordners, plus wie viele es insgesamt sind.
+     *
+     * Bewusst OHNE Rumpf: Sortiert und geschnitten wird auf diesen Zeilen, und
+     * erst die sichtbare Seite wird ausformatiert. Alle hundert zu formatieren,
+     * um fuenfundzwanzig zu zeigen, sind fuenfundsiebzig Rumpf-Abrufe, die
+     * niemand wollte.
+     *
+     * Wird innerhalb einer {@see session()} gerufen, damit mehrere Ordner
+     * ueber dieselbe Verbindung gehen koennen.
+     *
+     * @return array{0: list<array<string, mixed>>, 1: int}
+     */
+    public function headerRows(mixed $mailbox, string $folder, int $limit = MessagePage::FETCH_LIMIT): array
+    {
+        $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+
+        if (! $ordner) {
+            return [[], 0];
+        }
+
+        $abfrage = $ordner->messages()->newest();
+        $gesamt = $abfrage->count();
+
+        $zeilen = [];
+
+        foreach ($abfrage->withHeaders()->withFlags()->limit($limit)->get() as $nachricht) {
+            $zeilen[] = $this->formatter->summary($nachricht);
+        }
+
+        return [$zeilen, $gesamt];
+    }
+
+    /**
+     * Eine einzelne Nachricht, vollstaendig.
+     *
+     * Null, wenn sie nicht (mehr) da ist — ein geteiltes Postfach aendert sich,
+     * waehrend jemand hineinsieht.
+     *
+     */
+    public function message(string $folder, int $uid): ?array
+    {
+        return $this->session(function ($mailbox) use ($folder, $uid): ?array {
+            $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+            $nachricht = $ordner?->messages()->withHeaders()->withFlags()->withBody()->find($uid);
+
+            if (! $nachricht) {
+                return null;
+            }
+
+            return $this->formatter->full($nachricht);
         });
     }
 
