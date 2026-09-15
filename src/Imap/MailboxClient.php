@@ -171,6 +171,130 @@ class MailboxClient
     }
 
     /**
+     * Marks a message read or unread.
+     *
+     * Returns false when the message is not there any more, rather than
+     * throwing: a mailbox is shared and things move. Someone clicking "mark
+     * read" on a mail a colleague just filed should see nothing happen, not an
+     * error about a uid.
+     */
+    public function setSeen(string $folder, int $uid, bool $seen): bool
+    {
+        return $this->onMessage($folder, $uid, function ($message) use ($seen): bool {
+            $seen ? $message->markSeen() : $message->unmarkSeen();
+
+            return true;
+        });
+    }
+
+    /** Sets or clears the flag. Returns false when the message is gone. */
+    public function setFlagged(string $folder, int $uid, bool $flagged): bool
+    {
+        return $this->onMessage($folder, $uid, function ($message) use ($flagged): bool {
+            $flagged ? $message->markFlagged() : $message->unmarkFlagged();
+
+            return true;
+        });
+    }
+
+    /**
+     * Moves a message into another folder.
+     *
+     * Moving into the folder it already sits in is answered with true without
+     * asking the server: it is not an error, nothing needs to happen, and some
+     * servers refuse it in a way that reads like a real failure.
+     */
+    public function move(string $from, int $uid, string $to): bool
+    {
+        if ($from === $to) {
+            return true;
+        }
+
+        return $this->session(function ($mailbox) use ($from, $uid, $to): bool {
+            $quelle = FolderResolver::resolve($mailbox->folders()->get(), $from, fn ($f) => $f->path(), fn ($f) => $f->name());
+            $ziel = FolderResolver::resolve($mailbox->folders()->get(), $to, fn ($f) => $f->path(), fn ($f) => $f->name());
+
+            if (! $quelle || ! $ziel) {
+                return false;
+            }
+
+            $message = $quelle->messages()->find($uid);
+
+            if (! $message) {
+                return false;
+            }
+
+            $message->move($ziel->path(), true);
+
+            return true;
+        });
+    }
+
+    /**
+     * Deletes a message — into the trash where there is one.
+     *
+     * "Delete" in a mail client means "put it where I can get it back". Only
+     * when there is no trash folder, or the message is already in it, does the
+     * message actually go. Deleting outright from the inbox would be a
+     * different promise than the button makes.
+     *
+     * @param  list<string>  $trashNames lowercase aliases of the trash folder
+     */
+    public function delete(string $folder, int $uid, array $trashNames = ['trash', 'papierkorb', 'deleted items', 'gelöschte elemente']): bool
+    {
+        return $this->session(function ($mailbox) use ($folder, $uid, $trashNames): bool {
+            $quelle = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+
+            if (! $quelle) {
+                return false;
+            }
+
+            $message = $quelle->messages()->find($uid);
+
+            if (! $message) {
+                return false;
+            }
+
+            $papierkorb = null;
+
+            foreach ($mailbox->folders()->get() as $kandidat) {
+                if (FolderPaths::matchesAny($kandidat->name(), $kandidat->path(), $trashNames)) {
+                    $papierkorb = $kandidat->path();
+                    break;
+                }
+            }
+
+            if ($papierkorb && $papierkorb !== $quelle->path()) {
+                $message->move($papierkorb, true);
+            } else {
+                // Already in the trash, or there is none: now it really goes.
+                $message->delete(true);
+            }
+
+            return true;
+        });
+    }
+
+    /**
+     * Runs something on one message, or answers false if it is not there.
+     *
+     * @param  callable(mixed): bool  $work
+     */
+    private function onMessage(string $folder, int $uid, callable $work): bool
+    {
+        return $this->session(function ($mailbox) use ($folder, $uid, $work): bool {
+            $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+            $message = $ordner?->messages()->find($uid);
+
+            if (! $message) {
+                return false;
+            }
+
+            return $work($message);
+        });
+    }
+
+    /**
      * Opens the connection.
      *
      * Deliberately untyped: a product may bring its own mailbox object, and

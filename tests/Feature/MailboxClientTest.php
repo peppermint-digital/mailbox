@@ -33,6 +33,38 @@ function fakeOrdner(string $pfad, string $name, array $flags = [], string $delim
         public function move(string $ziel): void { $this->bewegtNach[] = $ziel; }
 
         public function delete(): void { $this->geloescht = true; }
+
+        public array $nachrichten = [];
+
+        public function messages(): object
+        {
+            return new class($this->nachrichten) {
+                public function __construct(private array $nachrichten) {}
+
+                public function find(int $uid): ?object { return $this->nachrichten[$uid] ?? null; }
+            };
+        }
+    };
+}
+
+/** Eine Nachricht, die mitschreibt, was mit ihr gemacht wurde. */
+function fakeNachricht(): object
+{
+    return new class
+    {
+        public array $getan = [];
+
+        public function markSeen(): void { $this->getan[] = 'gelesen'; }
+
+        public function unmarkSeen(): void { $this->getan[] = 'ungelesen'; }
+
+        public function markFlagged(): void { $this->getan[] = 'markiert'; }
+
+        public function unmarkFlagged(): void { $this->getan[] = 'unmarkiert'; }
+
+        public function move(string $ziel, bool $expunge = false): void { $this->getan[] = "verschoben:{$ziel}"; }
+
+        public function delete(bool $expunge = false): void { $this->getan[] = 'endgueltig-geloescht'; }
     };
 }
 
@@ -276,5 +308,110 @@ describe('welche Ordner geschuetzt sind', function () {
 
     it('laesst einen selbstgebauten Ordner in Ruhe', function () {
         expect(SystemFolders::isProtected('Projekte/2026', '2026', ['\\HasNoChildren']))->toBeFalse();
+    });
+});
+
+
+describe('Nachrichten-Aktionen', function () {
+    it('markiert als gelesen und wieder als ungelesen', function () {
+        $nachricht = fakeNachricht();
+        $ordner = fakeOrdner('INBOX', 'INBOX');
+        $ordner->nachrichten = [7 => $nachricht];
+        $postfach = fakePostfach([$ordner]);
+
+        expect(klient($postfach)->setSeen('INBOX', 7, true))->toBeTrue();
+        expect(klient($postfach)->setSeen('INBOX', 7, false))->toBeTrue();
+        expect($nachricht->getan)->toBe(['gelesen', 'ungelesen']);
+    });
+
+    it('meldet false statt zu werfen, wenn die Nachricht weg ist', function () {
+        // Ein Postfach ist geteilt, und Dinge wandern. Wer „gelesen" klickt,
+        // waehrend jemand anderes die Mail gerade abgelegt hat, soll nichts
+        // passieren sehen — keinen Fehler ueber eine Kennung.
+        $ordner = fakeOrdner('INBOX', 'INBOX');
+        $postfach = fakePostfach([$ordner]);
+
+        expect(klient($postfach)->setSeen('INBOX', 999, true))->toBeFalse();
+    });
+
+    it('setzt und entfernt die Markierung', function () {
+        $nachricht = fakeNachricht();
+        $ordner = fakeOrdner('INBOX', 'INBOX');
+        $ordner->nachrichten = [1 => $nachricht];
+        $postfach = fakePostfach([$ordner]);
+
+        klient($postfach)->setFlagged('INBOX', 1, true);
+
+        expect($nachricht->getan)->toBe(['markiert']);
+    });
+});
+
+describe('Verschieben', function () {
+    it('verschiebt in den Zielordner', function () {
+        $nachricht = fakeNachricht();
+        $quelle = fakeOrdner('INBOX', 'INBOX');
+        $quelle->nachrichten = [3 => $nachricht];
+        $postfach = fakePostfach([$quelle, fakeOrdner('INBOX.Archiv', 'Archiv')]);
+
+        expect(klient($postfach)->move('INBOX', 3, 'INBOX.Archiv'))->toBeTrue();
+        expect($nachricht->getan)->toBe(['verschoben:INBOX.Archiv']);
+    });
+
+    it('sagt ja, ohne den Server zu fragen, wenn Quelle und Ziel gleich sind', function () {
+        // Kein Fehler: Es muss nichts passieren. Manche Server lehnen es ab,
+        // und zwar so, dass es wie ein echter Fehlschlag aussieht.
+        $nachricht = fakeNachricht();
+        $quelle = fakeOrdner('INBOX', 'INBOX');
+        $quelle->nachrichten = [3 => $nachricht];
+        $postfach = fakePostfach([$quelle]);
+
+        expect(klient($postfach)->move('INBOX', 3, 'INBOX'))->toBeTrue();
+        expect($nachricht->getan)->toBe([]);
+    });
+
+    it('meldet false, wenn es den Zielordner nicht gibt', function () {
+        $quelle = fakeOrdner('INBOX', 'INBOX');
+        $quelle->nachrichten = [3 => fakeNachricht()];
+        $postfach = fakePostfach([$quelle]);
+
+        expect(klient($postfach)->move('INBOX', 3, 'Gibtsnicht'))->toBeFalse();
+    });
+});
+
+describe('Loeschen', function () {
+    it('verschiebt in den Papierkorb, wenn es einen gibt', function () {
+        // „Loeschen" heisst in einem Mailprogramm „dorthin, wo ich es
+        // zurueckholen kann".
+        $nachricht = fakeNachricht();
+        $posteingang = fakeOrdner('INBOX', 'INBOX');
+        $posteingang->nachrichten = [5 => $nachricht];
+        $postfach = fakePostfach([$posteingang, fakeOrdner('INBOX.Papierkorb', 'Papierkorb')]);
+
+        expect(klient($postfach)->delete('INBOX', 5))->toBeTrue();
+        expect($nachricht->getan)->toBe(['verschoben:INBOX.Papierkorb']);
+    });
+
+    it('loescht endgueltig, wenn es keinen Papierkorb gibt', function () {
+        $nachricht = fakeNachricht();
+        $posteingang = fakeOrdner('INBOX', 'INBOX');
+        $posteingang->nachrichten = [5 => $nachricht];
+        $postfach = fakePostfach([$posteingang]);
+
+        klient($postfach)->delete('INBOX', 5);
+
+        expect($nachricht->getan)->toBe(['endgueltig-geloescht']);
+    });
+
+    it('loescht endgueltig, wenn die Mail schon im Papierkorb liegt', function () {
+        // Sonst schoebe man sie dorthin, wo sie schon ist, und der Knopf taete
+        // sichtbar nichts.
+        $nachricht = fakeNachricht();
+        $papierkorb = fakeOrdner('INBOX.Papierkorb', 'Papierkorb');
+        $papierkorb->nachrichten = [5 => $nachricht];
+        $postfach = fakePostfach([fakeOrdner('INBOX', 'INBOX'), $papierkorb]);
+
+        klient($postfach)->delete('INBOX.Papierkorb', 5);
+
+        expect($nachricht->getan)->toBe(['endgueltig-geloescht']);
     });
 });
