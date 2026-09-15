@@ -122,7 +122,12 @@ class MailboxServiceProvider extends ServiceProvider
             fn (string $email): ?array => $bridge::asService(
                 fn (): array => $bridge::call($tool, ['email' => $email]),
             ),
-            fn (int $chatId, string $content): ?array => $bridge::channel('*')->reply($chatId, $content),
+            // Der Channel-Name ist ein Platzhalter, kein Ziel: `reply()` adressiert
+            // allein ueber die chat_id und uebertraegt den Namen gar nicht. Hier
+            // etwas Sprechendes hinzuschreiben waere deshalb eine Behauptung —
+            // und wer spaeter einen echten Namen einsetzt, sucht den Fehler
+            // anschliessend an der falschen Stelle.
+            fn (int $chatId, string $content): ?array => $bridge::channel('_')->reply($chatId, $content),
         );
     }
 }
