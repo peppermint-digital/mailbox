@@ -24,3 +24,6 @@ export * from './useMailboxList';
 export * from './useMailboxFolders';
 export * from './useOpenMessage';
 export * from './useMessageSelection';
+export * from './MailboxChat';
+export { default as MailboxChat } from './MailboxChat';
+export * from './mailboxChatSource';
