@@ -137,3 +137,31 @@ describe('useMailboxFolders', () => {
         });
     });
 });
+
+describe('beim Kontowechsel', function () {
+    it('leert Ordner und Ziele', async () => {
+        const source = { list: vi.fn(async () => ordner('INBOX', 'Archiv')), listTargets: vi.fn(async () => ordner('A')) };
+        const { ref, unmount } = mount(source);
+
+        await act(async () => { await ref.current.load(1); });
+        await act(async () => { await ref.current.loadTargetsOnce(1); });
+        act(() => { ref.current.clear(); });
+
+        expect(ref.current.folders).toHaveLength(0);
+        expect(ref.current.targets).toHaveLength(0);
+        unmount();
+    });
+
+    it('nimmt auch eine stehengebliebene Meldung mit', async () => {
+        // Die Meldung gehoerte zum vorigen Postfach.
+        const source = { list: vi.fn(async () => { throw new Error('weg'); }) };
+        const { ref, unmount } = mount(source);
+
+        await act(async () => { await ref.current.load(1); });
+        expect(ref.current.failure).not.toBeNull();
+
+        act(() => { ref.current.clear(); });
+        expect(ref.current.failure).toBeNull();
+        unmount();
+    });
+});

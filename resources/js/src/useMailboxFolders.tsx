@@ -57,6 +57,15 @@ export interface MailboxFolders {
     refreshQuietly: (accountId: number | string) => Promise<void>;
     /** Loads the move targets once and keeps them. */
     loadTargetsOnce: (accountId: number | string) => Promise<void>;
+    /**
+     * Empties the lists — when the account changes.
+     *
+     * A failed load deliberately keeps what was there, because an emptied list
+     * and a broken connection look alike. That reasoning stops at the account
+     * boundary: folders of the PREVIOUS mailbox shown under the name of the new
+     * one do not say "we could not load", they say something false.
+     */
+    clear: () => void;
     clearFailure: () => void;
 }
 
@@ -131,7 +140,13 @@ export function useMailboxFolders({ source }: { source: FolderSource }): Mailbox
         [source, targets.length],
     );
 
+    const clear = useCallback(() => {
+        setFolders([]);
+        setTargets([]);
+        setFailure(null);
+    }, []);
+
     const clearFailure = useCallback(() => setFailure(null), []);
 
-    return { folders, targets, loading, failure, load, refreshQuietly, loadTargetsOnce, clearFailure };
+    return { folders, targets, loading, failure, load, refreshQuietly, loadTargetsOnce, clear, clearFailure };
 }
