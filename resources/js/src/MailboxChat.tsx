@@ -49,6 +49,14 @@ export interface MailboxChatState {
     messages: MailboxChatMessage[];
     status: string | null;
     activity: MailboxChatActivity[];
+    /**
+     * Wie viele Nachrichten das Gespraech insgesamt hat — nicht, wie viele
+     * mitgeliefert wurden. Fehlt die Angabe, zaehlt die Anzeige das Gelieferte;
+     * dann stimmt „N aeltere nicht angezeigt" nur, solange nichts abgeschnitten
+     * wurde. Ein aelteres Brain schickt sie nicht, und das darf nichts kaputt
+     * machen.
+     */
+    total?: number;
 }
 
 /**
@@ -80,6 +88,12 @@ export interface MailboxChatProps {
     controls?: (api: MailboxChatControls) => ReactNode;
     /** Heading — products that call the agent something else say so here. */
     title?: string;
+    /**
+     * Wie viele Nachrichten hoechstens gezeichnet werden. Der Rest bleibt
+     * geladen, aber ungezeichnet — das ist der Unterschied zwischen einem
+     * fluessigen und einem hakenden Eingabefeld.
+     */
+    maxMessages?: number;
 }
 
 /**
@@ -111,7 +125,13 @@ function arbeitet(status: string | null): boolean {
 const TAKT_ARBEITEND = 2000;
 const TAKT_RUHEND = 8000;
 
-export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat' }: MailboxChatProps) {
+/** Wie viele Nachrichten hoechstens gezeichnet werden. */
+const HOECHSTENS = 30;
+
+/** Bis zu wie vielen Pixeln Abstand „am Ende" noch als am Ende gilt. */
+const NAH_AM_ENDE = 80;
+
+export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat', maxMessages = HOECHSTENS }: MailboxChatProps) {
     const accountId = account.id;
 
     const [messages, setMessages] = useState<MailboxChatMessage[]>([]);
@@ -121,6 +141,7 @@ export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat'
     const [error, setError] = useState<string | null>(null);
     const [status, setStatus] = useState<string | null>(null);
     const [activity, setActivity] = useState<MailboxChatActivity[]>([]);
+    const [gesamt, setGesamt] = useState<number | null>(null);
     const [showActivity, setShowActivity] = useState(false);
 
     const threadEl = useRef<HTMLDivElement | null>(null);
@@ -136,10 +157,45 @@ export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat'
     /** The last step — the one line that answers "what is it working on". */
     const lastStep = activity[activity.length - 1] ?? null;
 
-    // Scroll to the end after every addition. `useLayoutEffect` so it happens
-    // before the paint and does not visibly jump.
+    /**
+     * Nur das jüngste Stück zeichnen.
+     *
+     * Der Takt holt den Verlauf alle zwei Sekunden neu. Bei einem gewachsenen
+     * Gespraech zeichnet React dann jedes Mal hunderte Blasen neu — und zwar
+     * genau waehrend jemand tippt. Der alte Verlauf wird dabei nicht gelesen,
+     * sondern nur bewegt.
+     */
+    const sichtbar = messages.length > maxMessages ? messages.slice(-maxMessages) : messages;
+    // Wie viele fehlen: gegen die ECHTE Gesamtzahl gerechnet, nicht gegen das
+    // Gelieferte. Sonst meldet die Zeile „20 ältere nicht angezeigt", wo es 500
+    // sind — und eine falsche Zahl ist schlechter als gar keine.
+    const verborgen = (gesamt ?? messages.length) - sichtbar.length;
+
+    /**
+     * Was „am Ende" heisst. Grosszuegig, weil Zeilenhoehen und Bilder den Wert
+     * um ein paar Pixel verschieben — wer lesbar am Ende steht, soll mitlaufen.
+     */
+    const amEndeRef = useRef(true);
+
+    const merkeObAmEnde = useCallback(() => {
+        const el = threadEl.current;
+
+        if (el) {
+            amEndeRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= NAH_AM_ENDE;
+        }
+    }, []);
+
+    // Ans Ende scrollen — aber NUR, wenn der Benutzer dort auch steht.
+    //
+    // Vorher wurde bei jedem Eintreffen gescrollt. Wer hochscrollte, um etwas
+    // nachzulesen, wurde beim naechsten Takt (2–8 s) wieder ans Ende gerissen;
+    // Zuruecklesen war damit unmoeglich. Mitlaufen ist richtig, solange man am
+    // Ende steht, und falsch, sobald jemand sucht.
+    //
+    // `useLayoutEffect`, damit es vor dem Zeichnen passiert und nicht sichtbar
+    // springt.
     useLayoutEffect(() => {
-        if (threadEl.current) {
+        if (threadEl.current && amEndeRef.current) {
             threadEl.current.scrollTop = threadEl.current.scrollHeight;
         }
     }, [messages]);
@@ -164,6 +220,7 @@ export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat'
                     setMessages(zustand.messages);
                     setStatus(zustand.status);
                     setActivity(zustand.activity);
+                    setGesamt(zustand.total ?? null);
                     // Straight into the ref, not only via the render: the next
                     // interval is set in the `.then` of this very call, and the
                     // re-render has not happened by then. Without this line
@@ -186,6 +243,10 @@ export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat'
         setMessages([]);
         setStatus(null);
         setActivity([]);
+        setGesamt(null);
+        // Ein neues Postfach faengt unten an. Ohne das bliebe „nicht am Ende"
+        // vom vorigen Gespraech haengen, und der neue Verlauf liefe nie mit.
+        amEndeRef.current = true;
 
         const takten = () => {
             uhr = setTimeout(
@@ -313,12 +374,19 @@ export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat'
 
             {/* Nothing sideways: the conversation should scroll down, not across.
                 Otherwise a single long link widens the whole column. */}
-            <div ref={threadEl} className="flex-1 space-y-2 overflow-x-hidden overflow-y-auto p-3">
+            <div ref={threadEl} onScroll={merkeObAmEnde} className="flex-1 space-y-2 overflow-x-hidden overflow-y-auto p-3">
                 {loading && <div className="text-sm text-gray-400">Lädt…</div>}
+                {verborgen > 0 && (
+                    // Sagen, dass etwas fehlt. Ein stillschweigend gekuerzter
+                    // Verlauf sieht aus wie ein Agent, der etwas vergessen hat.
+                    <div className="text-center text-xs text-gray-400">
+                        {verborgen} ältere {verborgen === 1 ? 'Nachricht' : 'Nachrichten'} nicht angezeigt
+                    </div>
+                )}
                 {!loading && messages.length === 0 && (
                     <div className="text-sm text-gray-400">Noch kein Chat für dieses Postfach (oder AI Brain nicht erreichbar).</div>
                 )}
-                {messages.map((m) => (
+                {sichtbar.map((m) => (
                     <div key={m.id} className={m.role === 'user' ? 'text-right' : 'text-left'}>
                         <div
                             className={[

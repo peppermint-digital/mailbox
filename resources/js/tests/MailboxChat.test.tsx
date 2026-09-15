@@ -263,3 +263,206 @@ describe('httpMailboxChatSource', () => {
         expect(await source.send(7, 'Hallo')).toBe('Senden fehlgeschlagen.');
     });
 });
+
+describe('MailboxChat — Bug #847', () => {
+    const viele = (anzahl: number) =>
+        Array.from({ length: anzahl }, (_, i) => nachricht(i + 1, i % 2 ? 'user' : 'assistant', `Nachricht ${i + 1}`));
+
+    it('zeichnet nur das juengste Stueck des Verlaufs', async () => {
+        // Der Takt holt alle zwei Sekunden neu. Bei einem gewachsenen Gespraech
+        // zeichnet React sonst hunderte Blasen neu — genau waehrend jemand tippt.
+        const { container, unmount } = await zeige(quelle({ load: vi.fn(async () => zustand({ messages: viele(100) })) }));
+
+        const text = textOf(container);
+        expect(text).toContain('Nachricht 100');
+        expect(text).toContain('Nachricht 71');
+        expect(text).not.toContain('Nachricht 70');
+        unmount();
+    });
+
+    it('sagt, dass aeltere Nachrichten fehlen', async () => {
+        // Ein stillschweigend gekuerzter Verlauf sieht aus wie ein Agent, der
+        // etwas vergessen hat.
+        const { container, unmount } = await zeige(quelle({ load: vi.fn(async () => zustand({ messages: viele(100) })) }));
+
+        expect(textOf(container)).toContain('70 ältere Nachrichten nicht angezeigt');
+        unmount();
+    });
+
+    it('sagt nichts, wenn nichts fehlt', async () => {
+        const { container, unmount } = await zeige(quelle({ load: vi.fn(async () => zustand({ messages: viele(5) })) }));
+
+        expect(textOf(container)).not.toContain('nicht angezeigt');
+        unmount();
+    });
+
+    it('zaehlt eine einzelne verborgene Nachricht im Singular', async () => {
+        const { container, unmount } = await zeige(quelle({ load: vi.fn(async () => zustand({ messages: viele(31) })) }));
+
+        expect(textOf(container)).toContain('1 ältere Nachricht nicht angezeigt');
+        unmount();
+    });
+
+    it('laesst das Produkt die Grenze verschieben', async () => {
+        const { container, unmount } = await zeige(quelle({ load: vi.fn(async () => zustand({ messages: viele(10) })) }), {
+            maxMessages: 3,
+        });
+
+        expect(textOf(container)).toContain('Nachricht 10');
+        expect(textOf(container)).not.toContain('Nachricht 7');
+        unmount();
+    });
+});
+
+describe('MailboxChat — Mitlaufen beim Scrollen (Bug #847)', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    /** jsdom rechnet keine Layouts — die Masse werden hier gesetzt. */
+    function masse(el: HTMLElement, { scrollHeight, clientHeight, scrollTop }: Record<string, number>) {
+        Object.defineProperty(el, 'scrollHeight', { value: scrollHeight, configurable: true });
+        Object.defineProperty(el, 'clientHeight', { value: clientHeight, configurable: true });
+        el.scrollTop = scrollTop;
+    }
+
+    const behaelter = (container: HTMLElement) => container.querySelector('.overflow-y-auto') as HTMLElement;
+
+    /** Rendert, laesst den ersten Abruf durch und gibt den Verlaufsbehaelter zurueck. */
+    async function starten(source: MailboxChatSource) {
+        let ergebnis!: ReturnType<typeof render>;
+        await act(async () => {
+            ergebnis = render(<MailboxChat account={konto} source={source} />);
+        });
+
+        return { ...ergebnis, el: behaelter(ergebnis.container) };
+    }
+
+    it('laeuft mit, solange man am Ende steht', async () => {
+        let zweite = false;
+        const source = quelle({
+            load: vi.fn(async () =>
+                zustand({
+                    messages: zweite
+                        ? [nachricht(1, 'assistant', 'Eins'), nachricht(2, 'assistant', 'Zwei')]
+                        : [nachricht(1, 'assistant', 'Eins')],
+                }),
+            ),
+        });
+
+        const { el, unmount } = await starten(source);
+
+        masse(el, { scrollHeight: 1000, clientHeight: 300, scrollTop: 700 }); // ganz unten
+        await act(async () => {
+            el.dispatchEvent(new Event('scroll'));
+        });
+
+        zweite = true;
+        masse(el, { scrollHeight: 2000, clientHeight: 300, scrollTop: 700 });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(8100);
+        });
+
+        expect(el.scrollTop).toBe(2000);
+        unmount();
+    });
+
+    it('reisst niemanden ans Ende, der gerade nachliest', async () => {
+        // Der Fehler, den der Benutzer gemeldet hat: Wer hochscrollt, wird beim
+        // naechsten Takt wieder heruntergerissen — Zuruecklesen unmoeglich.
+        let zweite = false;
+        const source = quelle({
+            load: vi.fn(async () =>
+                zustand({
+                    messages: zweite
+                        ? [nachricht(1, 'assistant', 'Eins'), nachricht(2, 'assistant', 'Zwei')]
+                        : [nachricht(1, 'assistant', 'Eins')],
+                }),
+            ),
+        });
+
+        const { el, unmount } = await starten(source);
+
+        masse(el, { scrollHeight: 1000, clientHeight: 300, scrollTop: 0 }); // ganz oben
+        await act(async () => {
+            el.dispatchEvent(new Event('scroll'));
+        });
+
+        zweite = true;
+        masse(el, { scrollHeight: 2000, clientHeight: 300, scrollTop: 0 });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(8100);
+        });
+
+        expect(el.scrollTop).toBe(0);
+        unmount();
+    });
+
+    it('faengt bei einem neuen Postfach wieder unten an', async () => {
+        // Sonst bliebe „nicht am Ende" vom vorigen Gespraech haengen und der
+        // neue Verlauf liefe nie mit.
+        const source = quelle({ load: vi.fn(async () => zustand({ messages: [nachricht(1, 'assistant', 'Eins')] })) });
+        const { el, container, rerender, unmount } = await starten(source);
+
+        masse(el, { scrollHeight: 1000, clientHeight: 300, scrollTop: 0 });
+        await act(async () => {
+            el.dispatchEvent(new Event('scroll'));
+        });
+
+        await act(async () => {
+            rerender(<MailboxChat account={{ id: 9, email: 'privat@example.test' }} source={source} />);
+        });
+
+        const neu = behaelter(container);
+        masse(neu, { scrollHeight: 500, clientHeight: 300, scrollTop: 0 });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(8100);
+        });
+
+        expect(neu.scrollTop).toBe(500);
+        unmount();
+    });
+});
+
+describe('MailboxChat — wie viele wirklich fehlen (Bug #847)', () => {
+    const viele = (anzahl: number) =>
+        Array.from({ length: anzahl }, (_, i) => nachricht(i + 1, 'user', `Nachricht ${i + 1}`));
+
+    it('nennt die echte Zahl, nicht die gelieferte', async () => {
+        // Der Server liefert nur die juengsten 50, das Gespraech hat 500. Wer
+        // gegen das Gelieferte rechnet, meldet „20 aeltere" — und das ist
+        // schlechter als gar keine Angabe.
+        const { container, unmount } = await zeige(
+            quelle({ load: vi.fn(async () => zustand({ messages: viele(50), total: 500 })) }),
+        );
+
+        expect(textOf(container)).toContain('470 ältere Nachrichten nicht angezeigt');
+        unmount();
+    });
+
+    it('zaehlt das Gelieferte, wenn das Brain keine Zahl schickt', async () => {
+        // Ein aelteres Brain kennt `total_messages` nicht. Dann ist die Angabe
+        // eben ungenau — aber nichts geht kaputt.
+        const { container, unmount } = await zeige(quelle({ load: vi.fn(async () => zustand({ messages: viele(40) })) }));
+
+        expect(textOf(container)).toContain('10 ältere Nachrichten nicht angezeigt');
+        unmount();
+    });
+});
+
+describe('httpMailboxChatSource — Gesamtzahl', () => {
+    it('liest die Gesamtzahl des Brains mit', async () => {
+        const fetch = vi.fn(
+            async () => new Response(JSON.stringify({ messages: [], status: 'done', activity: [], total_messages: 412 }), { status: 200 }),
+        );
+        const source = httpMailboxChatSource({ url: (id) => `/mailbox/${id}/ai-chat`, csrfToken: 't', fetch: fetch as never });
+
+        expect((await source.load(7))?.total).toBe(412);
+    });
+
+    it('kommt ohne die Gesamtzahl aus', async () => {
+        const fetch = vi.fn(async () => new Response(JSON.stringify({ messages: [], status: 'done', activity: [] }), { status: 200 }));
+        const source = httpMailboxChatSource({ url: (id) => `/mailbox/${id}/ai-chat`, csrfToken: 't', fetch: fetch as never });
+
+        expect((await source.load(7))?.total).toBeUndefined();
+    });
+});

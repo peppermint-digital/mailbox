@@ -46,6 +46,10 @@ export function httpMailboxChatSource({ url, csrfToken, fetch: injected }: HttpC
                     messages: d.messages ?? [],
                     status: d.status ?? null,
                     activity: d.activity ?? [],
+                    // Das Brain nennt sie `total_messages`; ein aelteres schickt
+                    // sie gar nicht, dann bleibt sie undefined und die Anzeige
+                    // zaehlt das Gelieferte.
+                    total: (d as { total_messages?: number }).total_messages,
                 };
             } catch {
                 // Offline, or the request was aborted on unmount. Keeping what is
