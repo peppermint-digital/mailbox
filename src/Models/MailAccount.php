@@ -99,6 +99,37 @@ class MailAccount extends Model
         return $this->getAttribute($this->remote ? $name : static::column($name));
     }
 
+    /**
+     * Does this mailbox sign in with a token instead of a password?
+     *
+     * Read from `auth_type`, because that is the setting a person made — not
+     * guessed from whether a token happens to be lying around. A mailbox whose
+     * OAuth consent was withdrawn still has its old tokens in the row; guessing
+     * from their presence would keep trying an authentication that cannot work
+     * any more, instead of failing where someone can see it.
+     */
+    public function usesOAuth(): bool
+    {
+        return $this->field('auth_type') === 'oauth';
+    }
+
+    /**
+     * Is the access token so close to expiry that the next call would fail?
+     *
+     * The few minutes of slack are the point: a token valid for ten more
+     * seconds is worthless for a call that takes twelve.
+     */
+    public function isTokenExpiringSoon(int $minutes = 5): bool
+    {
+        $expires = $this->field('oauth_token_expires_at');
+
+        if (! $this->usesOAuth() || ! $expires) {
+            return false;
+        }
+
+        return \Illuminate\Support\Carbon::parse($expires)->subMinutes($minutes)->isPast();
+    }
+
     /** Did this account come from the central store? */
     public function isRemote(): bool
     {

@@ -11,7 +11,7 @@
     "suggest": {
         "peppermint/ai-brain-bridge": "Postfach-Einstellungen zentral aus AI Brain lesen statt lokal zu halten.",
         "laravel/mcp": "Stellt die Postfächer als MCP-Werkzeuge bereit.",
-        "directorytree/imapengine": "Nur für Peppermint\\Mailbox\\Imap\\MessageFormatter — der einzige Teil, der IMAP kennt."
+        "directorytree/imapengine": "Die IMAP-Schicht des Pakets — Verbindungsaufbau, Ordner, Nachrichten."
     },
     "autoload": {
         "psr-4": {
