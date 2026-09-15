@@ -36,10 +36,23 @@ class MailboxChat
      * @param  callable(int $chatId, string $content): ?array  $senden  Posts a
      *         reply into the chat. Same contract.
      */
+    /**
+     * @param  bool  $verfuegbar  Ob ueberhaupt ein Brain dahintersteht. Ohne
+     *         Bruecke bleibt der Dienst bedienbar, aber stumm — und die
+     *         Oberflaeche soll dann gar keinen Assistenten anbieten statt einen,
+     *         der auf nichts antwortet.
+     */
     public function __construct(
         private $holen,
         private $senden,
+        private readonly bool $verfuegbar = true,
     ) {}
+
+    /** Steht ein AI Brain dahinter? */
+    public function verfuegbar(): bool
+    {
+        return $this->verfuegbar;
+    }
 
     /**
      * The conversation as the browser needs it — always complete.

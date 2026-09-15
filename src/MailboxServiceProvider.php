@@ -108,7 +108,7 @@ class MailboxServiceProvider extends ServiceProvider
     private function chat(): MailboxChat
     {
         if (! class_exists(self::BRIDGE)) {
-            return new MailboxChat(fn (string $email): ?array => null, fn (int $chatId, string $content): ?array => null);
+            return new MailboxChat(fn (string $email): ?array => null, fn (int $chatId, string $content): ?array => null, verfuegbar: false);
         }
 
         $bridge = self::BRIDGE;

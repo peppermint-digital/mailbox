@@ -98,3 +98,11 @@ it('meldet einen Ausfall beim Senden als 502, nicht als Erfolg', function () {
     expect($ergebnis['ok'])->toBeFalse()
         ->and($ergebnis['status'])->toBe(502);
 });
+
+it('sagt von sich, ob ueberhaupt ein Brain dahintersteht', function () {
+    // Sonst baut die Oberflaeche einen Assistenten auf, der auf nichts
+    // antwortet — und das sieht aus wie ein kaputter Agent statt wie ein
+    // System ohne Anbindung.
+    expect(chat(null)->verfuegbar())->toBeTrue()
+        ->and((new MailboxChat(fn ($e) => null, fn ($c, $t) => null, verfuegbar: false))->verfuegbar())->toBeFalse();
+});
