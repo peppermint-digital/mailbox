@@ -195,3 +195,61 @@ it('survives a message without a sender', function () {
     expect($zeile['from_address'])->toBe('')
         ->and($zeile['from_name'])->toBe('');
 });
+
+describe('attachmentAt (#5670)', function () {
+    it('gibt den Anhang mit seinen Bytes heraus', function () {
+        // Die Ansicht listet Name, Typ und Groesse — genug zum Zeigen, nicht
+        // genug zum Ablegen.
+        $m = nachricht(['attachments' => [
+            anhang(['filename' => 'rechnung.pdf', 'type' => 'application/pdf', 'contents' => '%PDF-1.7']),
+        ]]);
+
+        expect((new MessageFormatter)->attachmentAt($m, 0))->toBe([
+            'filename' => 'rechnung.pdf',
+            'mime_type' => 'application/pdf',
+            'contents' => '%PDF-1.7',
+        ]);
+    });
+
+    it('zaehlt wie die Ansicht, auch wenn ein Logo dazwischen liegt', function () {
+        // Der Fallstrick: Inline-Bilder erscheinen NICHT in der Liste, behalten
+        // aber ihre Nummer. Wer die sichtbaren durchzaehlt, legt bei jeder Mail
+        // mit Logo die falsche Datei ab.
+        $m = nachricht(['attachments' => [
+            anhang(['contentId' => 'logo@x', 'disposition' => 'inline', 'type' => 'image/png', 'contents' => 'PNG']),
+            anhang(['filename' => 'rechnung.pdf', 'type' => 'application/pdf', 'contents' => '%PDF']),
+        ]]);
+
+        $formatter = new MessageFormatter;
+
+        // Die Ansicht nennt fuer die PDF den Index 1 …
+        expect($formatter->full($m)['attachments'][0]['index'])->toBe(1)
+            // … und genau dieser Index muss die PDF liefern, nicht das Logo.
+            ->and($formatter->attachmentAt($m, 1)['filename'])->toBe('rechnung.pdf');
+    });
+
+    it('gibt ein Inline-Bild nicht als Anhang heraus', function () {
+        // Die Stelle gibt es, sie gehoert aber in den Rumpf. Wer sie anfordert,
+        // meint etwas anderes.
+        $m = nachricht(['attachments' => [
+            anhang(['contentId' => 'logo@x', 'disposition' => 'inline', 'type' => 'image/png', 'contents' => 'PNG']),
+        ]]);
+
+        expect((new MessageFormatter)->attachmentAt($m, 0))->toBeNull();
+    });
+
+    it('antwortet null auf eine Stelle, die es nicht gibt', function () {
+        // Ein Postfach ist geteilt, und Dinge bewegen sich.
+        $m = nachricht(['attachments' => [anhang(['filename' => 'a.pdf', 'contents' => 'x'])]]);
+
+        expect((new MessageFormatter)->attachmentAt($m, 7))->toBeNull();
+    });
+
+    it('nennt einen namenlosen Anhang beim Namen', function () {
+        // Manche Anhaenge tragen keinen. Eine Datei ohne Namen laesst sich
+        // weder ablegen noch wiederfinden.
+        $m = nachricht(['attachments' => [anhang(['type' => 'application/octet-stream', 'contents' => 'x'])]]);
+
+        expect((new MessageFormatter)->attachmentAt($m, 0)['filename'])->toBe('attachment');
+    });
+});

@@ -227,6 +227,42 @@ class MailboxClient
     }
 
     /**
+     * One attachment, with its bytes.
+     *
+     * The message view lists attachments with name, type and size — enough to
+     * show them, not enough to keep them. A product that wants to file one
+     * somewhere needs the contents, and without this every product writes the
+     * same IMAP round-trip.
+     *
+     * Identified by POSITION, not by name: Two attachments in one mail may
+     * carry the same filename, and some carry none at all. The position is what
+     * the message view already hands out.
+     *
+     * Inline images are skipped here exactly as they are in the view — what is
+     * counted as attachment number two on screen has to be attachment number
+     * two here, or people file the wrong thing.
+     *
+     * @return array{filename: string, mime_type: string, contents: string}|null
+     *         null when the message or the position is gone — a mailbox is
+     *         shared and things move.
+     */
+    public function attachment(string $folder, int $uid, int $index): ?array
+    {
+        return $this->session(function ($mailbox) use ($folder, $uid, $index): ?array {
+            $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+            $nachricht = $ordner?->messages()->withHeaders()->withBody()->find($uid);
+
+            if (! $nachricht) {
+                return null;
+            }
+
+            $gefunden = $this->formatter->attachmentAt($nachricht, $index);
+
+            return $gefunden;
+        });
+    }
+
+    /**
      * Marks a message read or unread.
      *
      * Returns false when the message is not there any more, rather than

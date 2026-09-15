@@ -84,11 +84,7 @@ class MessageFormatter
             $contentId = $attachment->contentId();
             $disposition = $attachment->contentDisposition();
 
-            // An image with a Content-ID belongs in the body unless it is
-            // explicitly marked as an attachment — some clients set neither
-            // disposition, and treating those as attachments leaves a hole in
-            // the text where the picture should be.
-            $isInline = $disposition === 'inline' || ($contentId && $disposition !== 'attachment');
+            $isInline = self::isInline($contentId, $disposition);
 
             if ($isInline && $contentId && Str::startsWith($attachment->contentType() ?? '', 'image/')) {
                 $inline[$contentId] = 'data:'.$attachment->contentType().';base64,'.base64_encode($attachment->contents());
@@ -127,6 +123,58 @@ class MessageFormatter
             'in_reply_to' => $this->header($message, 'in-reply-to'),
             'references' => $this->header($message, 'references'),
         ];
+    }
+
+    /**
+     * Does this part belong in the body rather than in the attachment list?
+     *
+     * An image with a Content-ID belongs in the body unless it is explicitly
+     * marked as an attachment — some clients set neither disposition, and
+     * treating those as attachments leaves a hole in the text where the picture
+     * should be.
+     *
+     * Spelled once because {@see full()} and {@see attachmentAt()} MUST agree:
+     * What is attachment number two on screen has to be attachment number two
+     * when someone files it, or they file the wrong thing.
+     */
+    private static function isInline(?string $contentId, ?string $disposition): bool
+    {
+        return $disposition === 'inline' || ($contentId && $disposition !== 'attachment');
+    }
+
+    /**
+     * One attachment with its bytes, addressed by the same index {@see full()}
+     * hands out.
+     *
+     * That index is the position in the message's own part list — NOT the
+     * position in the filtered list. Inline images keep their number even
+     * though they never appear on screen, so counting the visible ones here
+     * would drift apart from the view as soon as a mail contains a logo.
+     *
+     * @return array{filename: string, mime_type: string, contents: string}|null
+     */
+    public function attachmentAt(mixed $message, int $index): ?array
+    {
+        foreach ($message->attachments() as $i => $attachment) {
+            if ((int) $i !== $index) {
+                continue;
+            }
+
+            if (self::isInline($attachment->contentId(), $attachment->contentDisposition())) {
+                // Die Stelle gibt es, sie gehoert aber in den Rumpf. Wer sie
+                // anfordert, meint etwas anderes — nichts zurueckgeben ist
+                // ehrlicher als ein Logo auszuliefern.
+                return null;
+            }
+
+            return [
+                'filename' => $attachment->filename() ?? 'attachment',
+                'mime_type' => (string) $attachment->contentType(),
+                'contents' => (string) $attachment->contents(),
+            ];
+        }
+
+        return null;
     }
 
     /**
