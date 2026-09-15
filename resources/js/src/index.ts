@@ -29,3 +29,4 @@ export { default as MailboxChat } from './MailboxChat';
 export * from './mailboxChatSource';
 export * from './MailboxSidePanel';
 export { default as MailboxSidePanel } from './MailboxSidePanel';
+export * from './httpSources';
