@@ -2,6 +2,7 @@
 
 namespace Peppermint\Mailbox\Imap;
 
+use Peppermint\Mailbox\Exceptions\MissingAccessToken;
 use Peppermint\Mailbox\Models\MailAccount;
 
 /**
@@ -47,10 +48,28 @@ class ConnectionSettings
         ];
 
         if ($account->usesOAuth()) {
+            $token = (string) $account->field('oauth_access_token');
+
+            // An empty token would be sent as an empty password, and the server
+            // would answer with a plain login refusal — a message that says
+            // nothing about OAuth and sends whoever reads it looking for a
+            // wrong password that does not exist.
+            //
+            // A central store often keeps only what is needed to MINT an access
+            // token (tenant, client id, secret, refresh token) and not the
+            // short-lived token itself. Then a TokenRefresher has to run first.
+            if ($token === '') {
+                throw new MissingAccessToken(
+                    'This mailbox signs in with OAuth but carries no access token. '
+                    .'Its settings hold '.self::vorhandeneOAuthFelder($account).'. '
+                    .'Pass a TokenRefresher to the client so one can be obtained before connecting.'
+                );
+            }
+
             return new self($common + [
                 // No user name of its own: with OAuth the address is the identity.
                 'username' => (string) $account->field('email'),
-                'password' => (string) $account->field('oauth_access_token'),
+                'password' => $token,
                 'authentication' => 'oauth',
             ]);
         }
@@ -59,5 +78,19 @@ class ConnectionSettings
             'username' => (string) ($account->field('username') ?: $account->field('email')),
             'password' => (string) $account->field('password'),
         ]);
+    }
+
+    /** Names what the settings DO hold, so the gap is obvious in the message. */
+    private static function vorhandeneOAuthFelder(MailAccount $account): string
+    {
+        $felder = [];
+
+        foreach (['oauth_tenant_id', 'oauth_client_id', 'oauth_client_secret', 'oauth_refresh_token'] as $name) {
+            if ($account->field($name)) {
+                $felder[] = $name;
+            }
+        }
+
+        return $felder === [] ? 'no OAuth fields at all' : implode(', ', $felder);
     }
 }

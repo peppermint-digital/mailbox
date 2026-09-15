@@ -1,5 +1,6 @@
 <?php
 
+use Peppermint\Mailbox\Exceptions\MissingAccessToken;
 use Peppermint\Mailbox\Imap\ConnectionSettings;
 use Peppermint\Mailbox\Models\MailAccount;
 
@@ -140,5 +141,50 @@ describe('woran OAuth erkannt wird', function () {
         // Anmeldung zu versuchen, die nicht mehr klappen kann.
         expect(konto(['auth_type' => 'password', 'oauth_access_token' => 'altes-token'])->usesOAuth())->toBeFalse();
         expect(konto(['auth_type' => 'oauth', 'oauth_access_token' => null])->usesOAuth())->toBeTrue();
+    });
+});
+
+
+describe('ein OAuth-Postfach ohne Token', function () {
+    it('bricht ab, statt mit leerem Passwort zu verbinden', function () {
+        // Sonst schickt der Client ein leeres Kennwort, der Server lehnt die
+        // Anmeldung ab, und in der Meldung steht nichts von OAuth — wer sie
+        // liest, sucht ein falsches Passwort, das es nicht gibt.
+        expect(fn () => ConnectionSettings::for(konto([
+            'auth_type' => 'oauth',
+            'oauth_access_token' => null,
+            'oauth_refresh_token' => 'r123',
+            'oauth_client_id' => 'c123',
+        ])))->toThrow(MissingAccessToken::class);
+    });
+
+    it('sagt in der Meldung, WAS die Einstellungen stattdessen enthalten', function () {
+        // Damit erkennbar ist, dass ein Erneuerer fehlt — und nicht das Konto.
+        try {
+            ConnectionSettings::for(konto([
+                'auth_type' => 'oauth',
+                'oauth_access_token' => null,
+                'oauth_refresh_token' => 'r123',
+                'oauth_client_id' => 'c123',
+            ]));
+            expect(false)->toBeTrue();
+        } catch (MissingAccessToken $e) {
+            expect($e->getMessage())->toContain('oauth_refresh_token');
+            expect($e->getMessage())->toContain('oauth_client_id');
+            expect($e->getMessage())->toContain('TokenRefresher');
+        }
+    });
+
+    it('sagt es auch, wenn gar keine OAuth-Felder da sind', function () {
+        try {
+            ConnectionSettings::for(konto(['auth_type' => 'oauth', 'oauth_access_token' => null]));
+            expect(false)->toBeTrue();
+        } catch (MissingAccessToken $e) {
+            expect($e->getMessage())->toContain('no OAuth fields at all');
+        }
+    });
+
+    it('laesst ein Passwort-Postfach ohne Token in Ruhe', function () {
+        expect(ConnectionSettings::for(konto())->values['password'])->toBe('geheim');
     });
 });
