@@ -2,6 +2,8 @@
 
 namespace Peppermint\Mailbox\Contracts;
 
+use Peppermint\Mailbox\Search\Criteria;
+
 /**
  * A mailbox, as a product uses one — independent of how it is reached.
  *
@@ -93,6 +95,39 @@ interface Mailbox
      * @return array{0: list<array<string, mixed>>, 1: int}
      */
     public function headerRows(string $folder, int $limit = 100): array;
+
+    /**
+     * Search one folder.
+     *
+     * Rows in the same shape as {@see headerRows()}, newest first. The total
+     * is what was found, not what the mailbox holds.
+     *
+     * An empty search is refused rather than answered: it would match every
+     * message, and over IMAP that means dragging a whole folder across for a
+     * search box someone tabbed through.
+     *
+     * @return array{0: list<array<string, mixed>>, 1: int}
+     *
+     * @throws \InvalidArgumentException when the criteria are empty
+     */
+    public function search(string $folder, Criteria $criteria, int $limit = 50): array;
+
+    /**
+     * Search every folder worth searching.
+     *
+     * Trash, junk and drafts stay out — that is where things go that were
+     * thrown away or never sent. Each row carries the `folder` it was found
+     * in, because a hit without its folder cannot be opened.
+     *
+     * The third value is how many folders were actually searched. It is not
+     * decoration: the mail browser shows it, and without it a search that
+     * silently skipped half the mailbox looks like a complete one.
+     *
+     * @return array{0: list<array<string, mixed>>, 1: int, 2: int}
+     *
+     * @throws \InvalidArgumentException when the criteria are empty
+     */
+    public function searchAll(Criteria $criteria, int $limit = 50, int $perFolder = 10): array;
 
     /**
      * One message, in full. Null when it is not there any more.

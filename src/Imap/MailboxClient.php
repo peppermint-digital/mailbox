@@ -4,9 +4,13 @@ namespace Peppermint\Mailbox\Imap;
 
 use DirectoryTree\ImapEngine\Mailbox as ImapEngineMailbox;
 use DirectoryTree\ImapEngine\MailboxInterface;
+use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
 use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Contracts\TokenRefresher;
+use Peppermint\Mailbox\Folders\FolderNames;
 use Peppermint\Mailbox\Models\MailAccount;
+use Peppermint\Mailbox\Search\Criteria;
 use RuntimeException;
 
 /**
@@ -248,6 +252,137 @@ class MailboxClient implements Mailbox
 
             return [$zeilen, $gesamt];
         });
+    }
+
+    /**
+     * Search one folder.
+     *
+     * @return array{0: list<array<string, mixed>>, 1: int}
+     */
+    public function search(string $folder, Criteria $criteria, int $limit = 50): array
+    {
+        $this->refuseEmpty($criteria);
+
+        return $this->session(function ($mailbox) use ($folder, $criteria, $limit): array {
+            $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+
+            if (! $ordner) {
+                return [[], 0];
+            }
+
+            $zeilen = $this->hits($ordner, $criteria, $limit);
+
+            return [MessagePage::sortByDateDesc($zeilen), count($zeilen)];
+        });
+    }
+
+    /**
+     * Search every folder worth searching.
+     *
+     * One folder at a time, because that is all IMAP offers — and a folder
+     * that refuses must not end the search. A locked or vanished folder is
+     * skipped and counted out, not raised: someone looking for an invoice
+     * would rather see nine folders' worth than an error.
+     *
+     * @return array{0: list<array<string, mixed>>, 1: int, 2: int}
+     */
+    public function searchAll(Criteria $criteria, int $limit = 50, int $perFolder = 10): array
+    {
+        $this->refuseEmpty($criteria);
+
+        return $this->session(function ($mailbox) use ($criteria, $limit, $perFolder): array {
+            $treffer = [];
+            $durchsucht = 0;
+
+            foreach ($mailbox->folders()->get() as $ordner) {
+                if ($this->excludedFromSearch($ordner)) {
+                    continue;
+                }
+
+                try {
+                    foreach ($this->hits($ordner, $criteria, $perFolder) as $zeile) {
+                        $zeile['folder'] = $ordner->path();
+                        $treffer[] = $zeile;
+                    }
+
+                    $durchsucht++;
+                } catch (\Throwable $e) {
+                    // A folder that locks itself must not end the search — but
+                    // it must not vanish either: it is missing from the count,
+                    // and the count is on screen.
+                    Log::warning('Folder skipped during search', [
+                        'folder' => $ordner->path(),
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            $treffer = MessagePage::sortByDateDesc($treffer);
+
+            return [array_slice($treffer, 0, $limit), count($treffer), $durchsucht];
+        });
+    }
+
+    /**
+     * The rows one folder yields for this search.
+     *
+     * `withHeaders()` is not optional: without it every hit comes back without
+     * a subject and without a date. Measured at a real mailbox, where every
+     * result read "(no subject)".
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function hits(mixed $ordner, Criteria $criteria, int $limit): array
+    {
+        $abfrage = $ordner->messages()->newest();
+        $criteria->applyToImapQuery($abfrage);
+
+        $zeilen = [];
+
+        foreach ($abfrage->withHeaders()->withFlags()->limit($limit)->get() as $nachricht) {
+            $zeilen[] = $this->formatter->summary($nachricht);
+        }
+
+        return $zeilen;
+    }
+
+    /**
+     * Does this folder stay out of a search across everything?
+     *
+     * The special-use FLAG decides, not the name: Office 365 hands folder
+     * names over in IMAP's modified UTF-7 (`Gel&APY-schte Elemente`), where a
+     * comparison against "deleted" finds nothing. Measured at a real mailbox:
+     * 10 of 50 hits came out of the trash before this went by the flags.
+     *
+     * The name list stays as a fallback for servers without special-use — it
+     * lives in {@see FolderNames} and knows the encoded spellings.
+     */
+    private function excludedFromSearch(mixed $ordner): bool
+    {
+        try {
+            foreach ((array) $ordner->flags() as $flag) {
+                $kennzeichen = mb_strtolower((string) $flag);
+
+                foreach (['trash', 'junk', 'drafts'] as $unerwuenscht) {
+                    if (str_contains($kennzeichen, $unerwuenscht)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (\Throwable) {
+            // Server without special-use: the name decides below.
+        }
+
+        return FolderNames::isExcludedFromSearch((string) $ordner->path());
+    }
+
+    private function refuseEmpty(Criteria $criteria): void
+    {
+        if ($criteria->isEmpty()) {
+            throw new InvalidArgumentException(
+                'An empty search would match every message in the mailbox. Ask for something.'
+            );
+        }
     }
 
     /**

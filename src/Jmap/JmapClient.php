@@ -4,13 +4,16 @@ namespace Peppermint\Mailbox\Jmap;
 
 use Closure;
 use Illuminate\Support\Facades\Http;
+use InvalidArgumentException;
 use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Contracts\TokenRefresher;
+use Peppermint\Mailbox\Folders\FolderNames;
 use Peppermint\Mailbox\Imap\FolderPaths;
 use Peppermint\Mailbox\Imap\FolderResolver;
 use Peppermint\Mailbox\Imap\MessagePage;
 use Peppermint\Mailbox\Imap\SystemFolders;
 use Peppermint\Mailbox\Models\MailAccount;
+use Peppermint\Mailbox\Search\Criteria;
 use RuntimeException;
 
 /**
@@ -258,6 +261,130 @@ class JmapClient implements Mailbox
         $mails = $this->antwortZu($antwort, 'g0')['list'] ?? [];
 
         return [array_map(fn (array $mail): array => $this->formatter->summary($mail), $mails), $gesamt];
+    }
+
+    /**
+     * Search one folder.
+     *
+     * @return array{0: list<array<string, mixed>>, 1: int}
+     */
+    public function search(string $folder, Criteria $criteria, int $limit = 50): array
+    {
+        $this->refuseEmpty($criteria);
+
+        $ordner = $this->folderNamed($folder);
+
+        if ($ordner === null) {
+            return [[], 0];
+        }
+
+        [$mails, $gesamt] = $this->find(array_merge($criteria->toJmapFilter(), ['inMailbox' => $ordner['id']]), $limit);
+
+        return [array_map(fn (array $m): array => $this->formatter->summary($m), $mails), $gesamt];
+    }
+
+    /**
+     * Search every folder worth searching — in ONE request.
+     *
+     * JMAP has `inMailboxOtherThan`, so the folders to leave out are named and
+     * the rest is searched together. The IMAP side has to walk folder by
+     * folder and cap each one, because IMAP cannot query across folders at all.
+     *
+     * That makes `$perFolder` meaningless here, and the difference is worth
+     * stating rather than hiding: over IMAP a busy folder can crowd the result
+     * out at ten hits, while this returns the genuinely newest ones across the
+     * mailbox. Same shape, better answer — and the parameter stays in the
+     * signature so a product does not have to ask which transport it is on.
+     *
+     * @return array{0: list<array<string, mixed>>, 1: int, 2: int}
+     */
+    public function searchAll(Criteria $criteria, int $limit = 50, int $perFolder = 10): array
+    {
+        $this->refuseEmpty($criteria);
+
+        $ordner = $this->folders();
+        $raus = array_values(array_filter(
+            $ordner,
+            fn (array $f): bool => in_array($f['role'], ['trash', 'junk', 'drafts'], true)
+                || FolderNames::isExcludedFromSearch($f['path']),
+        ));
+
+        $filter = $criteria->toJmapFilter();
+
+        if ($raus !== []) {
+            $filter['inMailboxOtherThan'] = array_column($raus, 'id');
+        }
+
+        [$mails, $gesamt] = $this->find($filter, $limit, ['mailboxIds']);
+
+        $pfadZu = array_column($ordner, 'path', 'id');
+        $zeilen = [];
+
+        foreach ($mails as $mail) {
+            $zeile = $this->formatter->summary($mail);
+            // Ein Treffer ohne seinen Ordner laesst sich nicht oeffnen. Eine
+            // Mail kann in mehreren liegen; genommen wird der erste, der nicht
+            // ausgeschlossen ist — der, in dem sie gefunden wurde.
+            $zeile['folder'] = $this->foundIn($mail, $pfadZu, array_column($raus, 'id'));
+            $zeilen[] = $zeile;
+        }
+
+        return [$zeilen, $gesamt, count($ordner) - count($raus)];
+    }
+
+    /**
+     * @param  array<string, string>  $pfadZu  Ordner-ID → Pfad
+     * @param  list<string>  $ausgeschlossen
+     */
+    private function foundIn(array $mail, array $pfadZu, array $ausgeschlossen): ?string
+    {
+        foreach (array_keys($mail['mailboxIds'] ?? []) as $id) {
+            if (! in_array($id, $ausgeschlossen, true) && isset($pfadZu[$id])) {
+                return $pfadZu[$id];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Query and rows in one request — the shape every listing here uses.
+     *
+     * @param  array<string, mixed>  $filter
+     * @param  list<string>  $extra  additional properties this caller needs
+     * @return array{0: list<array<string, mixed>>, 1: int}
+     */
+    private function find(array $filter, int $limit, array $extra = []): array
+    {
+        $antwort = $this->call([
+            ['Email/query', [
+                'accountId' => $this->session()->accountId,
+                'filter' => $filter,
+                'sort' => [['property' => 'receivedAt', 'isAscending' => false]],
+                'limit' => $limit,
+                'calculateTotal' => true,
+            ], 'q0'],
+            ['Email/get', [
+                'accountId' => $this->session()->accountId,
+                '#ids' => ['resultOf' => 'q0', 'name' => 'Email/query', 'path' => '/ids'],
+                'properties' => array_merge(self::SUMMARY_PROPERTIES, $extra),
+                'bodyProperties' => self::BODY_PROPERTIES,
+            ], 'g0'],
+        ]);
+
+        return [
+            $this->antwortZu($antwort, 'g0')['list'] ?? [],
+            (int) ($this->antwortZu($antwort, 'q0')['total'] ?? 0),
+        ];
+    }
+
+    private function refuseEmpty(Criteria $criteria): void
+    {
+        if ($criteria->isEmpty()) {
+            throw new InvalidArgumentException(
+                'An empty search would match every message in the mailbox. Ask for something.'
+            );
+        }
     }
 
     /**
