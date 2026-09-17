@@ -256,6 +256,53 @@ class MailboxClient implements Mailbox
     }
 
     /**
+     * One page of a folder's message list.
+     *
+     * Der ganze Ablauf an einer Stelle — und in der Reihenfolge, die zaehlt:
+     * hundert Zeilen OHNE Rumpf holen, sortieren, im Gesendet-Ordner
+     * entdoppeln, schneiden, und erst die sichtbaren formatieren.
+     *
+     * Vorher stand genau das in jedem Produkt einzeln, hinter einem
+     * `headerRows()`, das alle hundert formatierte — und damit ueber IMAP
+     * hundert Rumpf-Abrufe ausloeste. Siehe Bug #877.
+     *
+     * @return array{0: list<array<string, mixed>>, 1: int}
+     */
+    public function page(string $folder, int $page = 1, int $perPage = 25): array
+    {
+        return $this->session(function ($mailbox) use ($folder, $page, $perPage): array {
+            $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+
+            if (! $ordner) {
+                return [[], 0];
+            }
+
+            $abfrage = $ordner->messages()->newest();
+            $gesamt = $abfrage->count();
+
+            $zeilen = MessagePage::sortByDateDesc($this->cheapRows(
+                $abfrage->withHeaders()->withFlags()->limit(MessagePage::FETCH_LIMIT)->get()
+            ));
+
+            if (MessagePage::isSentFolder($ordner->path())) {
+                // Viele Server legen beim Senden selbst eine Kopie ab, waehrend
+                // der Client seine eigene anhaengt.
+                $zeilen = MessagePage::dedupe($zeilen);
+            }
+
+            $effektiv = MessagePage::effectiveTotal($gesamt, count($zeilen));
+
+            return [
+                array_map(
+                    fn (array $zeile): array => $this->formatter->summary($zeile['message']),
+                    MessagePage::slice($zeilen, $page, $perPage),
+                ),
+                $effektiv,
+            ];
+        });
+    }
+
+    /**
      * One page of conversations.
      *
      * The window is the same hundred rows the flat list uses — and they are

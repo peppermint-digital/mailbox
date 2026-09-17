@@ -265,6 +265,32 @@ class JmapClient implements Mailbox
     }
 
     /**
+     * One page of a folder's message list.
+     *
+     * Dieselben Regeln wie ueber IMAP — nur ohne die teure Stelle: JMAP
+     * liefert die Vorschau mit der Zeile, es gibt keinen Rumpf nachzuholen.
+     * Die Entdopplung im Gesendet-Ordner bleibt trotzdem: Sie haengt am
+     * Server, der beim Senden selbst eine Kopie ablegt, nicht am Protokoll.
+     *
+     * @return array{0: list<array<string, mixed>>, 1: int}
+     */
+    public function page(string $folder, int $page = 1, int $perPage = 25): array
+    {
+        [$zeilen, $gesamt] = $this->headerRows($folder, MessagePage::FETCH_LIMIT);
+
+        $zeilen = MessagePage::sortByDateDesc($zeilen);
+
+        if (MessagePage::isSentFolder($folder)) {
+            $zeilen = MessagePage::dedupe($zeilen);
+        }
+
+        return [
+            MessagePage::slice($zeilen, $page, $perPage),
+            MessagePage::effectiveTotal($gesamt, count($zeilen)),
+        ];
+    }
+
+    /**
      * One page of conversations.
      *
      * The server knows its own threads (`threadId`, `collapseThreads`) and

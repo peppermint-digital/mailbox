@@ -87,10 +87,33 @@ interface Mailbox
     public function deleteFolder(string $path): void;
 
     /**
+     * One page of a folder's message list — sorted, deduplicated, formatted.
+     *
+     * This is the verb a mail browser needs, and it exists because all three
+     * products were assembling it by hand out of four package calls: fetch,
+     * sort, dedupe in the sent folder, slice. Four chances to differ, and they
+     * did.
+     *
+     * The order is the point. A hundred rows are fetched WITHOUT bodies so the
+     * sort has something to sort; only the rows that end up visible are
+     * formatted. Formatting touches the body, and over IMAP a body that was
+     * not loaded is fetched on the spot — formatting all hundred to show
+     * twenty-five is seventy-five round trips nobody asked for.
+     *
+     * The total is the smaller of what the server reports and what was
+     * fetched: reporting the server's count offers pages that come back empty,
+     * reporting the fetched count alone hides that there is more.
+     *
+     * @return array{0: list<array<string, mixed>>, 1: int}
+     */
+    public function page(string $folder, int $page = 1, int $perPage = 25): array;
+
+    /**
      * Header rows of a folder, plus how many there are in total.
      *
-     * Deliberately without bodies: sorting and cutting happen on these rows,
-     * and only the visible page is formatted afterwards.
+     * The low-level verb: everything the folder holds in one go, formatted.
+     * For a list view take {@see page()} instead — over IMAP this one formats
+     * every row it fetched, and formatting is what touches the body.
      *
      * @return array{0: list<array<string, mixed>>, 1: int}
      */

@@ -272,3 +272,97 @@ describe('Ketten (JMAP)', function () {
         expect(array_keys($jmap))->toBe(array_keys($imap));
     });
 });
+
+describe('eine Seite der Liste', function () {
+    it('formatiert nur die sichtbaren Zeilen, nicht alle geholten', function () {
+        // Bug #877: headerRows() formatierte alle hundert — und formatieren
+        // fasst den Rumpf an, den ImapEngine dann einzeln nachholt.
+        $zaehler = new class
+        {
+            public int $anzahl = 0;
+        };
+
+        $nachrichten = [];
+
+        for ($i = 1; $i <= 40; $i++) {
+            $nachrichten[] = kettenNachricht($i, "Sache {$i}", sprintf('2026-09-%02dT10:00:00+00:00', $i % 28 + 1), "<m{$i}@x>");
+        }
+
+        [$zeilen, $gesamt] = kettenKlient($nachrichten, $zaehler)->page('INBOX', page: 1, perPage: 25);
+
+        expect($zeilen)->toHaveCount(25)
+            ->and($gesamt)->toBe(40)
+            ->and($zaehler->anzahl)->toBe(25);
+    });
+
+    it('sortiert nach Datum, nicht nach uid', function () {
+        // uid sagt, wann der Server die Mail sah. Ein gestern empfangener
+        // alter Brief stuende sonst oben.
+        $klient = kettenKlient([
+            kettenNachricht(9, 'alt', '2026-01-02T10:00:00+00:00', '<a@x>'),
+            kettenNachricht(1, 'neu', '2026-09-03T10:00:00+00:00', '<b@x>'),
+        ]);
+
+        [$zeilen] = $klient->page('INBOX');
+
+        expect($zeilen[0]['subject'])->toBe('neu');
+    });
+
+    it('entdoppelt im Gesendet-Ordner, sonst nicht', function () {
+        // Viele Server legen beim Senden selbst eine Kopie ab, waehrend der
+        // Client seine eigene anhaengt: zwei Zeilen, eine Mail.
+        $doppelt = [
+            kettenNachricht(1, 'Angebot', '2026-09-03T10:00:00+00:00', '<a@x>'),
+            kettenNachricht(2, 'Angebot', '2026-09-03T10:00:00+00:00', '<a@x>'),
+        ];
+
+        $gesendet = new MailboxClient(
+            account: MailAccount::fromRemote([
+                'id' => 1, 'email' => 'post@example.test', 'password' => 'geheim',
+                'imap_host' => 'imap.example.test', 'auth_type' => 'password',
+                'oauth_access_token' => null, 'oauth_token_expires_at' => null,
+            ]),
+            retry: new RetryPolicy(maxRetries: 1, sleeper: fn () => null, jitter: fn () => 0.0),
+            connector: fn () => suchPostfach([suchOrdner('Sent', ['\\Sent'], $doppelt)]),
+            formatter: zaehlenderFormatierer(new class
+            {
+                public int $anzahl = 0;
+            }),
+        );
+
+        [$imGesendeten] = $gesendet->page('Sent');
+        [$imEingang] = kettenKlient($doppelt)->page('INBOX');
+
+        expect($imGesendeten)->toHaveCount(1)
+            ->and($imEingang)->toHaveCount(2);
+    });
+
+    it('verspricht nicht mehr Seiten, als es Zeilen gibt', function () {
+        // Der Server zaehlt 500, geholt wurden 100 — wer 500 meldet, bietet
+        // Seiten an, die leer zurueckkommen.
+        $klient = kettenKlient([kettenNachricht(1, 'Eine', '2026-09-03T10:00:00+00:00', '<a@x>')]);
+
+        [, $gesamt] = $klient->page('INBOX');
+
+        expect($gesamt)->toBe(1);
+    });
+
+    it('macht es ueber JMAP genauso — nur ohne die teure Stelle', function () {
+        $klient = jmapKlient([
+            'Mailbox/get' => [jmapOrdner()],
+            'Email/query' => [
+                ['Email/query', ['ids' => ['m1', 'm2'], 'total' => 2], 'q0'],
+                ['Email/get', ['list' => [
+                    ['id' => 'm1', 'subject' => 'alt', 'messageId' => ['a@x'], 'attachments' => [], 'receivedAt' => '2026-01-02T10:00:00Z'],
+                    ['id' => 'm2', 'subject' => 'neu', 'messageId' => ['b@x'], 'attachments' => [], 'receivedAt' => '2026-09-03T10:00:00Z'],
+                ]], 'g0'],
+            ],
+        ]);
+
+        [$zeilen, $gesamt] = $klient->page('Inbox', perPage: 1);
+
+        expect($zeilen)->toHaveCount(1)
+            ->and($zeilen[0]['subject'])->toBe('neu')
+            ->and($gesamt)->toBe(2);
+    });
+});
