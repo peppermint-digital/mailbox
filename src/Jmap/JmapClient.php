@@ -14,6 +14,7 @@ use Peppermint\Mailbox\Imap\MessagePage;
 use Peppermint\Mailbox\Imap\SystemFolders;
 use Peppermint\Mailbox\Models\MailAccount;
 use Peppermint\Mailbox\Search\Criteria;
+use Peppermint\Mailbox\Threading\ThreadPage;
 use RuntimeException;
 
 /**
@@ -261,6 +262,43 @@ class JmapClient implements Mailbox
         $mails = $this->antwortZu($antwort, 'g0')['list'] ?? [];
 
         return [array_map(fn (array $mail): array => $this->formatter->summary($mail), $mails), $gesamt];
+    }
+
+    /**
+     * One page of conversations.
+     *
+     * The server knows its own threads (`threadId`, `collapseThreads`) and
+     * could do this in one call. It deliberately does not: the grouping rules
+     * are the same for every transport, and a JMAP mailbox whose conversations
+     * were cut differently than an IMAP one would be a difference nobody
+     * ordered — in a list nobody changed. Server-side threading is worth
+     * having, as a decision, not as a side effect of the transport.
+     *
+     * What IS different: nothing has to be held back here. JMAP delivers the
+     * preview with the row, so there is no body to fetch later and no reason
+     * to format only the visible page.
+     *
+     * @param  null|callable(list<string>): list<array<string, mixed>>  $ownReplies
+     * @param  list<string>  $excludeThreadIds
+     * @return array{0: list<array<string, mixed>>, 1: int}
+     */
+    public function threads(
+        string $folder,
+        int $page = 1,
+        int $perPage = 25,
+        ?callable $ownReplies = null,
+        array $excludeThreadIds = [],
+    ): array {
+        [$zeilen] = $this->headerRows($folder, MessagePage::FETCH_LIMIT);
+
+        return ThreadPage::of(
+            $zeilen,
+            $ownReplies,
+            $page,
+            $perPage,
+            $excludeThreadIds,
+            fn (array $zeile): array => $zeile,
+        );
     }
 
     /**

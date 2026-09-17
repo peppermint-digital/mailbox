@@ -11,6 +11,7 @@ use Peppermint\Mailbox\Contracts\TokenRefresher;
 use Peppermint\Mailbox\Folders\FolderNames;
 use Peppermint\Mailbox\Models\MailAccount;
 use Peppermint\Mailbox\Search\Criteria;
+use Peppermint\Mailbox\Threading\ThreadPage;
 use RuntimeException;
 
 /**
@@ -252,6 +253,93 @@ class MailboxClient implements Mailbox
 
             return [$zeilen, $gesamt];
         });
+    }
+
+    /**
+     * One page of conversations.
+     *
+     * The window is the same hundred rows the flat list uses — and they are
+     * fetched WITHOUT bodies here. Grouping needs headers and flags, nothing
+     * else; only the newest message of each visible chain is formatted in
+     * full afterwards.
+     *
+     * That is not a detail. Formatting a row touches its body, and over IMAP a
+     * body that was not loaded is fetched on the spot: a hundred formatted rows
+     * are a hundred round trips for the twenty-five a person sees. Measured in
+     * the Manager on 11.06.2026, where it cost roughly four times the load.
+     *
+     * @param  null|callable(list<string>): list<array<string, mixed>>  $ownReplies
+     * @param  list<string>  $excludeThreadIds
+     * @return array{0: list<array<string, mixed>>, 1: int}
+     */
+    public function threads(
+        string $folder,
+        int $page = 1,
+        int $perPage = 25,
+        ?callable $ownReplies = null,
+        array $excludeThreadIds = [],
+    ): array {
+        return $this->session(function ($mailbox) use ($folder, $page, $perPage, $ownReplies, $excludeThreadIds): array {
+            $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+
+            if (! $ordner) {
+                return [[], 0];
+            }
+
+            $zeilen = $this->cheapRows(
+                $ordner->messages()->newest()->withHeaders()->withFlags()->limit(MessagePage::FETCH_LIMIT)->get()
+            );
+
+            return ThreadPage::of(
+                $zeilen,
+                $ownReplies,
+                $page,
+                $perPage,
+                $excludeThreadIds,
+                // Erst hier wird der Rumpf angefasst — für die eine Nachricht
+                // je sichtbarer Kette, die in der Liste steht.
+                fn (array $zeile): array => isset($zeile['message'])
+                    ? $this->formatter->summary($zeile['message'])
+                    : array_diff_key($zeile, ['message' => null]),
+            );
+        });
+    }
+
+    /**
+     * Header rows without touching a single body.
+     *
+     * Each row keeps its message object so the page that ends up visible can
+     * still be formatted in full. It never leaves the package: ThreadPage
+     * strips it before the rows go out.
+     *
+     * @param  iterable<mixed>  $messages
+     * @return list<array<string, mixed>>
+     */
+    private function cheapRows(iterable $messages): array
+    {
+        $zeilen = [];
+
+        foreach ($messages as $nachricht) {
+            $von = $nachricht->from();
+
+            $zeilen[] = [
+                'message' => $nachricht,
+                'uid' => $nachricht->uid(),
+                'message_id' => $nachricht->messageId(),
+                'subject' => $nachricht->subject(),
+                'date' => $nachricht->date()?->toIso8601String(),
+                'from_address' => $von?->email() ?? '',
+                'from_name' => $von?->name() ?? '',
+                'is_read' => $nachricht->isSeen(),
+                'is_flagged' => $nachricht->isFlagged(),
+                // Kostet nichts extra: mit withHeaders() sind sie schon da —
+                // und ohne sie lässt sich nichts zu Ketten gruppieren.
+                'in_reply_to' => $nachricht->header('in-reply-to')?->getValue(),
+                'references' => $nachricht->header('references')?->getValue(),
+            ];
+        }
+
+        return $zeilen;
     }
 
     /**

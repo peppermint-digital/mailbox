@@ -130,6 +130,34 @@ interface Mailbox
     public function searchAll(Criteria $criteria, int $limit = 50, int $perFolder = 10): array;
 
     /**
+     * One page of conversations from a folder.
+     *
+     * Chains, not messages: paging over conversations is what a mail browser
+     * shows, and paging over messages would tear a conversation across two
+     * pages.
+     *
+     * `$ownReplies` is called once, with the thread keys of the rows that were
+     * fetched, and answers with the product's own stored replies. A sent reply
+     * lives in the product's database, not necessarily in the folder being
+     * listed — and the package must not know that table. One query, not one
+     * per chain.
+     *
+     * Put-aside chains are removed BEFORE paging, or the count says one thing
+     * and the list shows another.
+     *
+     * @param  null|callable(list<string>): list<array<string, mixed>>  $ownReplies
+     * @param  list<string>  $excludeThreadIds
+     * @return array{0: list<array<string, mixed>>, 1: int}
+     */
+    public function threads(
+        string $folder,
+        int $page = 1,
+        int $perPage = 25,
+        ?callable $ownReplies = null,
+        array $excludeThreadIds = [],
+    ): array;
+
+    /**
      * One message, in full. Null when it is not there any more.
      *
      * @return array<string, mixed>|null
