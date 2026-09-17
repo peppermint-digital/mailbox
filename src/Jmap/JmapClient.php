@@ -441,16 +441,56 @@ class JmapClient implements Mailbox
     /**
      * The folder meant by a name or a path.
      *
+     * ## INBOX is a name, not a spelling
+     *
+     * IMAP guarantees every mailbox an inbox called INBOX, and it is the one
+     * folder name the protocol treats case-insensitively. Every product
+     * therefore asks for `INBOX` — it is the default in both mail browsers.
+     *
+     * JMAP has no such name. Our server calls the folder `Inbox`, and an exact
+     * match against `INBOX` finds nothing. That does not fail: the list comes
+     * back empty, the mailbox looks empty, and nobody sees an error. Measured
+     * live on 17.09.2026, and the reason this comparison exists.
+     *
+     * So the role decides: the server says which folder is the inbox, in every
+     * spelling and every language. Exact matches still win — a folder someone
+     * literally named "INBOX" is theirs, not ours to reinterpret.
+     *
      * @return array<string, mixed>|null
      */
     private function folderNamed(string $wanted): ?array
     {
-        return FolderResolver::resolve(
+        $genau = FolderResolver::resolve(
             $this->folders(),
             $wanted,
             fn (array $f): string => $f['path'],
             fn (array $f): string => $f['name'],
         );
+
+        if ($genau !== null) {
+            return $genau;
+        }
+
+        if (mb_strtoupper($wanted) === 'INBOX') {
+            foreach ($this->folders() as $ordner) {
+                if ($ordner['role'] === 'inbox') {
+                    return $ordner;
+                }
+            }
+        }
+
+        // Last resort, and only on case: a product that stored "archives/2025"
+        // means the same folder as "Archives/2025". Anything beyond case stays
+        // a miss — guessing further is how the wrong folder gets opened.
+        $gesucht = mb_strtolower($wanted);
+
+        foreach ($this->folders() as $ordner) {
+            if (mb_strtolower($ordner['path']) === $gesucht || mb_strtolower($ordner['name']) === $gesucht) {
+                return $ordner;
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -178,6 +178,61 @@ describe('Kopfzeilen-Zeilen', function () {
             ->and($zeilen[0]['is_read'])->toBeTrue();
     });
 
+    it('findet INBOX, obwohl der Ordner Inbox heisst', function () {
+        // Beide Produkte fragen per Vorgabe nach "INBOX" — das ist der Name,
+        // den IMAP garantiert. JMAP kennt ihn nicht; unser Server sagt "Inbox".
+        // Ohne diese Bruecke kam die Liste leer zurueck, ohne jeden Fehler:
+        // live gemessen am 17.09.2026.
+        $klient = jmapKlient([
+            'Mailbox/get' => [jmapOrdner()],
+            'Email/query' => [
+                ['Email/query', ['ids' => ['m1'], 'total' => 13], 'q0'],
+                ['Email/get', ['list' => [['id' => 'm1', 'subject' => 'Da', 'attachments' => []]]], 'g0'],
+            ],
+        ]);
+
+        [$zeilen, $gesamt] = $klient->headerRows('INBOX');
+
+        expect($gesamt)->toBe(13)->and($zeilen)->toHaveCount(1);
+    });
+
+    it('findet INBOX auch, wenn der Ordner ganz anders heisst — ueber die Rolle', function () {
+        // Ein Server auf Deutsch nennt ihn "Posteingang". Da hilft keine
+        // Schreibweise mehr; nur die Rolle sagt, welcher Ordner gemeint ist.
+        $deutsch = ['Mailbox/get', ['list' => [
+            ['id' => 'a', 'name' => 'Posteingang', 'parentId' => null, 'role' => 'inbox'],
+            ['id' => 'e', 'name' => 'Gesendet', 'parentId' => null, 'role' => 'sent'],
+        ]], 'f0'];
+
+        $klient = jmapKlient([
+            'Mailbox/get' => [$deutsch],
+            'Email/query' => [
+                ['Email/query', ['ids' => [], 'total' => 7], 'q0'],
+                ['Email/get', ['list' => []], 'g0'],
+            ],
+        ], $protokoll);
+
+        [, $gesamt] = $klient->headerRows('INBOX');
+
+        expect($gesamt)->toBe(7)
+            ->and(collect($protokoll)->last()['payload']['methodCalls'][0][1]['filter'])
+            ->toBe(['inMailbox' => 'a']);
+    });
+
+    it('findet einen Ordner auch bei abweichender Gross-/Kleinschreibung', function () {
+        $klient = jmapKlient([
+            'Mailbox/get' => [jmapOrdner()],
+            'Email/query' => [
+                ['Email/query', ['ids' => [], 'total' => 180], 'q0'],
+                ['Email/get', ['list' => []], 'g0'],
+            ],
+        ]);
+
+        [, $gesamt] = $klient->headerRows('archives/2025');
+
+        expect($gesamt)->toBe(180);
+    });
+
     it('antwortet auf einen unbekannten Ordner mit leer, nicht mit einem Fehler', function () {
         [$zeilen, $gesamt] = jmapKlient()->headerRows('Gibt-Es-Nicht');
 
