@@ -2,7 +2,9 @@
 
 namespace Peppermint\Mailbox\Imap;
 
-use DirectoryTree\ImapEngine\Mailbox;
+use DirectoryTree\ImapEngine\Mailbox as ImapEngineMailbox;
+use DirectoryTree\ImapEngine\MailboxInterface;
+use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Contracts\TokenRefresher;
 use Peppermint\Mailbox\Models\MailAccount;
 use RuntimeException;
@@ -21,16 +23,26 @@ use RuntimeException;
  * the same worker inherits a socket whose server may have dropped it in the
  * meantime. The symptom is an error on an action nobody did anything wrong in.
  *
- * Cheap it is not; correct it is. Products that need a batch of operations
- * should pass them to {@see session()} rather than calling ten methods.
+ * Cheap it is not; correct it is. Products that need several operations at
+ * once pass them to {@see batch()}, which holds one connection for their
+ * duration — and hands out this client, not the driver object underneath.
  *
  * ## The token is refreshed before connecting, not after failing
  *
  * An expired token gives an authentication error that looks exactly like a
  * wrong password. Refreshing first turns a confusing failure into no failure.
  */
-class MailboxClient
+class MailboxClient implements Mailbox
 {
+    /**
+     * The connection a running {@see batch()} holds, or null.
+     *
+     * Not a cache: it lives for the duration of one batch and is dropped in
+     * the same `finally` that disconnects it. A connection that outlives its
+     * batch would be exactly the held socket the class comment warns about.
+     */
+    private mixed $open = null;
+
     public function __construct(
         private readonly MailAccount $account,
         private readonly ?TokenRefresher $refresher = null,
@@ -43,13 +55,13 @@ class MailboxClient
          * without a server — and so a product with its own IMAP setup can
          * keep it.
          *
-         * @var null|\Closure(array): \DirectoryTree\ImapEngine\MailboxInterface
+         * @var null|\Closure(array): MailboxInterface
          */
         private readonly ?\Closure $connector = null,
         /** Turns an IMAP message into rows; swappable for a product that needs more. */
         private readonly MessageFormatter $formatter = new MessageFormatter,
     ) {
-        if (! $connector && ! class_exists(Mailbox::class)) {
+        if (! $connector && ! class_exists(ImapEngineMailbox::class)) {
             throw new RuntimeException(
                 'directorytree/imapengine is required to talk to a mailbox. '
                 .'It is a suggest of peppermint/mailbox: install it in the product that reads mail.'
@@ -58,23 +70,52 @@ class MailboxClient
     }
 
     /**
+     * Runs several operations over one connection.
+     *
+     * The callback is handed this client, not the mailbox object underneath —
+     * a caller that receives the driver is tied to IMAP, and the whole point
+     * of {@see Mailbox} is that it is not.
+     *
+     * Retries wrap the whole callback, because a retry means a new connection
+     * and everything done on the old one is gone with it.
+     *
+     * @template T
+     *
+     * @param  callable(self): T  $work
+     * @return T
+     */
+    public function batch(callable $work): mixed
+    {
+        return $this->session(fn (): mixed => $work($this));
+    }
+
+    /**
      * Opens a connection, runs the callback, closes it — with retries.
+     *
+     * Inside a running batch the open connection is reused and left open: the
+     * batch opened it and the batch closes it.
      *
      * @template T
      *
      * @param  callable(mixed): T  $work
      * @return T
      */
-    public function session(callable $work): mixed
+    private function session(callable $work): mixed
     {
+        if ($this->open !== null) {
+            return $work($this->open);
+        }
+
         $policy = $this->retry ?? new RetryPolicy;
 
         return $policy->run(function () use ($work) {
             $mailbox = $this->connect();
+            $this->open = $mailbox;
 
             try {
                 return $work($mailbox);
             } finally {
+                $this->open = null;
                 $mailbox->disconnect();
             }
         }, $this->onRetry);
@@ -180,29 +221,33 @@ class MailboxClient
      * um fuenfundzwanzig zu zeigen, sind fuenfundsiebzig Rumpf-Abrufe, die
      * niemand wollte.
      *
-     * Wird innerhalb einer {@see session()} gerufen, damit mehrere Ordner
-     * ueber dieselbe Verbindung gehen koennen.
+     * Mehrere Ordner ueber dieselbe Verbindung: in ein {@see batch()} packen.
+     * Frueher nahm diese Methode das Postfach-Objekt entgegen — das war der
+     * einzige Grund, warum ein Produkt es ueberhaupt in die Hand bekam, und
+     * damit der einzige Grund, warum es IMAP kennen musste.
      *
      * @return array{0: list<array<string, mixed>>, 1: int}
      */
-    public function headerRows(mixed $mailbox, string $folder, int $limit = MessagePage::FETCH_LIMIT): array
+    public function headerRows(string $folder, int $limit = MessagePage::FETCH_LIMIT): array
     {
-        $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+        return $this->session(function ($mailbox) use ($folder, $limit): array {
+            $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
 
-        if (! $ordner) {
-            return [[], 0];
-        }
+            if (! $ordner) {
+                return [[], 0];
+            }
 
-        $abfrage = $ordner->messages()->newest();
-        $gesamt = $abfrage->count();
+            $abfrage = $ordner->messages()->newest();
+            $gesamt = $abfrage->count();
 
-        $zeilen = [];
+            $zeilen = [];
 
-        foreach ($abfrage->withHeaders()->withFlags()->limit($limit)->get() as $nachricht) {
-            $zeilen[] = $this->formatter->summary($nachricht);
-        }
+            foreach ($abfrage->withHeaders()->withFlags()->limit($limit)->get() as $nachricht) {
+                $zeilen[] = $this->formatter->summary($nachricht);
+            }
 
-        return [$zeilen, $gesamt];
+            return [$zeilen, $gesamt];
+        });
     }
 
     /**
@@ -210,13 +255,12 @@ class MailboxClient
      *
      * Null, wenn sie nicht (mehr) da ist — ein geteiltes Postfach aendert sich,
      * waehrend jemand hineinsieht.
-     *
      */
-    public function message(string $folder, int $uid): ?array
+    public function message(string $folder, int|string $uid): ?array
     {
         return $this->session(function ($mailbox) use ($folder, $uid): ?array {
             $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
-            $nachricht = $ordner?->messages()->withHeaders()->withFlags()->withBody()->find($uid);
+            $nachricht = $ordner?->messages()->withHeaders()->withFlags()->withBody()->find((int) $uid);
 
             if (! $nachricht) {
                 return null;
@@ -243,14 +287,14 @@ class MailboxClient
      * two here, or people file the wrong thing.
      *
      * @return array{filename: string, mime_type: string, contents: string}|null
-     *         null when the message or the position is gone — a mailbox is
-     *         shared and things move.
+     *                                                                           null when the message or the position is gone — a mailbox is
+     *                                                                           shared and things move.
      */
-    public function attachment(string $folder, int $uid, int $index): ?array
+    public function attachment(string $folder, int|string $uid, int $index): ?array
     {
         return $this->session(function ($mailbox) use ($folder, $uid, $index): ?array {
             $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
-            $nachricht = $ordner?->messages()->withHeaders()->withBody()->find($uid);
+            $nachricht = $ordner?->messages()->withHeaders()->withBody()->find((int) $uid);
 
             if (! $nachricht) {
                 return null;
@@ -270,7 +314,7 @@ class MailboxClient
      * read" on a mail a colleague just filed should see nothing happen, not an
      * error about a uid.
      */
-    public function setSeen(string $folder, int $uid, bool $seen): bool
+    public function setSeen(string $folder, int|string $uid, bool $seen): bool
     {
         return $this->onMessage($folder, $uid, function ($message) use ($seen): bool {
             $seen ? $message->markSeen() : $message->unmarkSeen();
@@ -280,7 +324,7 @@ class MailboxClient
     }
 
     /** Sets or clears the flag. Returns false when the message is gone. */
-    public function setFlagged(string $folder, int $uid, bool $flagged): bool
+    public function setFlagged(string $folder, int|string $uid, bool $flagged): bool
     {
         return $this->onMessage($folder, $uid, function ($message) use ($flagged): bool {
             $flagged ? $message->markFlagged() : $message->unmarkFlagged();
@@ -296,7 +340,7 @@ class MailboxClient
      * asking the server: it is not an error, nothing needs to happen, and some
      * servers refuse it in a way that reads like a real failure.
      */
-    public function move(string $from, int $uid, string $to): bool
+    public function move(string $from, int|string $uid, string $to): bool
     {
         if ($from === $to) {
             return true;
@@ -310,7 +354,7 @@ class MailboxClient
                 return false;
             }
 
-            $message = $quelle->messages()->find($uid);
+            $message = $quelle->messages()->find((int) $uid);
 
             if (! $message) {
                 return false;
@@ -330,9 +374,9 @@ class MailboxClient
      * message actually go. Deleting outright from the inbox would be a
      * different promise than the button makes.
      *
-     * @param  list<string>  $trashNames lowercase aliases of the trash folder
+     * @param  list<string>  $trashNames  lowercase aliases of the trash folder
      */
-    public function delete(string $folder, int $uid, array $trashNames = ['trash', 'papierkorb', 'deleted items', 'gelöschte elemente']): bool
+    public function delete(string $folder, int|string $uid, array $trashNames = ['trash', 'papierkorb', 'deleted items', 'gelöschte elemente']): bool
     {
         return $this->session(function ($mailbox) use ($folder, $uid, $trashNames): bool {
             $quelle = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
@@ -341,7 +385,7 @@ class MailboxClient
                 return false;
             }
 
-            $message = $quelle->messages()->find($uid);
+            $message = $quelle->messages()->find((int) $uid);
 
             if (! $message) {
                 return false;
@@ -372,11 +416,11 @@ class MailboxClient
      *
      * @param  callable(mixed): bool  $work
      */
-    private function onMessage(string $folder, int $uid, callable $work): bool
+    private function onMessage(string $folder, int|string $uid, callable $work): bool
     {
         return $this->session(function ($mailbox) use ($folder, $uid, $work): bool {
             $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
-            $message = $ordner?->messages()->find($uid);
+            $message = $ordner?->messages()->find((int) $uid);
 
             if (! $message) {
                 return false;
@@ -403,7 +447,7 @@ class MailboxClient
 
         $settings = ConnectionSettings::for($this->account, $this->timeout)->values;
 
-        return $this->connector ? ($this->connector)($settings) : Mailbox::make($settings);
+        return $this->connector ? ($this->connector)($settings) : ImapEngineMailbox::make($settings);
     }
 
     private function folderAt($mailbox, string $path): mixed

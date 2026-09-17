@@ -4,6 +4,7 @@ namespace Peppermint\Mailbox\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -100,6 +101,65 @@ class MailAccount extends Model
     }
 
     /**
+     * Which protocol this mailbox is reached with.
+     *
+     * Falls back to `imap` rather than asking the schema: a product that
+     * adopted its grown table and never added the column reads `null` here,
+     * and `null` means the same thing it meant before the column existed.
+     * Asking `Schema::hasColumn` would put a query in front of every single
+     * connection to answer a question the default already answers.
+     *
+     * ## Why this is not called protocol()
+     *
+     * Because the column is. Eloquent takes a method whose name matches an
+     * attribute for a relation and calls it from `getAttribute()` — so
+     * `protocol()` reading `field('protocol')` calls itself until the memory
+     * is gone. The failure is a fatal out-of-memory in an unrelated place,
+     * not a hint about naming, so the next person to try it loses the same
+     * half hour.
+     */
+    public function transport(): string
+    {
+        $wert = $this->field('protocol');
+
+        return is_string($wert) && $wert !== '' ? $wert : 'imap';
+    }
+
+    public function usesJmap(): bool
+    {
+        return $this->transport() === 'jmap';
+    }
+
+    /**
+     * Where the JMAP session document lives.
+     *
+     * Stored only where it has to be. The standard says the session document
+     * is found at `/.well-known/jmap` on the mail host, and for a server that
+     * follows it — ours does — a stored URL would be a second copy of the
+     * hostname that can drift away from the first.
+     *
+     * Null when there is no host at all: a mailbox without one cannot be
+     * reached by any protocol, and inventing a URL from nothing would turn
+     * that into a confusing connection error instead of a clear no.
+     */
+    public function jmapSessionUrl(): ?string
+    {
+        $eigene = $this->field('jmap_url');
+
+        if (is_string($eigene) && $eigene !== '') {
+            return $eigene;
+        }
+
+        $host = $this->field('imap_host');
+
+        if (! is_string($host) || $host === '') {
+            return null;
+        }
+
+        return 'https://'.$host.'/.well-known/jmap';
+    }
+
+    /**
      * Does this mailbox sign in with a token instead of a password?
      *
      * Read from `auth_type`, because that is the setting a person made — not
@@ -127,7 +187,7 @@ class MailAccount extends Model
             return false;
         }
 
-        return \Illuminate\Support\Carbon::parse($expires)->subMinutes($minutes)->isPast();
+        return Carbon::parse($expires)->subMinutes($minutes)->isPast();
     }
 
     /** Did this account come from the central store? */

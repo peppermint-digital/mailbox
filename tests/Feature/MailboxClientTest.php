@@ -1,5 +1,6 @@
 <?php
 
+use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Contracts\TokenRefresher;
 use Peppermint\Mailbox\Imap\MailboxClient;
 use Peppermint\Mailbox\Imap\RetryPolicy;
@@ -22,26 +23,48 @@ function fakeOrdner(string $pfad, string $name, array $flags = [], string $delim
             private string $delimiter,
         ) {}
 
-        public function path(): string { return $this->pfad; }
+        public function path(): string
+        {
+            return $this->pfad;
+        }
 
-        public function name(): string { return $this->name; }
+        public function name(): string
+        {
+            return $this->name;
+        }
 
-        public function flags(): array { return $this->flags; }
+        public function flags(): array
+        {
+            return $this->flags;
+        }
 
-        public function delimiter(): string { return $this->delimiter; }
+        public function delimiter(): string
+        {
+            return $this->delimiter;
+        }
 
-        public function move(string $ziel): void { $this->bewegtNach[] = $ziel; }
+        public function move(string $ziel): void
+        {
+            $this->bewegtNach[] = $ziel;
+        }
 
-        public function delete(): void { $this->geloescht = true; }
+        public function delete(): void
+        {
+            $this->geloescht = true;
+        }
 
         public array $nachrichten = [];
 
         public function messages(): object
         {
-            return new class($this->nachrichten) {
+            return new class($this->nachrichten)
+            {
                 public function __construct(private array $nachrichten) {}
 
-                public function find(int $uid): ?object { return $this->nachrichten[$uid] ?? null; }
+                public function find(int $uid): ?object
+                {
+                    return $this->nachrichten[$uid] ?? null;
+                }
             };
         }
     };
@@ -54,17 +77,35 @@ function fakeNachricht(): object
     {
         public array $getan = [];
 
-        public function markSeen(): void { $this->getan[] = 'gelesen'; }
+        public function markSeen(): void
+        {
+            $this->getan[] = 'gelesen';
+        }
 
-        public function unmarkSeen(): void { $this->getan[] = 'ungelesen'; }
+        public function unmarkSeen(): void
+        {
+            $this->getan[] = 'ungelesen';
+        }
 
-        public function markFlagged(): void { $this->getan[] = 'markiert'; }
+        public function markFlagged(): void
+        {
+            $this->getan[] = 'markiert';
+        }
 
-        public function unmarkFlagged(): void { $this->getan[] = 'unmarkiert'; }
+        public function unmarkFlagged(): void
+        {
+            $this->getan[] = 'unmarkiert';
+        }
 
-        public function move(string $ziel, bool $expunge = false): void { $this->getan[] = "verschoben:{$ziel}"; }
+        public function move(string $ziel, bool $expunge = false): void
+        {
+            $this->getan[] = "verschoben:{$ziel}";
+        }
 
-        public function delete(bool $expunge = false): void { $this->getan[] = 'endgueltig-geloescht'; }
+        public function delete(bool $expunge = false): void
+        {
+            $this->getan[] = 'endgueltig-geloescht';
+        }
     };
 }
 
@@ -83,10 +124,14 @@ function fakePostfach(array $ordner, ?array &$protokoll = null): object
 
         public function folders(): object
         {
-            return new class($this) {
+            return new class($this)
+            {
                 public function __construct(private $postfach) {}
 
-                public function get(): array { return $this->postfach->alleOrdner(); }
+                public function get(): array
+                {
+                    return $this->postfach->alleOrdner();
+                }
 
                 public function create(string $pfad): object
                 {
@@ -95,7 +140,10 @@ function fakePostfach(array $ordner, ?array &$protokoll = null): object
             };
         }
 
-        public function alleOrdner(): array { return $this->ordner; }
+        public function alleOrdner(): array
+        {
+            return $this->ordner;
+        }
 
         public function lege(string $pfad): object
         {
@@ -110,7 +158,10 @@ function fakePostfach(array $ordner, ?array &$protokoll = null): object
             return $neu;
         }
 
-        public function disconnect(): void { $this->getrennt = true; }
+        public function disconnect(): void
+        {
+            $this->getrennt = true;
+        }
     };
 }
 
@@ -130,6 +181,26 @@ function klient(object $postfach, ?TokenRefresher $refresher = null, array $kont
     );
 }
 
+/** Wie klient(), aber zaehlt mit, wie oft tatsaechlich verbunden wurde. */
+function klientMitZaehler(object $postfach, int &$verbindungen): MailboxClient
+{
+    $konto = MailAccount::fromRemote([
+        'id' => 1, 'email' => 'post@beispiel.de', 'username' => null, 'password' => 'geheim',
+        'host' => 'imap.beispiel.de', 'port' => 993, 'encryption' => 'ssl', 'auth_type' => 'password',
+        'oauth_access_token' => null, 'oauth_token_expires_at' => null,
+    ]);
+
+    return new MailboxClient(
+        account: $konto,
+        retry: new RetryPolicy(maxRetries: 2, sleeper: fn () => null, jitter: fn () => 0.0),
+        connector: function () use ($postfach, &$verbindungen) {
+            $verbindungen++;
+
+            return $postfach;
+        },
+    );
+}
+
 describe('die Verbindung', function () {
     it('trennt nach jedem Aufruf wieder', function () {
         // Eine gehaltene Verbindung ueberlebt den Request im Worker, und der
@@ -145,7 +216,7 @@ describe('die Verbindung', function () {
         $postfach = fakePostfach([]);
 
         try {
-            klient($postfach)->session(fn () => throw new RuntimeException('AUTHENTICATIONFAILED'));
+            klient($postfach)->batch(fn () => throw new RuntimeException('AUTHENTICATIONFAILED'));
         } catch (RuntimeException) {
             // erwartet
         }
@@ -158,10 +229,14 @@ describe('die Token-Erneuerung', function () {
     it('erneuert VOR dem Verbinden, wenn das Token bald ablaeuft', function () {
         // Ein abgelaufenes Token sieht von aussen aus wie ein falsches Passwort.
         $gerufen = 0;
-        $refresher = new class($gerufen) implements TokenRefresher {
+        $refresher = new class($gerufen) implements TokenRefresher
+        {
             public function __construct(public int &$gerufen) {}
 
-            public function ensureFresh(MailAccount $account): void { $this->gerufen++; }
+            public function ensureFresh(MailAccount $account): void
+            {
+                $this->gerufen++;
+            }
         };
 
         klient(fakePostfach([]), $refresher, [
@@ -175,10 +250,14 @@ describe('die Token-Erneuerung', function () {
 
     it('erneuert NICHT, solange das Token noch lange gilt', function () {
         $gerufen = 0;
-        $refresher = new class($gerufen) implements TokenRefresher {
+        $refresher = new class($gerufen) implements TokenRefresher
+        {
             public function __construct(public int &$gerufen) {}
 
-            public function ensureFresh(MailAccount $account): void { $this->gerufen++; }
+            public function ensureFresh(MailAccount $account): void
+            {
+                $this->gerufen++;
+            }
         };
 
         klient(fakePostfach([]), $refresher, [
@@ -192,10 +271,14 @@ describe('die Token-Erneuerung', function () {
 
     it('erneuert bei Passwort-Konten gar nicht', function () {
         $gerufen = 0;
-        $refresher = new class($gerufen) implements TokenRefresher {
+        $refresher = new class($gerufen) implements TokenRefresher
+        {
             public function __construct(public int &$gerufen) {}
 
-            public function ensureFresh(MailAccount $account): void { $this->gerufen++; }
+            public function ensureFresh(MailAccount $account): void
+            {
+                $this->gerufen++;
+            }
         };
 
         klient(fakePostfach([]), $refresher)->folders();
@@ -311,7 +394,6 @@ describe('welche Ordner geschuetzt sind', function () {
     });
 });
 
-
 describe('Nachrichten-Aktionen', function () {
     it('markiert als gelesen und wieder als ungelesen', function () {
         $nachricht = fakeNachricht();
@@ -413,5 +495,88 @@ describe('Loeschen', function () {
         klient($postfach)->delete('INBOX.Papierkorb', 5);
 
         expect($nachricht->getan)->toBe(['endgueltig-geloescht']);
+    });
+});
+
+describe('der Stapel', function () {
+    it('oeffnet fuer mehrere Aufrufe nur EINE Verbindung', function () {
+        // Der Grund, warum es batch() ueberhaupt gibt: zehn Aufrufe waren
+        // vorher zehn Verbindungen.
+        $postfach = fakePostfach([fakeOrdner('INBOX', 'INBOX')]);
+        $verbindungen = 0;
+
+        klientMitZaehler($postfach, $verbindungen)->batch(function ($postfachKlient) {
+            $postfachKlient->folders();
+            $postfachKlient->folders();
+            $postfachKlient->folders();
+        });
+
+        expect($verbindungen)->toBe(1);
+        expect($postfach->getrennt)->toBeTrue();
+    });
+
+    it('verbindet ohne Stapel fuer jeden Aufruf neu', function () {
+        $postfach = fakePostfach([fakeOrdner('INBOX', 'INBOX')]);
+        $verbindungen = 0;
+        $klient = klientMitZaehler($postfach, $verbindungen);
+
+        $klient->folders();
+        $klient->folders();
+
+        expect($verbindungen)->toBe(2);
+    });
+
+    it('reicht den Klienten heraus, nicht das Postfach-Objekt', function () {
+        // Das war das Leck: wer das Postfach-Objekt bekommt, kennt IMAP — und
+        // damit waere kein zweiter Transport moeglich.
+        $postfach = fakePostfach([fakeOrdner('INBOX', 'INBOX')]);
+
+        $bekommen = klient($postfach)->batch(fn ($uebergeben) => $uebergeben);
+
+        expect($bekommen)->toBeInstanceOf(Mailbox::class);
+        expect($bekommen)->not->toBe($postfach);
+    });
+
+    it('oeffnet auch bei Verschachtelung keine zweite Verbindung', function () {
+        $postfach = fakePostfach([fakeOrdner('INBOX', 'INBOX')]);
+        $verbindungen = 0;
+
+        klientMitZaehler($postfach, $verbindungen)->batch(
+            fn ($aussen) => $aussen->batch(fn ($innen) => $innen->folders())
+        );
+
+        expect($verbindungen)->toBe(1);
+    });
+
+    it('gibt die Verbindung frei, wenn der Stapel scheitert', function () {
+        // Sonst haelt der naechste Aufruf einen Socket fest, den der Server zu hat.
+        $postfach = fakePostfach([fakeOrdner('INBOX', 'INBOX')]);
+        $verbindungen = 0;
+        $klient = klientMitZaehler($postfach, $verbindungen);
+
+        try {
+            $klient->batch(fn () => throw new RuntimeException('mittendrin'));
+        } catch (RuntimeException) {
+            // erwartet
+        }
+
+        $klient->folders();
+
+        expect($verbindungen)->toBeGreaterThan(1);
+        expect($postfach->getrennt)->toBeTrue();
+    });
+});
+
+describe('Kopfzeilen-Zeilen', function () {
+    it('holt sich die Verbindung selbst — ohne Postfach-Objekt von aussen', function () {
+        // Frueher: headerRows($mailbox, $ordner) in einer session() gewickelt.
+        $postfach = fakePostfach([fakeOrdner('INBOX', 'INBOX')]);
+        $verbindungen = 0;
+
+        [$zeilen, $gesamt] = klientMitZaehler($postfach, $verbindungen)->headerRows('Gibt-Es-Nicht');
+
+        expect($zeilen)->toBe([]);
+        expect($gesamt)->toBe(0);
+        expect($verbindungen)->toBe(1);
     });
 });
