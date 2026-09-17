@@ -2,6 +2,7 @@
 
 namespace Peppermint\Mailbox\Contracts;
 
+use Peppermint\Mailbox\Folders\FolderNames;
 use Peppermint\Mailbox\Search\Criteria;
 
 /**
@@ -179,6 +180,63 @@ interface Mailbox
         ?callable $ownReplies = null,
         array $excludeThreadIds = [],
     ): array;
+
+    /**
+     * The path of a standard folder, or null when this mailbox has none.
+     *
+     * `$kind` is one of the keys of {@see FolderNames::STANDARD}
+     * — `Sent`, `Drafts`, `Trash`, `Archive`. The name is not the answer, only
+     * the last resort: a server that marks its folders says which is which, in
+     * every language and every encoding.
+     */
+    public function specialFolder(string $kind): ?string;
+
+    /**
+     * How many messages in this folder are newer than a point in time.
+     *
+     * `$scan` caps how far back to look and is not a detail: over IMAP this
+     * walks the newest messages, and without a cap a quiet folder with fifty
+     * thousand mails would be walked in full to answer "anything new?".
+     * A count that stops at the cap is the honest answer to a cheap question.
+     */
+    public function countNewSince(string $folder, \DateTimeInterface $since, int $scan = 50): int;
+
+    /**
+     * Moves several messages into the archive folder.
+     *
+     * Counted, not reported one by one: the caller asked about a selection,
+     * not about each mail. A message already in the archive counts as
+     * archived — it is where it should be, and calling that a failure would
+     * make a second click look broken.
+     *
+     * @param  list<int|string>  $uids
+     * @return array{archived: int, failed: int}
+     */
+    public function archive(string $folder, array $uids): array;
+
+    /**
+     * Finds messages whose Message-ID carries this token.
+     *
+     * For probes: a product that files a copy of its own and wants to find it
+     * again puts a unique token in the Message-ID. The search is a full-text
+     * one because that is all IMAP offers — so every hit is checked against
+     * the Message-ID afterwards, or a mail that merely quotes the token would
+     * be taken for the probe.
+     *
+     * @return list<int|string>
+     */
+    public function findByToken(string $folder, string $token, int $limit = 20): array;
+
+    /**
+     * Can this mailbox be reached with these settings?
+     *
+     * Deliberately not a boolean: "no" without a reason sends a person to the
+     * wrong field. The message is what the server said, not an interpretation
+     * of it.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    public function probe(): array;
 
     /**
      * One message, in full. Null when it is not there any more.

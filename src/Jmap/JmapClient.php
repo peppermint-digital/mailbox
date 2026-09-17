@@ -452,6 +452,148 @@ class JmapClient implements Mailbox
     }
 
     /**
+     * The path of a standard folder.
+     *
+     * Here the role decides outright — der Server sagt selbst, welcher Ordner
+     * welcher ist. Der Namensvergleich bleibt fuer Ordner ohne Rolle.
+     */
+    public function specialFolder(string $kind): ?string
+    {
+        $rolle = mb_strtolower($kind) === 'archive' ? 'archive' : mb_strtolower($kind);
+        $ueberName = null;
+
+        foreach ($this->folders() as $ordner) {
+            if ($ordner['role'] === $rolle) {
+                return $ordner['path'];
+            }
+
+            if ($ueberName === null && FolderNames::looksLike($ordner['path'], $kind)) {
+                $ueberName = $ordner['path'];
+            }
+        }
+
+        return $ueberName;
+    }
+
+    /**
+     * How many messages are newer than a point in time.
+     *
+     * Der Server zaehlt selbst — `$scan` ist hier eine Obergrenze und keine
+     * Notwendigkeit. Genau deshalb steht sie trotzdem in der Antwort: Ein
+     * Produkt, das ueber IMAP hoechstens `$scan` bekommt, darf ueber JMAP
+     * nicht ploetzlich eine andere Zahl sehen.
+     */
+    public function countNewSince(string $folder, \DateTimeInterface $since, int $scan = 50): int
+    {
+        $ordner = $this->folderNamed($folder);
+
+        if ($ordner === null) {
+            return 0;
+        }
+
+        $antwort = $this->call([['Email/query', [
+            'accountId' => $this->session()->accountId,
+            'filter' => [
+                'inMailbox' => $ordner['id'],
+                'after' => (new \DateTimeImmutable('@'.$since->getTimestamp()))->format('Y-m-d\TH:i:s\Z'),
+            ],
+            'limit' => 0,
+            'calculateTotal' => true,
+        ], 'c0']]);
+
+        return min((int) ($this->antwortZu($antwort, 'c0')['total'] ?? 0), $scan);
+    }
+
+    /**
+     * Moves several messages into the archive folder — in ONE request.
+     *
+     * @param  list<int|string>  $uids
+     * @return array{archived: int, failed: int}
+     */
+    public function archive(string $folder, array $uids): array
+    {
+        $uids = array_values(array_unique($uids));
+
+        if ($uids === []) {
+            return ['archived' => 0, 'failed' => 0];
+        }
+
+        $ziel = $this->specialFolder('Archive');
+
+        if ($ziel === null) {
+            return ['archived' => 0, 'failed' => count($uids)];
+        }
+
+        if ($ziel === $folder) {
+            return ['archived' => count($uids), 'failed' => 0];
+        }
+
+        $zielOrdner = $this->folderNamed($ziel);
+        $aenderungen = [];
+
+        foreach ($uids as $uid) {
+            $aenderungen[(string) $uid] = ['mailboxIds' => [$zielOrdner['id'] => true]];
+        }
+
+        $ergebnis = $this->antwortZu($this->call([['Email/set', [
+            'accountId' => $this->session()->accountId,
+            'update' => $aenderungen,
+        ], 's0']]), 's0');
+
+        $geschafft = count($ergebnis['updated'] ?? []);
+
+        return ['archived' => $geschafft, 'failed' => count($uids) - $geschafft];
+    }
+
+    /**
+     * Finds messages whose Message-ID carries this token.
+     *
+     * @return list<int|string>
+     */
+    public function findByToken(string $folder, string $token, int $limit = 20): array
+    {
+        $ordner = $this->folderNamed($folder);
+
+        if ($ordner === null) {
+            return [];
+        }
+
+        [$mails] = $this->find(['inMailbox' => $ordner['id'], 'text' => $token], $limit);
+
+        $treffer = [];
+
+        foreach ($mails as $mail) {
+            // Wie ueber IMAP: Die Volltextsuche trifft auch ein Zitat.
+            // Entschieden wird an der Message-ID.
+            foreach ((array) ($mail['messageId'] ?? []) as $id) {
+                if (str_contains((string) $id, $token)) {
+                    $treffer[] = $mail['id'];
+
+                    break;
+                }
+            }
+        }
+
+        return $treffer;
+    }
+
+    /**
+     * Can this mailbox be reached?
+     *
+     * @return array{ok: bool, message: string}
+     */
+    public function probe(): array
+    {
+        try {
+            $ordner = $this->folders();
+
+            return ['ok' => true, 'message' => 'Verbindung steht, '.count($ordner).' Ordner gefunden.'];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
      * One message, in full. Null when it is not there any more.
      */
     public function message(string $folder, int|string $uid): ?array

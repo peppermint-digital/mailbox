@@ -521,6 +521,148 @@ class MailboxClient implements Mailbox
     }
 
     /**
+     * The path of a standard folder — by flag first, by name only after.
+     */
+    public function specialFolder(string $kind): ?string
+    {
+        return $this->session(function ($mailbox) use ($kind): ?string {
+            $kennzeichen = '\\'.$kind;
+            $ueberName = null;
+
+            foreach ($mailbox->folders()->get() as $ordner) {
+                foreach ((array) ($ordner->flags() ?? []) as $flag) {
+                    if (mb_strtolower((string) $flag) === mb_strtolower($kennzeichen)) {
+                        return $ordner->path();
+                    }
+                }
+
+                // Gemerkt, nicht genommen: Ein markierter Ordner weiter unten
+                // in der Liste ist die bessere Antwort als ein passender Name.
+                if ($ueberName === null && FolderNames::looksLike((string) $ordner->path(), $kind)) {
+                    $ueberName = $ordner->path();
+                }
+            }
+
+            return $ueberName;
+        });
+    }
+
+    /**
+     * How many messages are newer than a point in time.
+     */
+    public function countNewSince(string $folder, \DateTimeInterface $since, int $scan = 50): int
+    {
+        return $this->session(function ($mailbox) use ($folder, $since, $scan): int {
+            $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+
+            if (! $ordner) {
+                return 0;
+            }
+
+            $anzahl = 0;
+
+            // Ohne Rumpf und ohne Formatierung: gezaehlt wird an der
+            // Kopfzeile, und die ist mit withHeaders() schon da.
+            foreach ($ordner->messages()->newest()->withHeaders()->limit($scan)->get() as $nachricht) {
+                $datum = $nachricht->date();
+
+                if ($datum && $datum->getTimestamp() > $since->getTimestamp()) {
+                    $anzahl++;
+                }
+            }
+
+            return $anzahl;
+        });
+    }
+
+    /**
+     * Moves several messages into the archive folder.
+     *
+     * @param  list<int|string>  $uids
+     * @return array{archived: int, failed: int}
+     */
+    public function archive(string $folder, array $uids): array
+    {
+        $uids = array_values(array_unique($uids));
+
+        if ($uids === []) {
+            return ['archived' => 0, 'failed' => 0];
+        }
+
+        return $this->batch(function (self $postfach) use ($folder, $uids): array {
+            $ziel = $postfach->specialFolder('Archive');
+
+            if ($ziel === null) {
+                return ['archived' => 0, 'failed' => count($uids)];
+            }
+
+            if ($ziel === $folder) {
+                // Schon da, wo sie hingehoeren. Das als Fehlschlag zu zaehlen
+                // liesse einen zweiten Klick kaputt aussehen.
+                return ['archived' => count($uids), 'failed' => 0];
+            }
+
+            $geschafft = 0;
+
+            foreach ($uids as $uid) {
+                if ($postfach->move($folder, $uid, $ziel)) {
+                    $geschafft++;
+                }
+            }
+
+            return ['archived' => $geschafft, 'failed' => count($uids) - $geschafft];
+        });
+    }
+
+    /**
+     * Finds messages whose Message-ID carries this token.
+     *
+     * @return list<int|string>
+     */
+    public function findByToken(string $folder, string $token, int $limit = 20): array
+    {
+        return $this->session(function ($mailbox) use ($folder, $token, $limit): array {
+            $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+
+            if (! $ordner) {
+                return [];
+            }
+
+            $treffer = [];
+
+            foreach ($ordner->messages()->newest()->text($token)->withHeaders()->limit($limit)->get() as $nachricht) {
+                // Die Volltextsuche ist alles, was IMAP hat — sie trifft auch
+                // eine Mail, die den Token nur zitiert. Entschieden wird an
+                // der Message-ID.
+                $messageId = $nachricht->messageId();
+
+                if ($messageId !== null && str_contains($messageId, $token)) {
+                    $treffer[] = $nachricht->uid();
+                }
+            }
+
+            return $treffer;
+        });
+    }
+
+    /**
+     * Can this mailbox be reached?
+     *
+     * @return array{ok: bool, message: string}
+     */
+    public function probe(): array
+    {
+        try {
+            $ordner = $this->folders();
+
+            return ['ok' => true, 'message' => 'Verbindung steht, '.count($ordner).' Ordner gefunden.'];
+        } catch (\Throwable $e) {
+            // Wortlaut des Servers, nicht unsere Auslegung davon.
+            return ['ok' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
      * Eine einzelne Nachricht, vollstaendig.
      *
      * Null, wenn sie nicht (mehr) da ist — ein geteiltes Postfach aendert sich,

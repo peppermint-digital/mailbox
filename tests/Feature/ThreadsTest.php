@@ -51,6 +51,11 @@ function kettenNachricht(int $uid, string $betreff, string $datum, ?string $mess
                 {
                     return $this->d;
                 }
+
+                public function getTimestamp(): int
+                {
+                    return strtotime($this->d) ?: 0;
+                }
             };
         }
 
