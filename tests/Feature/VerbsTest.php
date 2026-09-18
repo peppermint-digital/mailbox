@@ -245,3 +245,30 @@ describe('eine Nachricht ablegen', function () {
             ->toThrow(RuntimeException::class, 'Folder not found');
     });
 });
+
+describe('endgueltig loeschen', function () {
+    it('nimmt nicht den Umweg ueber den Papierkorb', function () {
+        // Fuer den ersetzten Entwurf: Ein Papierkorb, der sich mit jeder
+        // Zwischenfassung fuellt, ist auch nicht das Gewuenschte.
+        $klient = jmapKlient([
+            'Mailbox/get' => [jmapOrdner()],
+            'Email/set' => [['Email/set', ['destroyed' => ['m1']], 's0']],
+        ], $protokoll);
+
+        expect($klient->purge('Drafts', 'm1'))->toBeTrue();
+
+        $aufruf = collect($protokoll)->last()['payload']['methodCalls'][0][1];
+
+        expect($aufruf['destroy'])->toBe(['m1'])
+            ->and($aufruf)->not->toHaveKey('update');
+    });
+
+    it('antwortet mit false, wenn die Nachricht schon weg ist', function () {
+        $klient = jmapKlient(['Email/set' => [['Email/set', [
+            'destroyed' => [],
+            'notDestroyed' => ['m1' => ['type' => 'notFound']],
+        ], 's0']]]);
+
+        expect($klient->purge('Drafts', 'm1'))->toBeFalse();
+    });
+});

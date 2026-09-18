@@ -836,6 +836,18 @@ class MailboxClient implements Mailbox
     }
 
     /**
+     * Deletes a message for good.
+     */
+    public function purge(string $folder, int|string $uid): bool
+    {
+        return $this->onMessage($folder, $uid, function ($message): bool {
+            $message->delete(true);
+
+            return true;
+        });
+    }
+
+    /**
      * Deletes a message — into the trash where there is one.
      *
      * "Delete" in a mail client means "put it where I can get it back". Only

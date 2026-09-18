@@ -795,6 +795,14 @@ class JmapClient implements Mailbox
     }
 
     /**
+     * Deletes a message for good.
+     */
+    public function purge(string $folder, int|string $uid): bool
+    {
+        return $this->destroy((string) $uid);
+    }
+
+    /**
      * Deletes a message — into the trash where there is one.
      *
      * The trash is found by its ROLE, not by its name: the server says which

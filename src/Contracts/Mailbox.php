@@ -298,6 +298,19 @@ interface Mailbox
     public function move(string $from, int|string $uid, string $to): bool;
 
     /**
+     * Deletes a message for good — no trash, no second chance.
+     *
+     * The narrow case, and it has to be asked for by name: a draft that was
+     * just replaced, a probe that did its job. {@see delete()} puts things
+     * where someone can get them back, which is what "delete" means in a mail
+     * client — but a trash folder slowly filling with every intermediate
+     * version of a draft is not what anyone asked for either.
+     *
+     * False when the message is not there any more.
+     */
+    public function purge(string $folder, int|string $uid): bool;
+
+    /**
      * Deletes a message — into the trash where there is one.
      *
      * The aliases are how IMAP finds the trash, where nothing but the name
