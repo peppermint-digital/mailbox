@@ -355,3 +355,39 @@ describe('was seit dem letzten Lauf dazukam', function () {
         expect($abfragen)->toBeEmpty();
     });
 });
+
+describe('nur die Kennungen', function () {
+    it('holt ueber IMAP keine Inhalte — das ist der ganze Punkt', function () {
+        // Ohne withHeaders/withFlags/withBody ueberspringt die Bibliothek den
+        // FETCH und liefert allein die Nummern aus UID SEARCH ALL.
+        $ordner = suchOrdner('INBOX', [], [
+            kettenNachricht(3, 'a', '2026-09-03T10:00:00+00:00'),
+            kettenNachricht(7, 'b', '2026-09-04T10:00:00+00:00'),
+        ]);
+
+        $kennungen = verbKlientMitFormatierer([$ordner])->handles('INBOX');
+
+        expect($kennungen)->toBe([3, 7])
+            ->and($ordner->gesucht['ohne'] ?? [])->toBe(['headers', 'flags', 'body']);
+    });
+
+    it('fragt ueber JMAP nur die Abfrage, nicht die Nachrichten dazu', function () {
+        $klient = jmapKlient([
+            'Mailbox/get' => [jmapOrdner()],
+            'Email/query' => [['Email/query', ['ids' => ['m1', 'm2', 'm3']], 'q0']],
+        ], $protokoll);
+
+        $kennungen = $klient->batch(fn ($p) => $p->handles('Inbox'));
+
+        $aufrufe = collect($protokoll)->last()['payload']['methodCalls'];
+
+        expect($kennungen)->toBe(['m1', 'm2', 'm3'])
+            // EIN Methodenaufruf, kein Email/get daneben.
+            ->and($aufrufe)->toHaveCount(1)
+            ->and($aufrufe[0][0])->toBe('Email/query');
+    });
+
+    it('antwortet auf einen unbekannten Ordner leer', function () {
+        expect(verbKlientMitFormatierer([suchOrdner('INBOX', [])])->handles('Weg'))->toBe([]);
+    });
+});

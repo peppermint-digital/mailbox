@@ -121,6 +121,21 @@ interface Mailbox
     public function headerRows(string $folder, int $limit = 100): array;
 
     /**
+     * Just the handles of everything in a folder — no headers, no bodies.
+     *
+     * The cheapest question a mailbox can answer, and the one an index needs
+     * to find its own dead entries: everything it has stored for this folder
+     * that is no longer there. One command, no content.
+     *
+     * An empty answer means an empty folder. It does NOT mean "delete
+     * everything you know" — that distinction belongs to the caller, because
+     * only the caller knows what it would be throwing away.
+     *
+     * @return list<int|string>
+     */
+    public function handles(string $folder): array;
+
+    /**
      * Header rows of messages that arrived AFTER this one.
      *
      * For anything that keeps its own copy and wants only the growth since

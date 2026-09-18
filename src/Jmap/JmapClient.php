@@ -329,6 +329,39 @@ class JmapClient implements Mailbox
     }
 
     /**
+     * Just the handles of everything in a folder.
+     *
+     * `Email/query` allein, ohne das `Email/get` daneben: Die Antwort IST die
+     * Liste der Kennungen.
+     *
+     * @return list<int|string>
+     */
+    public function handles(string $folder): array
+    {
+        $ordner = $this->folderNamed($folder);
+
+        if ($ordner === null) {
+            return [];
+        }
+
+        $antwort = $this->call([['Email/query', [
+            'accountId' => $this->session()->accountId,
+            'filter' => ['inMailbox' => $ordner['id']],
+            'limit' => self::HANDLE_LIMIT,
+        ], 'q0']]);
+
+        return $this->antwortZu($antwort, 'q0')['ids'] ?? [];
+    }
+
+    /**
+     * Wie viele Kennungen hoechstens auf einmal.
+     *
+     * Der Server deckelt ohnehin (`maxObjectsInGet`), aber eine Zahl im Code
+     * sagt, womit der Aufrufer rechnen darf.
+     */
+    private const HANDLE_LIMIT = 10000;
+
+    /**
      * Header rows of messages that arrived after this one.
      *
      * JMAP kennt keine uids und keine Reihenfolge ueber Kennungen — es kennt

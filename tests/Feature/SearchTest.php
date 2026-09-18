@@ -124,6 +124,27 @@ function suchOrdner(string $pfad, array $flags = [], array $nachrichten = [], bo
                     return $this;
                 }
 
+                public function withoutHeaders(): static
+                {
+                    $this->ordner->gesucht['ohne'][] = 'headers';
+
+                    return $this;
+                }
+
+                public function withoutFlags(): static
+                {
+                    $this->ordner->gesucht['ohne'][] = 'flags';
+
+                    return $this;
+                }
+
+                public function withoutBody(): static
+                {
+                    $this->ordner->gesucht['ohne'][] = 'body';
+
+                    return $this;
+                }
+
                 public function withFlags(): static
                 {
                     return $this;

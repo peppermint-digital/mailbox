@@ -390,6 +390,34 @@ class MailboxClient implements Mailbox
     }
 
     /**
+     * Just the handles of everything in a folder.
+     *
+     * Ohne `withHeaders`/`withFlags`/`withBody` ueberspringt die Bibliothek
+     * den FETCH vollstaendig und liefert allein die Nummern aus
+     * `UID SEARCH ALL`. Ein Befehl je Ordner, keine Inhalte.
+     *
+     * @return list<int|string>
+     */
+    public function handles(string $folder): array
+    {
+        return $this->session(function ($mailbox) use ($folder): array {
+            $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+
+            if (! $ordner) {
+                return [];
+            }
+
+            $kennungen = [];
+
+            foreach ($ordner->messages()->withoutHeaders()->withoutFlags()->withoutBody()->get() as $nachricht) {
+                $kennungen[] = $nachricht->uid();
+            }
+
+            return $kennungen;
+        });
+    }
+
+    /**
      * Header rows of messages that arrived after this one.
      *
      * Ueber IMAP ist das die uid-Ordnung: Eine hoehere uid heisst, der Server
