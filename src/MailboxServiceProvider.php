@@ -3,12 +3,13 @@
 namespace Peppermint\Mailbox;
 
 use Illuminate\Support\Facades\Log;
-use Peppermint\Mailbox\Console\InstallCommand;
 use Illuminate\Support\ServiceProvider;
 use Peppermint\Mailbox\Brain\MailboxChat;
+use Peppermint\Mailbox\Console\InstallCommand;
 use Peppermint\Mailbox\Contracts\AccountStore;
 use Peppermint\Mailbox\Stores\BrainAccountStore;
 use Peppermint\Mailbox\Stores\LocalAccountStore;
+use Peppermint\Mailbox\Stores\MergedAccountStore;
 
 class MailboxServiceProvider extends ServiceProvider
 {
@@ -53,7 +54,9 @@ class MailboxServiceProvider extends ServiceProvider
      */
     private function store(): AccountStore
     {
-        if (config('mailbox.store', 'local') !== 'brain') {
+        $art = config('mailbox.store', 'local');
+
+        if (! in_array($art, ['brain', 'merged'], true)) {
             return new LocalAccountStore;
         }
 
@@ -79,7 +82,7 @@ class MailboxServiceProvider extends ServiceProvider
         //
         // Central settings live in Brain itself, so they are read from Brain
         // itself.
-        return new BrainAccountStore(
+        $zentral = new BrainAccountStore(
             function (string $_capability, array $arguments) use ($bridge, $tool): ?array {
                 try {
                     return $bridge::call($tool, $arguments);
@@ -95,6 +98,14 @@ class MailboxServiceProvider extends ServiceProvider
             },
             (int) config('mailbox.cache_ttl', 900),
         );
+
+        // `merged`: Die eigene Tabelle bleibt der Anker, die Verbindungsdaten
+        // kommen bei jedem Lesen aus der Mitte. Fuer ein gewachsenes Produkt
+        // ist das der einzige Weg, der seine eigenen Felder und Fremdschluessel
+        // behaelt — siehe MergedAccountStore.
+        return $art === 'merged'
+            ? new MergedAccountStore(new LocalAccountStore, $zentral)
+            : $zentral;
     }
 
     /**

@@ -55,6 +55,14 @@ class MailAccount extends Model
      */
     protected bool $remote = false;
 
+    /**
+     * Did a central row overwrite this one's connection settings?
+     *
+     * Separate from {@see $remote}: that one says "this is not a table row at
+     * all", this one says "it is, but the connection came from elsewhere".
+     */
+    protected bool $centrallyMerged = false;
+
     protected $hidden = ['password', 'oauth_client_secret', 'oauth_access_token', 'oauth_refresh_token'];
 
     /**
@@ -194,6 +202,56 @@ class MailAccount extends Model
     public function isRemote(): bool
     {
         return $this->remote;
+    }
+
+    /**
+     * Are this mailbox's connection settings maintained centrally?
+     *
+     * Three states, not two: a row can be local-only, carried from the centre,
+     * or a local row whose connection was overwritten from the centre. The
+     * third is the one a grown product ends up in, and a product that cannot
+     * tell it from the first will eventually offer a password field that
+     * writes into the void.
+     */
+    public function isCentrallyManaged(): bool
+    {
+        return $this->remote || $this->centrallyMerged;
+    }
+
+    /**
+     * This row with the central connection settings laid over it.
+     *
+     * Not saved, and deliberately so: the values belong to the centre, and
+     * writing them back would create the second copy this whole arrangement
+     * exists to avoid. `exists` stays true — it IS a table row, and everything
+     * the product hung on its id keeps working.
+     *
+     * @param  array<string, mixed>  $werte  already in this product's column names
+     */
+    public function withCentral(array $werte): self
+    {
+        $konto = clone $this;
+        $konto->centrallyMerged = true;
+
+        foreach ($werte as $spalte => $wert) {
+            $konto->setAttribute($spalte, $wert);
+        }
+
+        // Was gerade hereingelegt wurde, ist nicht "geaendert" im Sinne von
+        // speicherbar. Ohne das wuerde ein save() des Produkts die zentralen
+        // Werte in die eigene Tabelle schreiben — genau die zweite Wahrheit.
+        $konto->syncOriginal();
+
+        return $konto;
+    }
+
+    /** This row, explicitly without a central counterpart. */
+    public function fromLocalOnly(): self
+    {
+        $konto = clone $this;
+        $konto->centrallyMerged = false;
+
+        return $konto;
     }
 
     /**

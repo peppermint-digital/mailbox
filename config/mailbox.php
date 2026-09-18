@@ -12,6 +12,10 @@ return [
     | `brain` — read centrally from AI Brain, cached locally. Requires
     |           peppermint/ai-brain-bridge; when that is missing the package
     |           falls back to `local` and says so, instead of failing quietly.
+    | `merged` — the own table stays the anchor, and the CONNECTION fields are
+    |           overwritten from AI Brain on every read. For a grown product:
+    |           it keeps its own columns and its foreign keys, and still has
+    |           only one truth for host, login and token.
     |
     */
     'store' => env('MAILBOX_STORE', 'local'),
