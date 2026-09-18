@@ -77,3 +77,35 @@ it('haelt nur die Nachrichten-Kennung bewusst offen', function () {
     expect($imap['uid'])->toBeInt()
         ->and($jmap['uid'])->toBeString();
 });
+
+it('liefert fuer die billige Dreiergruppe dieselben Felder', function () {
+    // newest/newerThan/olderThan gehen nicht durch den Formatierer-Vergleich
+    // oben: Sie liefern bewusst WENIGER als eine Listenzeile. Ueber JMAP
+    // kaeme die Vorschau gratis mit, ueber IMAP kostet sie einen Rumpfabruf —
+    // also gibt die Dreiergruppe die Schnittmenge heraus, nicht das Maximum.
+    // Sonst schriebe ein Index gegen IMAP Felder, die ueber JMAP fehlen.
+    $imapZeile = verbKlientMitFormatierer([
+        suchOrdner('INBOX', [], [kettenNachricht(9, 'Angebot', '2026-09-01T10:00:00+00:00', '<a@x>')]),
+    ])->newest('INBOX', 10)[0];
+
+    $jmapZeile = jmapKlient(['Email/query' => [
+        ['Email/query', ['ids' => ['m1'], 'total' => 1], 'q0'],
+        ['Email/get', ['list' => [gleicheMailAlsJmap()]], 'g0'],
+    ]])->newest('Inbox', 10)[0];
+
+    expect(array_keys($jmapZeile))->toBe(array_keys($imapZeile))
+        ->and($jmapZeile)->not->toHaveKey('preview')
+        ->and($imapZeile)->not->toHaveKey('preview');
+});
+
+it('gibt in der billigen Dreiergruppe die Kettenkopfzeilen mit', function () {
+    // Ohne in_reply_to/references kann ein Verzeichnis hinterher nicht mehr
+    // buendeln — und ein zweiter Abruf dafuer waere genau die Verschwendung,
+    // die die Dreiergruppe vermeiden soll.
+    $zeile = verbKlientMitFormatierer([
+        suchOrdner('INBOX', [], [kettenNachricht(9, 'Re: Angebot', '2026-09-01T10:00:00+00:00', '<b@x>', '<a@x>')]),
+    ])->newest('INBOX', 10)[0];
+
+    expect($zeile['in_reply_to'])->toBe('<a@x>')
+        ->and($zeile)->toHaveKey('references');
+});

@@ -329,6 +329,28 @@ class JmapClient implements Mailbox
     }
 
     /**
+     * The newest header rows of a folder.
+     *
+     * Ueber JMAP kostet „ohne Formatierung" nichts weniger — die Vorschau
+     * kommt mit der Zeile. Das Verb gibt es trotzdem, weil der Aufrufer sonst
+     * wissen muesste, auf welchem Transport er gerade ist.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function newest(string $folder, int $limit = 200): array
+    {
+        $ordner = $this->folderNamed($folder);
+
+        if ($ordner === null) {
+            return [];
+        }
+
+        [$mails] = $this->find(['inMailbox' => $ordner['id']], $limit);
+
+        return array_map(fn (array $mail): array => $this->cheapRow($mail), $mails);
+    }
+
+    /**
      * Just the handles of everything in a folder.
      *
      * `Email/query` allein, ohne das `Email/get` daneben: Die Antwort IST die
@@ -423,10 +445,30 @@ class JmapClient implements Mailbox
                 continue;
             }
 
-            $zeilen[] = $this->formatter->summary($mail);
+            $zeilen[] = $this->cheapRow($mail);
         }
 
         return $zeilen;
+    }
+
+    /**
+     * One row of the cheap trio — the same keys IMAP can deliver.
+     *
+     * JMAP hands out preview and attachment count with the row and charges
+     * nothing for them. They are dropped anyway: over IMAP both cost a body
+     * fetch, so a caller written against one transport would break on the
+     * other. What the trio promises is the intersection, not the maximum.
+     *
+     * @param  array<string, mixed>  $mail
+     * @return array<string, mixed>
+     */
+    private function cheapRow(array $mail): array
+    {
+        $zeile = $this->formatter->summary($mail);
+
+        unset($zeile['preview'], $zeile['has_attachments'], $zeile['attachment_count']);
+
+        return $zeile;
     }
 
     /**

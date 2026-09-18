@@ -121,6 +121,21 @@ interface Mailbox
     public function headerRows(string $folder, int $limit = 100): array;
 
     /**
+     * The newest header rows of a folder — without bodies, without formatting.
+     *
+     * The third of the trio with {@see newerThan()} and {@see olderThan()},
+     * and the one for a first run: nothing is known yet, so there is no
+     * message to count from.
+     *
+     * Not {@see page()}: that one formats, and formatting touches the body. An
+     * index that walks seventy folders at two hundred rows each would pay that
+     * fourteen thousand times for text it throws away.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function newest(string $folder, int $limit = 200): array;
+
+    /**
      * Just the handles of everything in a folder — no headers, no bodies.
      *
      * The cheapest question a mailbox can answer, and the one an index needs

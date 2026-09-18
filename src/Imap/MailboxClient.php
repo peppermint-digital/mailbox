@@ -374,9 +374,12 @@ class MailboxClient implements Mailbox
                 'uid' => $nachricht->uid(),
                 'message_id' => $nachricht->messageId(),
                 'subject' => $nachricht->subject(),
-                'date' => $nachricht->date()?->toIso8601String(),
+                // Dieselbe Reihenfolge wie in der Listenzeile: Der
+                // Vertragstest vergleicht die Schluessel streng, damit eine
+                // neue Spalte auf beiden Wegen an derselben Stelle auftaucht.
                 'from_address' => $von?->email() ?? '',
                 'from_name' => $von?->name() ?? '',
+                'date' => $nachricht->date()?->toIso8601String(),
                 'is_read' => $nachricht->isSeen(),
                 'is_flagged' => $nachricht->isFlagged(),
                 // Kostet nichts extra: mit withHeaders() sind sie schon da —
@@ -387,6 +390,16 @@ class MailboxClient implements Mailbox
         }
 
         return $zeilen;
+    }
+
+    /**
+     * The newest header rows of a folder, without bodies.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function newest(string $folder, int $limit = 200): array
+    {
+        return $this->cheapRowsFrom($folder, fn ($abfrage) => $abfrage->newest(), $limit);
     }
 
     /**

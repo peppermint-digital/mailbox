@@ -391,3 +391,20 @@ describe('nur die Kennungen', function () {
         expect(verbKlientMitFormatierer([suchOrdner('INBOX', [])])->handles('Weg'))->toBe([]);
     });
 });
+
+it('holt fuer den Erstlauf die neuesten Zeilen ohne Rumpf', function () {
+    // Nicht page(): das formatiert, und Formatieren fasst den Rumpf an. Ein
+    // Index ueber siebzig Ordner zu je zweihundert Zeilen zahlte das
+    // vierzehntausendmal fuer Text, den er wegwirft.
+    $ordner = suchOrdner('INBOX', [], [
+        kettenNachricht(9, 'neu', '2026-09-05T10:00:00+00:00', '<a@x>'),
+    ]);
+
+    $zeilen = verbKlientMitFormatierer([$ordner])->newest('INBOX', 200);
+
+    expect($zeilen)->toHaveCount(1)
+        ->and($zeilen[0]['subject'])->toBe('neu')
+        ->and($zeilen[0])->not->toHaveKey('preview')
+        ->and($zeilen[0])->not->toHaveKey('message')
+        ->and($ordner->gesucht['limit'] ?? null)->toBe(200);
+});
