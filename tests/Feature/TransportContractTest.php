@@ -109,3 +109,40 @@ it('gibt in der billigen Dreiergruppe die Kettenkopfzeilen mit', function () {
     expect($zeile['in_reply_to'])->toBe('<a@x>')
         ->and($zeile)->toHaveKey('references');
 });
+
+it('liefert fuer die Aufbewahrung dieselben Felder', function () {
+    // Dritte Form neben Listenzeile und Leseansicht — und die einzige, in der
+    // ein Produkt die Nachricht dauerhaft ablegt. Ein fehlendes Feld faellt
+    // hier nicht auf, sondern in einem Archiv, das schon geschrieben ist.
+    $imap = (new MessageFormatter)->verbatim(nachricht(['attachments' => []]));
+    $jmap = (new JmapMessageFormatter)->verbatim(gleicheMailAlsJmap(), fn () => 'BYTES');
+
+    expect(array_keys($jmap))->toBe(array_keys($imap));
+});
+
+it('haelt den Rumpf auf beiden Wegen roh, wenn er aufbewahrt wird', function () {
+    $mail = gleicheMailAlsJmap();
+    $mail['htmlBody'] = [['partId' => '2']];
+    $mail['bodyValues'] = ['2' => ['value' => '<img src="cid:logo@x">']];
+    $mail['attachments'] = [['blobId' => 'b1', 'name' => 'logo.png', 'type' => 'image/png', 'cid' => 'logo@x', 'disposition' => 'inline']];
+
+    $anzeige = (new JmapMessageFormatter)->full($mail, fn () => 'PNG');
+    $archiv = (new JmapMessageFormatter)->verbatim($mail, fn () => 'PNG');
+
+    expect($anzeige['body_html'])->toContain('data:image/png;base64,')
+        ->and($archiv['body_html'])->toBe('<img src="cid:logo@x">')
+        ->and($archiv['files'][0]['content_id'])->toBe('logo@x')
+        ->and($archiv['files'][0]['inline'])->toBeTrue()
+        ->and($archiv['files'][0]['contents'])->toBe('PNG');
+});
+
+it('legt einen Teil ohne Bytes NICHT als leere Datei ab', function () {
+    // Im Archiv saehe er aus wie ein Anhang, den jemand geleert hat — und
+    // niemand wuesste, dass der Server ihn nie herausgegeben hat.
+    $mail = gleicheMailAlsJmap();
+    $mail['attachments'] = [['blobId' => 'weg', 'name' => 'Angebot.pdf', 'type' => 'application/pdf']];
+
+    $archiv = (new JmapMessageFormatter)->verbatim($mail, fn () => null);
+
+    expect($archiv['files'])->toBe([]);
+});

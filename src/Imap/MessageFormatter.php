@@ -150,6 +150,55 @@ class MessageFormatter
         return self::isInline($contentId, $disposition) && Str::startsWith($contentType, 'image/');
     }
 
+    /**
+     * The same message, but for keeping: body untouched, every file separate.
+     *
+     * @return array<string, mixed>
+     */
+    public function verbatim(Message $message): array
+    {
+        $from = $message->from();
+        $files = [];
+
+        foreach ($message->attachments() as $index => $attachment) {
+            $contentId = $attachment->contentId();
+            // EINMAL lesen: Der Inhalt kommt aus einem Strom, der nach dem
+            // ersten Zugriff leer ist. Zweimal zu fragen schrieb die Datei
+            // richtig und die Groesse daneben als 0 (Bug #557 im Manager).
+            $contents = $attachment->contents();
+
+            $files[] = [
+                'index' => $index,
+                'filename' => $attachment->filename() ?? 'attachment',
+                'mime_type' => $attachment->contentType(),
+                'extension' => $attachment->extension(),
+                'contents' => $contents,
+                'size' => Str::length($contents),
+                'content_id' => $contentId,
+                'inline' => self::isInline($contentId, $attachment->contentDisposition()),
+            ];
+        }
+
+        return [
+            'uid' => $message->uid(),
+            'message_id' => $message->messageId(),
+            'subject' => $message->subject(),
+            'from_address' => $from?->email() ?? '',
+            'from_name' => $from?->name(),
+            'to' => $this->addresses($message->to()),
+            'cc' => $this->addresses($message->cc()),
+            'date' => $message->date()?->toIso8601String(),
+            // Roh, mit cid: — genau der Unterschied zu full().
+            'body_html' => $message->html(),
+            'body_text' => $message->text(),
+            'files' => $files,
+            'is_read' => $message->isSeen(),
+            'is_flagged' => $message->isFlagged(),
+            'in_reply_to' => $this->header($message, 'in-reply-to'),
+            'references' => $this->header($message, 'references'),
+        ];
+    }
+
     private static function isInline(?string $contentId, ?string $disposition): bool
     {
         return $disposition === 'inline' || ($contentId && $disposition !== 'attachment');

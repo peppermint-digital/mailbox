@@ -786,6 +786,19 @@ class MailboxClient implements Mailbox
     }
 
     /**
+     * One message as it was sent — for keeping, not for showing.
+     */
+    public function verbatim(string $folder, int|string $uid): ?array
+    {
+        return $this->session(function ($mailbox) use ($folder, $uid): ?array {
+            $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+            $nachricht = $ordner?->messages()->withHeaders()->withFlags()->withBody()->find((int) $uid);
+
+            return $nachricht ? $this->formatter->verbatim($nachricht) : null;
+        });
+    }
+
+    /**
      * One attachment, with its bytes.
      *
      * The message view lists attachments with name, type and size — enough to

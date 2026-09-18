@@ -310,6 +310,26 @@ interface Mailbox
     public function attachment(string $folder, int|string $uid, int $index): ?array;
 
     /**
+     * One message as it was sent — for keeping, not for showing.
+     *
+     * The difference to {@see message()} is the body. That one prepares a
+     * message for a SCREEN: inline images are resolved into `body_html` as
+     * data: URIs, so a view needs nothing else. Anything that STORES a message
+     * needs the opposite — the body untouched with its `cid:` references
+     * intact, and the images as separate bytes it can put somewhere and point
+     * at. Handed the display form, an archive writes every signature logo into
+     * its database once per mail.
+     *
+     * `files` carries every part that is a file, inline ones INCLUDED, each
+     * with its content id and whether it was inline. Neither {@see attachment()}
+     * (which answers the view's numbering) nor {@see attachments()} (which
+     * collects what a forward needs) does that.
+     *
+     * @return array<string, mixed>|null null when the message is gone
+     */
+    public function verbatim(string $folder, int|string $uid): ?array;
+
+    /**
      * Every attachment of a message, with its bytes.
      *
      * For forwarding: the original files have to be re-attached to the

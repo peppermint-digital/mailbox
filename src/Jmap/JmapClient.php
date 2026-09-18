@@ -752,6 +752,20 @@ class JmapClient implements Mailbox
     }
 
     /**
+     * One message as it was sent — for keeping, not for showing.
+     */
+    public function verbatim(string $folder, int|string $uid): ?array
+    {
+        $mail = $this->email((string) $uid, self::FULL_PROPERTIES);
+
+        if ($mail === null) {
+            return null;
+        }
+
+        return $this->formatter->verbatim($mail, fn (string $blobId, string $name, string $type): ?string => $this->blob($blobId, $name, $type));
+    }
+
+    /**
      * One attachment, with its bytes.
      */
     public function attachment(string $folder, int|string $uid, int $index): ?array

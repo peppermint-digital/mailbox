@@ -3,8 +3,8 @@
 use Carbon\Carbon;
 use DirectoryTree\ImapEngine\Address;
 use DirectoryTree\ImapEngine\Message;
-use ZBateson\MailMimeParser\Header\IHeader;
 use Peppermint\Mailbox\Imap\MessageFormatter;
+use ZBateson\MailMimeParser\Header\IHeader;
 
 /**
  * The one class in this package that knows what IMAP is (#5488).
@@ -100,10 +100,20 @@ function anhang(array $werte): object
             return $this->w['filename'] ?? null;
         }
 
+        public function extension(): ?string
+        {
+            return $this->w['extension'] ?? null;
+        }
+
         public function contents(): string
         {
+            $this->gelesen++;
+
             return $this->w['contents'] ?? '';
         }
+
+        /** Wie oft der Inhalt abgefragt wurde — siehe Bug #557. */
+        public int $gelesen = 0;
     };
 }
 
@@ -251,5 +261,68 @@ describe('attachmentAt (#5670)', function () {
         $m = nachricht(['attachments' => [anhang(['type' => 'application/octet-stream', 'contents' => 'x'])]]);
 
         expect((new MessageFormatter)->attachmentAt($m, 0)['filename'])->toBe('attachment');
+    });
+});
+
+describe('verbatim — die Form fuers Aufbewahren', function () {
+    it('laesst den Rumpf roh, mit seinen cid-Verweisen', function () {
+        // Der ganze Grund fuer das Verb. full() loest ein eingebettetes Bild in
+        // eine data:-URI auf, damit eine Ansicht nichts nachladen muss. Ein
+        // Archiv braucht das Gegenteil: Waere die Anzeigeform gespeichert,
+        // laege jedes Signaturlogo einmal pro Mail in der Datenbank.
+        $bild = anhang(['contentId' => 'logo@x', 'disposition' => 'inline', 'type' => 'image/png', 'filename' => 'logo.png', 'contents' => 'PNG']);
+
+        $nachricht = nachricht([
+            'html' => '<p>Hallo</p><img src="cid:logo@x">',
+            'attachments' => [$bild],
+        ]);
+
+        $anzeige = (new MessageFormatter)->full($nachricht);
+        $archiv = (new MessageFormatter)->verbatim(nachricht([
+            'html' => '<p>Hallo</p><img src="cid:logo@x">',
+            'attachments' => [anhang(['contentId' => 'logo@x', 'disposition' => 'inline', 'type' => 'image/png', 'filename' => 'logo.png', 'contents' => 'PNG'])],
+        ]));
+
+        expect($anzeige['body_html'])->toContain('data:image/png;base64,')
+            ->and($archiv['body_html'])->toBe('<p>Hallo</p><img src="cid:logo@x">')
+            ->and($archiv['body_html'])->not->toContain('data:');
+    });
+
+    it('gibt eingebettete Bilder als eigene Dateien heraus — mit ihrer Kennung', function () {
+        // full() zaehlt sie gar nicht erst zu den Anhaengen; wer sie ablegen
+        // will, braucht Bytes UND content_id, sonst laesst sich der cid-Verweis
+        // im Rumpf hinterher nicht umschreiben.
+        $archiv = (new MessageFormatter)->verbatim(nachricht([
+            'html' => '<img src="cid:logo@x">',
+            'attachments' => [
+                anhang(['contentId' => 'logo@x', 'disposition' => 'inline', 'type' => 'image/png', 'filename' => 'logo.png', 'extension' => 'png', 'contents' => 'PNG']),
+                anhang(['disposition' => 'attachment', 'type' => 'application/pdf', 'filename' => 'Angebot.pdf', 'extension' => 'pdf', 'contents' => '%PDF']),
+            ],
+        ]));
+
+        expect($archiv['files'])->toHaveCount(2)
+            ->and($archiv['files'][0]['content_id'])->toBe('logo@x')
+            ->and($archiv['files'][0]['inline'])->toBeTrue()
+            ->and($archiv['files'][0]['contents'])->toBe('PNG')
+            ->and($archiv['files'][0]['size'])->toBe(3)
+            ->and($archiv['files'][0]['extension'])->toBe('png')
+            ->and($archiv['files'][1]['inline'])->toBeFalse()
+            ->and($archiv['files'][1]['content_id'])->toBeNull()
+            // Die Position ist die im Nachrichtenteil, nicht die in einer
+            // gefilterten Liste — dieselbe Nummer, die attachment() annimmt.
+            ->and($archiv['files'][1]['index'])->toBe(1);
+    });
+
+    it('liest den Inhalt eines Anhangs genau EINMAL', function () {
+        // Bug #557: Der Inhalt kommt aus einem Strom, der nach dem ersten
+        // Zugriff leer ist. Zweimal zu fragen schrieb die Datei richtig und die
+        // Groesse daneben als 0 — 697 Anhaenge im Bestand waren betroffen.
+        $datei = anhang(['filename' => 'Angebot.pdf', 'type' => 'application/pdf', 'contents' => '%PDF-1.7']);
+
+        $archiv = (new MessageFormatter)->verbatim(nachricht(['attachments' => [$datei]]));
+
+        expect($datei->gelesen)->toBe(1)
+            ->and($archiv['files'][0]['size'])->toBe(8)
+            ->and($archiv['files'][0]['contents'])->toBe('%PDF-1.7');
     });
 });

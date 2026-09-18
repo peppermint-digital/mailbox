@@ -174,6 +174,72 @@ class JmapMessageFormatter
         return array_values($email['attachments'] ?? []);
     }
 
+    /**
+     * The same message, but for keeping: body untouched, every file separate.
+     *
+     * @param  array<string, mixed>  $email
+     * @param  callable(string, string, string): ?string  $blob  fetches a part's bytes
+     * @return array<string, mixed>
+     */
+    public function verbatim(array $email, callable $blob): array
+    {
+        $from = $email['from'][0] ?? null;
+        $files = [];
+
+        foreach ($this->parts($email) as $index => $part) {
+            $type = (string) ($part['type'] ?? '');
+            $name = (string) ($part['name'] ?? 'attachment');
+            $inhalt = $blob((string) ($part['blobId'] ?? ''), $name, $type);
+
+            if ($inhalt === null) {
+                // Ein Teil, dessen Bytes der Server nicht herausgibt, gehoert
+                // nicht als leere Datei ins Archiv — dort saehe er aus wie ein
+                // Anhang, den jemand geleert hat.
+                continue;
+            }
+
+            $cid = $part['cid'] ?? null;
+
+            $files[] = [
+                'index' => $index,
+                'filename' => $name,
+                'mime_type' => $part['type'] ?? null,
+                'extension' => self::extension($name),
+                'contents' => $inhalt,
+                'size' => strlen($inhalt),
+                'content_id' => $cid,
+                'inline' => self::isInline($cid, $part['disposition'] ?? null),
+            ];
+        }
+
+        return [
+            'uid' => $email['id'] ?? null,
+            'message_id' => $this->firstMessageId($email['messageId'] ?? null),
+            'subject' => $email['subject'] ?? null,
+            'from_address' => $from['email'] ?? '',
+            'from_name' => $from['name'] ?? null,
+            'to' => $this->addresses($email['to'] ?? []),
+            'cc' => $this->addresses($email['cc'] ?? []),
+            'date' => $this->date($email),
+            // Roh, mit cid: — genau der Unterschied zu full().
+            'body_html' => $this->body($email, 'htmlBody'),
+            'body_text' => $this->body($email, 'textBody'),
+            'files' => $files,
+            'is_read' => $this->hasKeyword($email, '$seen'),
+            'is_flagged' => $this->hasKeyword($email, '$flagged'),
+            'in_reply_to' => $this->firstMessageId($email['inReplyTo'] ?? null),
+            'references' => $this->joined($email['references'] ?? null),
+        ];
+    }
+
+    /** Die Endung aus dem Dateinamen — das Einzige, was JMAP dazu hergibt. */
+    private static function extension(string $name): ?string
+    {
+        $endung = pathinfo($name, PATHINFO_EXTENSION);
+
+        return $endung === '' ? null : $endung;
+    }
+
     /** @param array<string, mixed> $email */
     private function visibleAttachments(array $email): array
     {
