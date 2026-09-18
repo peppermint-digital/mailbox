@@ -13,6 +13,20 @@ use Peppermint\Mailbox\Models\MailAccount;
  * schon archiviert ist kein Fehlschlag, und die Volltextsuche allein
  * entscheidet nichts.
  */
+/** Wie verbKlient, aber mit dem losen Formatierer — fuer Zeilen statt Zustand. */
+function verbKlientMitFormatierer(array $ordner): MailboxClient
+{
+    return new MailboxClient(
+        account: MailAccount::fromRemote([
+            'id' => 1, 'email' => 'post@example.test', 'password' => 'geheim',
+            'imap_host' => 'imap.example.test', 'auth_type' => 'password',
+            'oauth_access_token' => null, 'oauth_token_expires_at' => null,
+        ]),
+        retry: new RetryPolicy(maxRetries: 1, sleeper: fn () => null, jitter: fn () => 0.0),
+        connector: fn () => suchPostfach($ordner),
+    );
+}
+
 function verbKlient(array $ordner): MailboxClient
 {
     return new MailboxClient(
@@ -270,5 +284,74 @@ describe('endgueltig loeschen', function () {
         ], 's0']]]);
 
         expect($klient->purge('Drafts', 'm1'))->toBeFalse();
+    });
+});
+
+describe('was seit dem letzten Lauf dazukam', function () {
+    it('grenzt ueber IMAP auf den uid-Bereich danach ein', function () {
+        // Eine hoehere uid heisst: Der Server hat sie spaeter gesehen. Das ist
+        // NICHT dasselbe wie ein spaeteres Datum — und fuer einen Index genau
+        // das Richtige.
+        $ordner = suchOrdner('INBOX', [], [
+            kettenNachricht(11, 'neu', '2026-09-05T10:00:00+00:00', '<a@x>'),
+        ]);
+
+        $zeilen = verbKlientMitFormatierer([$ordner])->newerThan('INBOX', 10, 50);
+
+        expect($ordner->gesucht['uid'] ?? null)->toBe([11, INF])
+            ->and($zeilen)->toHaveCount(1)
+            // Kein IMAP-Objekt nach draussen.
+            ->and($zeilen[0])->not->toHaveKey('message');
+    });
+
+    it('geht rueckwaerts nicht unter uid 1 — und fragt dann gar nicht erst', function () {
+        // Sonst fragt ein frischer Index den Server nach dem Bereich 1 bis 0.
+        // Der Ordner ist absichtlich NICHT leer: Ohne den Riegel kaeme hier
+        // etwas zurueck.
+        $ordner = suchOrdner('INBOX', [], [kettenNachricht(1, 'die einzige', '2026-09-05T10:00:00+00:00', '<a@x>')]);
+
+        expect(verbKlientMitFormatierer([$ordner])->olderThan('INBOX', 1))->toBe([])
+            ->and($ordner->gesucht)->toBe([]);
+    });
+
+    it('fragt ueber JMAP nach der Ankunftszeit der Bezugsnachricht', function () {
+        // JMAP kennt keine uids. Es kennt, wann etwas ankam.
+        $klient = jmapKlient([
+            'Mailbox/get' => [jmapOrdner()],
+            'Email/get' => [['Email/get', ['list' => [['id' => 'm5', 'receivedAt' => '2026-09-05T10:00:00Z']]], 'e0']],
+            'Email/query' => [
+                ['Email/query', ['ids' => ['m5', 'm6'], 'total' => 2], 'q0'],
+                ['Email/get', ['list' => [
+                    ['id' => 'm5', 'subject' => 'die Bezugsnachricht', 'attachments' => []],
+                    ['id' => 'm6', 'subject' => 'danach', 'attachments' => []],
+                ]], 'g0'],
+            ],
+        ], $protokoll);
+
+        $zeilen = $klient->batch(fn ($p) => $p->newerThan('Inbox', 'm5', 20));
+
+        $filter = collect($protokoll)->last()['payload']['methodCalls'][0][1]['filter'];
+
+        expect($filter['after'])->toBe('2026-09-05T10:00:00Z')
+            // Die Grenze ist einschliessend — die Bezugsnachricht selbst
+            // gehoert nicht ins Ergebnis.
+            ->and(array_column($zeilen, 'subject'))->toBe(['danach']);
+    });
+
+    it('raet nicht, wenn es die Bezugsnachricht nicht mehr gibt', function () {
+        // Ein Index, der raet, verdoppelt Zeilen. Geprueft wird deshalb nicht
+        // nur das leere Ergebnis, sondern dass gar keine Abfrage rausging.
+        $klient = jmapKlient([
+            'Mailbox/get' => [jmapOrdner()],
+            'Email/get' => [['Email/get', ['list' => []], 'e0']],
+        ], $protokoll);
+
+        expect($klient->batch(fn ($p) => $p->newerThan('Inbox', 'weg')))->toBe([]);
+
+        $abfragen = collect($protokoll)->filter(
+            fn (array $a): bool => ($a['payload']['methodCalls'][0][0] ?? '') === 'Email/query'
+        );
+
+        expect($abfragen)->toBeEmpty();
     });
 });

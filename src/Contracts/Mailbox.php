@@ -121,6 +121,33 @@ interface Mailbox
     public function headerRows(string $folder, int $limit = 100): array;
 
     /**
+     * Header rows of messages that arrived AFTER this one.
+     *
+     * For anything that keeps its own copy and wants only the growth since
+     * last time — an index, a poller. Fetching the newest hundred and
+     * discarding the known ones works too, and wastes the mailbox\'s time
+     * every single run.
+     *
+     * The handle is a message handle like any other, not a number: IMAP can
+     * answer this from its uid ordering, JMAP from the arrival time of that
+     * message. What both promise is the same sentence — what came after this.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function newerThan(string $folder, int|string $handle, int $limit = 200): array;
+
+    /**
+     * Header rows of messages that arrived BEFORE this one, newest first.
+     *
+     * The other direction, and the reason it exists: an index that starts in
+     * the middle of a full mailbox has to work backwards as well, or the old
+     * mail stays invisible forever.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function olderThan(string $folder, int|string $handle, int $limit = 200): array;
+
+    /**
      * Search one folder.
      *
      * Rows in the same shape as {@see headerRows()}, newest first. The total

@@ -390,6 +390,68 @@ class MailboxClient implements Mailbox
     }
 
     /**
+     * Header rows of messages that arrived after this one.
+     *
+     * Ueber IMAP ist das die uid-Ordnung: Eine hoehere uid heisst, der Server
+     * hat die Nachricht spaeter gesehen. Das ist NICHT dasselbe wie ein
+     * spaeteres Datum — eine alte Mail, die gestern ankam, bekommt trotzdem
+     * die hoehere uid. Genau das will ein Index aber: alles, was seit dem
+     * letzten Lauf dazugekommen ist.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function newerThan(string $folder, int|string $handle, int $limit = 200): array
+    {
+        return $this->cheapRowsFrom($folder, fn ($abfrage) => $abfrage->uid((int) $handle + 1, INF), $limit);
+    }
+
+    /**
+     * Header rows of messages that arrived before this one.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function olderThan(string $folder, int|string $handle, int $limit = 200): array
+    {
+        $bis = (int) $handle - 1;
+
+        if ($bis < 1) {
+            return [];
+        }
+
+        return $this->cheapRowsFrom($folder, fn ($abfrage) => $abfrage->uid(1, $bis)->newest(), $limit);
+    }
+
+    /**
+     * Kopfzeilen-Zeilen aus einer eingegrenzten Abfrage.
+     *
+     * @param  callable(mixed): mixed  $eingrenzen
+     * @return list<array<string, mixed>>
+     */
+    private function cheapRowsFrom(string $folder, callable $eingrenzen, int $limit): array
+    {
+        return $this->session(function ($mailbox) use ($folder, $eingrenzen, $limit): array {
+            $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+
+            if (! $ordner) {
+                return [];
+            }
+
+            $abfrage = $eingrenzen($ordner->messages()->withHeaders()->withFlags());
+
+            $zeilen = [];
+
+            foreach ($this->cheapRows($abfrage->limit($limit)->get()) as $zeile) {
+                // Das Nachrichten-Objekt bleibt drinnen: Diese Zeilen gehen an
+                // ein Produkt, nicht in eine Kette.
+                unset($zeile['message']);
+                $zeilen[] = $zeile;
+            }
+
+            return $zeilen;
+        });
+    }
+
+    /**
      * Search one folder.
      *
      * @return array{0: list<array<string, mixed>>, 1: int}

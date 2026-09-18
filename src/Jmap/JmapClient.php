@@ -329,6 +329,74 @@ class JmapClient implements Mailbox
     }
 
     /**
+     * Header rows of messages that arrived after this one.
+     *
+     * JMAP kennt keine uids und keine Reihenfolge ueber Kennungen — es kennt
+     * Ankunftszeiten. Also wird zuerst gefragt, wann die genannte Nachricht
+     * ankam, und dann alles danach geholt. Zwei Methodenaufrufe in EINEM
+     * Request; der zweite liest den Zeitpunkt nicht aus der Antwort des
+     * ersten, sondern wird mit ihm gebaut — dafuer braucht es die Runde.
+     *
+     * Die Grenze ist ausschliessend gemeint: `after` ist in JMAP „nach oder
+     * gleich", also wird die Nachricht selbst hinterher aussortiert.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function newerThan(string $folder, int|string $handle, int $limit = 200): array
+    {
+        return $this->aroundHandle($folder, (string) $handle, $limit, neuer: true);
+    }
+
+    /**
+     * Header rows of messages that arrived before this one, newest first.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function olderThan(string $folder, int|string $handle, int $limit = 200): array
+    {
+        return $this->aroundHandle($folder, (string) $handle, $limit, neuer: false);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function aroundHandle(string $folder, string $handle, int $limit, bool $neuer): array
+    {
+        $ordner = $this->folderNamed($folder);
+
+        if ($ordner === null) {
+            return [];
+        }
+
+        $bezug = $this->email($handle, ['id', 'receivedAt']);
+        $zeitpunkt = $bezug['receivedAt'] ?? null;
+
+        if (! is_string($zeitpunkt)) {
+            // Die Bezugsnachricht gibt es nicht mehr. Ohne sie waere jede
+            // Antwort geraten — und ein Index, der raet, verdoppelt Zeilen.
+            return [];
+        }
+
+        $filter = ['inMailbox' => $ordner['id']] + ($neuer ? ['after' => $zeitpunkt] : ['before' => $zeitpunkt]);
+
+        [$mails] = $this->find($filter, $limit);
+
+        $zeilen = [];
+
+        foreach ($mails as $mail) {
+            // `after`/`before` schliessen den Zeitpunkt selbst ein; die
+            // Bezugsnachricht gehoert nicht ins Ergebnis.
+            if (($mail['id'] ?? null) === $handle) {
+                continue;
+            }
+
+            $zeilen[] = $this->formatter->summary($mail);
+        }
+
+        return $zeilen;
+    }
+
+    /**
      * Search one folder.
      *
      * @return array{0: list<array<string, mixed>>, 1: int}

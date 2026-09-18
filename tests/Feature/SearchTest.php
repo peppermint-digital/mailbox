@@ -71,6 +71,13 @@ function suchOrdner(string $pfad, array $flags = [], array $nachrichten = [], bo
                     return $this;
                 }
 
+                public function uid(int|float $von, int|float $bis): static
+                {
+                    $this->ordner->gesucht['uid'] = [$von, $bis];
+
+                    return $this;
+                }
+
                 /** Wie beim Server: die Gesamtzahl im Ordner, vor dem limit(). */
                 public function count(): int
                 {
