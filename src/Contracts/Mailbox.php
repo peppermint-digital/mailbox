@@ -252,6 +252,23 @@ interface Mailbox
      */
     public function attachment(string $folder, int|string $uid, int $index): ?array;
 
+    /**
+     * Every attachment of a message, with its bytes.
+     *
+     * For forwarding: the original files have to be re-attached to the
+     * outgoing mail, and asking for them one index at a time would fetch the
+     * message once per file.
+     *
+     * Inline IMAGES stay out — they are part of the body and already embedded
+     * in `body_html`. An inline PDF does not: it is a file someone attached,
+     * whatever the disposition says, and a forward without it is incomplete.
+     * That is a different rule than {@see attachment()} uses, which answers
+     * the view's numbering; here nobody is counting, they are collecting.
+     *
+     * @return list<array{filename: string, mime_type: string|null, contents: string}>
+     */
+    public function attachments(string $folder, int|string $uid): array;
+
     /** False when the message is gone. */
     public function setSeen(string $folder, int|string $uid, bool $seen): bool;
 

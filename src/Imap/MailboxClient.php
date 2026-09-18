@@ -726,6 +726,41 @@ class MailboxClient implements Mailbox
      * read" on a mail a colleague just filed should see nothing happen, not an
      * error about a uid.
      */
+    /**
+     * Every attachment of a message, with its bytes.
+     *
+     * @return list<array{filename: string, mime_type: string|null, contents: string}>
+     */
+    public function attachments(string $folder, int|string $uid): array
+    {
+        return $this->session(function ($mailbox) use ($folder, $uid): array {
+            $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+            $nachricht = $ordner?->messages()->withHeaders()->withBody()->find((int) $uid);
+
+            if (! $nachricht) {
+                return [];
+            }
+
+            $anhaenge = [];
+
+            foreach ($nachricht->attachments() as $anhang) {
+                $typ = (string) ($anhang->contentType() ?? '');
+
+                if (MessageFormatter::isEmbeddedImage($anhang->contentId(), $anhang->contentDisposition(), $typ)) {
+                    continue;
+                }
+
+                $anhaenge[] = [
+                    'filename' => $anhang->filename() ?? 'attachment',
+                    'mime_type' => $anhang->contentType(),
+                    'contents' => (string) $anhang->contents(),
+                ];
+            }
+
+            return $anhaenge;
+        });
+    }
+
     public function setSeen(string $folder, int|string $uid, bool $seen): bool
     {
         return $this->onMessage($folder, $uid, function ($message) use ($seen): bool {

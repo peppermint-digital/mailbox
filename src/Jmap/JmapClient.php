@@ -10,6 +10,7 @@ use Peppermint\Mailbox\Contracts\TokenRefresher;
 use Peppermint\Mailbox\Folders\FolderNames;
 use Peppermint\Mailbox\Imap\FolderPaths;
 use Peppermint\Mailbox\Imap\FolderResolver;
+use Peppermint\Mailbox\Imap\MessageFormatter;
 use Peppermint\Mailbox\Imap\MessagePage;
 use Peppermint\Mailbox\Imap\SystemFolders;
 use Peppermint\Mailbox\Models\MailAccount;
@@ -642,6 +643,50 @@ class JmapClient implements Mailbox
      * value here, and `false` would be stored as a keyword that is present and
      * false, which no other client understands.
      */
+    /**
+     * Every attachment of a message, with its bytes.
+     *
+     * Je Datei ein Blob-Abruf — anders als ueber IMAP, wo mit der Nachricht
+     * ohnehin alles auf einmal kommt. Dafuer holt der Weg hierher nur, was
+     * wirklich gebraucht wird: eine Mail mit zwoelf Bildern und einem PDF
+     * kostet hier einen Abruf, dort den ganzen Rumpf.
+     *
+     * @return list<array{filename: string, mime_type: string|null, contents: string}>
+     */
+    public function attachments(string $folder, int|string $uid): array
+    {
+        $mail = $this->email((string) $uid, ['id', 'attachments']);
+
+        if ($mail === null) {
+            return [];
+        }
+
+        $anhaenge = [];
+
+        foreach ($mail['attachments'] ?? [] as $teil) {
+            $typ = (string) ($teil['type'] ?? '');
+
+            if (MessageFormatter::isEmbeddedImage($teil['cid'] ?? null, $teil['disposition'] ?? null, $typ)) {
+                continue;
+            }
+
+            $name = (string) ($teil['name'] ?? 'attachment');
+            $bytes = $this->blob((string) ($teil['blobId'] ?? ''), $name, $typ ?: 'application/octet-stream');
+
+            if ($bytes === null) {
+                continue;
+            }
+
+            $anhaenge[] = [
+                'filename' => $name,
+                'mime_type' => $teil['type'] ?? null,
+                'contents' => $bytes,
+            ];
+        }
+
+        return $anhaenge;
+    }
+
     public function setSeen(string $folder, int|string $uid, bool $seen): bool
     {
         return $this->patch((string) $uid, ['keywords/$seen' => $seen ?: null]);

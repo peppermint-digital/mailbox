@@ -173,3 +173,33 @@ describe('dieselben Verben ueber JMAP', function () {
             ->and($ergebnis['message'])->toContain('accountNotFound');
     });
 });
+
+describe('alle Anhaenge auf einmal', function () {
+    it('laesst Inline-BILDER weg, aber nicht ein inline PDF', function () {
+        // Das Bild steht schon im Rumpf; es noch einmal anzuhaengen wuerde es
+        // beim Weiterleiten verdoppeln. Ein PDF ist eine Datei, die jemand
+        // angehaengt hat — egal was die Disposition sagt.
+        $mail = [
+            'id' => 'm1',
+            'attachments' => [
+                ['blobId' => 'b1', 'name' => 'logo.png', 'type' => 'image/png', 'cid' => 'logo@x'],
+                ['blobId' => 'b2', 'name' => 'Vertrag.pdf', 'type' => 'application/pdf', 'cid' => 'v@x'],
+                ['blobId' => 'b3', 'name' => 'Angebot.pdf', 'type' => 'application/pdf', 'disposition' => 'attachment'],
+            ],
+        ];
+
+        $klient = jmapKlient(['Email/get' => [['Email/get', ['list' => [$mail]], 'e0']], 'blob' => 'BYTES']);
+
+        $anhaenge = $klient->attachments('Inbox', 'm1');
+
+        expect(array_column($anhaenge, 'filename'))->toBe(['Vertrag.pdf', 'Angebot.pdf'])
+            ->and($anhaenge[0]['mime_type'])->toBe('application/pdf')
+            ->and($anhaenge[0]['contents'])->toBe('BYTES');
+    });
+
+    it('ist leer, wenn es die Nachricht nicht mehr gibt', function () {
+        $klient = jmapKlient(['Email/get' => [['Email/get', ['list' => []], 'e0']]]);
+
+        expect($klient->attachments('Inbox', 'weg'))->toBe([]);
+    });
+});

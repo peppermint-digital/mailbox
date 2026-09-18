@@ -137,6 +137,19 @@ class MessageFormatter
      * What is attachment number two on screen has to be attachment number two
      * when someone files it, or they file the wrong thing.
      */
+    /**
+     * Is this part an image that belongs IN the body?
+     *
+     * The narrower rule, and the one that decides what a forward carries: an
+     * inline image is already embedded in `body_html`, so attaching it again
+     * would duplicate it. An inline PDF is a file someone attached, whatever
+     * the disposition says — it travels.
+     */
+    public static function isEmbeddedImage(?string $contentId, ?string $disposition, string $contentType): bool
+    {
+        return self::isInline($contentId, $disposition) && Str::startsWith($contentType, 'image/');
+    }
+
     private static function isInline(?string $contentId, ?string $disposition): bool
     {
         return $disposition === 'inline' || ($contentId && $disposition !== 'attachment');
