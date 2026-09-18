@@ -18,6 +18,7 @@ function jmapSitzung(): array
         'username' => 'info@example.test',
         'apiUrl' => 'https://mail.example.test/jmap/',
         'downloadUrl' => 'https://mail.example.test/jmap/download/{accountId}/{blobId}/{name}?accept={type}',
+        'uploadUrl' => 'https://mail.example.test/jmap/upload/{accountId}/',
         'primaryAccounts' => ['urn:ietf:params:jmap:mail' => 'c'],
         'accounts' => ['c' => ['name' => 'info@example.test']],
     ];
@@ -58,6 +59,10 @@ function jmapKlient(array $antworten = [], ?array &$protokoll = null, array $kon
 
         if ($method === 'GET') {
             return ['__raw' => $antworten['blob'] ?? 'BYTES'];
+        }
+
+        if ($method === 'POST_RAW') {
+            return $antworten['upload'] ?? ['blobId' => 'hochgeladen-1'];
         }
 
         $ersterAufruf = $payload['methodCalls'][0][0] ?? '';

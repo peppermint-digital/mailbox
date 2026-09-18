@@ -687,6 +687,80 @@ class JmapClient implements Mailbox
         return $anhaenge;
     }
 
+    /**
+     * Puts a message into a folder, without sending it.
+     *
+     * Zwei Schritte, weil JMAP sie trennt: erst die Rohnachricht als Blob
+     * hochladen, dann `Email/import` in den Ordner. Der Umweg ist der Grund,
+     * warum das Verb ueberhaupt existiert — ein Produkt sollte davon nichts
+     * wissen muessen.
+     *
+     * @param  list<string>  $flags  in IMAP-Schreibweise
+     */
+    public function append(string $folder, string $raw, array $flags = []): int|string|null
+    {
+        $ordner = $this->folderNamed($folder);
+
+        if ($ordner === null) {
+            throw new RuntimeException("Folder not found: {$folder}");
+        }
+
+        $hochgeladen = ($this->sender ?? $this->defaultSender())(
+            'POST_RAW',
+            str_replace('{accountId}', rawurlencode($this->session()->accountId), $this->session()->uploadUrl),
+            ['__raw' => $raw, '__type' => 'message/rfc822'],
+            $this->headers(),
+        );
+
+        $blobId = $hochgeladen['blobId'] ?? null;
+
+        if (! is_string($blobId)) {
+            throw new RuntimeException('The JMAP server accepted no blob for this message.');
+        }
+
+        $antwort = $this->antwortZu($this->call([['Email/import', [
+            'accountId' => $this->session()->accountId,
+            'emails' => ['neu' => [
+                'blobId' => $blobId,
+                'mailboxIds' => [$ordner['id'] => true],
+                'keywords' => $this->keywords($flags),
+            ]],
+        ], 'i0']]), 'i0');
+
+        if (isset($antwort['notCreated']['neu'])) {
+            $typ = $antwort['notCreated']['neu']['type'] ?? 'unknown';
+
+            throw new RuntimeException("The server refused to file this message: {$typ}");
+        }
+
+        return $antwort['created']['neu']['id'] ?? null;
+    }
+
+    /**
+     * IMAP-Kennzeichen in JMAP-Schlagworte.
+     *
+     * Der Aufrufer schreibt `\Seen`, weil er das seit jeher tut. Ihm hier eine
+     * zweite Schreibweise beizubringen hiesse, ihm den Transport wieder
+     * beizubringen.
+     *
+     * @param  list<string>  $flags
+     * @return array<string, bool>
+     */
+    private function keywords(array $flags): array
+    {
+        $schlagworte = [];
+
+        foreach ($flags as $flag) {
+            $name = mb_strtolower(ltrim((string) $flag, '\\'));
+
+            if (in_array($name, ['seen', 'draft', 'flagged', 'answered'], true)) {
+                $schlagworte['$'.$name] = true;
+            }
+        }
+
+        return $schlagworte;
+    }
+
     public function setSeen(string $folder, int|string $uid, bool $seen): bool
     {
         return $this->patch((string) $uid, ['keywords/$seen' => $seen ?: null]);
@@ -1023,9 +1097,16 @@ class JmapClient implements Mailbox
                 ->timeout($this->timeout)
                 ->when($method === 'POST', fn ($http) => $http->asJson());
 
-            $ergebnis = $method === 'POST'
-                ? $antwort->post($url, $payload)
-                : $antwort->get($url);
+            $ergebnis = match ($method) {
+                'POST' => $antwort->post($url, $payload),
+                // Eine Rohnachricht ist kein JSON: Sie geht als Rumpf mit
+                // ihrem eigenen Inhaltstyp hinaus.
+                'POST_RAW' => Http::withHeaders($headers + ['Content-Type' => $payload['__type'] ?? 'application/octet-stream'])
+                    ->timeout($this->timeout)
+                    ->withBody($payload['__raw'] ?? '', $payload['__type'] ?? 'application/octet-stream')
+                    ->post($url),
+                default => $antwort->get($url),
+            };
 
             if ($ergebnis->failed()) {
                 throw new RuntimeException(

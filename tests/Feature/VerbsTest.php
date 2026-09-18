@@ -203,3 +203,45 @@ describe('alle Anhaenge auf einmal', function () {
         expect($klient->attachments('Inbox', 'weg'))->toBe([]);
     });
 });
+
+describe('eine Nachricht ablegen', function () {
+    it('laedt sie hoch und legt sie dann ab — zwei Schritte, ein Verb', function () {
+        // JMAP trennt beides. Genau deshalb gibt es das Verb: Ein Produkt soll
+        // davon nichts wissen muessen.
+        $klient = jmapKlient([
+            'Mailbox/get' => [jmapOrdner()],
+            'upload' => ['blobId' => 'blob-neu'],
+            'Email/import' => [['Email/import', ['created' => ['neu' => ['id' => 'm-neu']]], 'i0']],
+        ], $protokoll);
+
+        $kennung = $klient->batch(fn ($p) => $p->append('Sent Items', "From: a@b\r\n\r\nText", ['\\Seen']));
+
+        $hochladen = collect($protokoll)->first(fn (array $a): bool => $a['method'] === 'POST_RAW');
+        $ablegen = collect($protokoll)->last()['payload']['methodCalls'][0][1];
+
+        expect($kennung)->toBe('m-neu')
+            ->and($hochladen['url'])->toContain('/jmap/upload/c/')
+            ->and($hochladen['payload']['__raw'])->toContain('From: a@b')
+            ->and($ablegen['emails']['neu']['blobId'])->toBe('blob-neu')
+            ->and($ablegen['emails']['neu']['mailboxIds'])->toBe(['e' => true])
+            // IMAP-Kennzeichen werden uebersetzt — der Aufrufer schreibt
+            // weiter \Seen.
+            ->and($ablegen['emails']['neu']['keywords'])->toBe(['$seen' => true]);
+    });
+
+    it('macht aus einer Absage beim Ablegen keinen stillen Erfolg', function () {
+        $klient = jmapKlient([
+            'Mailbox/get' => [jmapOrdner()],
+            'Email/import' => [['Email/import', ['notCreated' => ['neu' => ['type' => 'tooLarge']]], 'i0']],
+        ]);
+
+        expect(fn () => $klient->batch(fn ($p) => $p->append('Sent Items', 'Text')))
+            ->toThrow(RuntimeException::class, 'tooLarge');
+    });
+
+    it('legt nicht in einen Ordner ab, den es nicht gibt', function () {
+        // Ohne das laege die gesendete Kopie irgendwo — oder nirgends.
+        expect(fn () => jmapKlient()->append('Gibt-Es-Nicht', 'Text'))
+            ->toThrow(RuntimeException::class, 'Folder not found');
+    });
+});

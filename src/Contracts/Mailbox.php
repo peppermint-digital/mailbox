@@ -269,6 +269,25 @@ interface Mailbox
      */
     public function attachments(string $folder, int|string $uid): array;
 
+    /**
+     * Puts a message into a folder, without sending it.
+     *
+     * The sent copy and the saved draft both need this: the mail exists as
+     * text and has to end up in the mailbox, not on its way somewhere.
+     *
+     * Flags travel in IMAP spelling (`\Seen`, `\Draft`) because that is what
+     * every caller already writes; a JMAP transport translates them into its
+     * own keywords. Handing the caller two vocabularies for one thing would
+     * put the transport back into the product.
+     *
+     * @param  string  $raw  the complete message, headers and body
+     * @param  list<string>  $flags
+     * @return int|string|null the new message's handle, when the server says
+     *                         one — appending is worth doing even when it
+     *                         does not
+     */
+    public function append(string $folder, string $raw, array $flags = []): int|string|null;
+
     /** False when the message is gone. */
     public function setSeen(string $folder, int|string $uid, bool $seen): bool;
 

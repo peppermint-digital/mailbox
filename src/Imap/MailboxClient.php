@@ -761,6 +761,28 @@ class MailboxClient implements Mailbox
         });
     }
 
+    /**
+     * Puts a message into a folder, without sending it.
+     *
+     * @param  list<string>  $flags
+     */
+    public function append(string $folder, string $raw, array $flags = []): int|string|null
+    {
+        return $this->session(function ($mailbox) use ($folder, $raw, $flags): int|string|null {
+            $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+
+            if (! $ordner) {
+                throw new RuntimeException("Folder not found: {$folder}");
+            }
+
+            $ergebnis = $ordner->messages()->append($raw, $flags);
+
+            // Manche Server melden die neue uid, andere nicht. Beides ist in
+            // Ordnung — abgelegt ist sie so oder so.
+            return is_int($ergebnis) || is_string($ergebnis) ? $ergebnis : null;
+        });
+    }
+
     public function setSeen(string $folder, int|string $uid, bool $seen): bool
     {
         return $this->onMessage($folder, $uid, function ($message) use ($seen): bool {

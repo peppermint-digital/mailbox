@@ -37,6 +37,7 @@ class JmapSession
         public readonly string $apiUrl,
         public readonly string $accountId,
         public readonly string $downloadUrl,
+        public readonly string $uploadUrl,
     ) {}
 
     /**
@@ -53,13 +54,13 @@ class JmapSession
             );
         }
 
-        foreach (['apiUrl', 'downloadUrl'] as $pflicht) {
+        foreach (['apiUrl', 'downloadUrl', 'uploadUrl'] as $pflicht) {
             if (! isset($document[$pflicht]) || ! is_string($document[$pflicht])) {
                 throw new RuntimeException("The JMAP session document has no {$pflicht}.");
             }
         }
 
-        return new self($document['apiUrl'], $accountId, $document['downloadUrl']);
+        return new self($document['apiUrl'], $accountId, $document['downloadUrl'], $document['uploadUrl']);
     }
 
     /**
