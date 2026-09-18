@@ -1,5 +1,6 @@
 <?php
 
+use DirectoryTree\ImapEngine\Support\Str as ImapEngineStr;
 use Peppermint\Mailbox\Imap\MailboxClient;
 use Peppermint\Mailbox\Imap\RetryPolicy;
 use Peppermint\Mailbox\Models\MailAccount;
@@ -407,4 +408,14 @@ it('holt fuer den Erstlauf die neuesten Zeilen ohne Rumpf', function () {
         ->and($zeilen[0])->not->toHaveKey('preview')
         ->and($zeilen[0])->not->toHaveKey('message')
         ->and($ordner->gesucht['limit'] ?? null)->toBe(200);
+});
+
+it('baut den offenen Bereich als von:* — nicht als einzelne Kennung', function () {
+    // Der Grund fuer INF statt '*' oder null, und er ist eine Eigenschaft der
+    // Bibliothek, nicht unsere Wahl: '*' wirft (sie verlangt int|float|null),
+    // null ergibt die EINE Kennung statt aller darueber. Der Zuwachs-Lauf des
+    // Verzeichnisses lief deshalb monatelang ins Leere.
+    expect(ImapEngineStr::set(501, INF))->toBe('501:*')
+        ->and(ImapEngineStr::set(501, null))->toBe('501')
+        ->and(ImapEngineStr::set(1, 499))->toBe('1:499');
 });
