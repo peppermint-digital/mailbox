@@ -146,3 +146,63 @@ describe('httpMailboxSources — Öffnen', () => {
         expect(fetch.mock.calls[0][0]).toBe('/emails/9/message/3?folder=INBOX');
     });
 });
+
+describe('die Such-Quelle', () => {
+    const anfrage = {
+        query: 'Angebot',
+        from: '',
+        subject: '',
+        since: '',
+        unseen: false,
+        allFolders: true,
+        folder: 'INBOX',
+        fresh: false,
+    };
+
+    /** Wie `quellen()`, aber mit einer Such-Route. */
+    function mitSuche(antwort: unknown, route?: MailboxRoutes['search']) {
+        const fetch = vi.fn(async () => new Response(JSON.stringify(antwort), { status: 200 }));
+        const q = httpMailboxSources({
+            routes: { ...routen, search: route ?? ((id, p) => `/emails/${id}/search?q=${p.query}&scope=${p.allFolders ? 'all' : 'one'}`) },
+            accountId: () => 7,
+            fetch: fetch as never,
+        });
+
+        return { fetch, q };
+    }
+
+    it('gibt es nur, wenn das Produkt eine Such-Route hat', () => {
+        // Ein Produkt ohne Suche soll auch kein Suchfeld zeigen — und das
+        // entscheidet sich hier, nicht in der Maske.
+        expect(quellen({ success: true }).q.search).toBeUndefined();
+    });
+
+    it('reicht die Eingaben an die Route des Produkts', async () => {
+        const { fetch, q } = mitSuche({ success: true, messages: [], total: 0 });
+
+        await q.search!.search(anfrage);
+
+        expect(fetch.mock.calls[0][0]).toBe('/emails/7/search?q=Angebot&scope=all');
+    });
+
+    it('nimmt die Zahl der durchsuchten Ordner mit', async () => {
+        // Ohne sie sieht eine Suche, die still das halbe Postfach ausgelassen
+        // hat, wie eine vollstaendige aus.
+        const { q } = mitSuche({ success: true, messages: [zeile], total: 1, folders_searched: 7, total_found: 40 });
+
+        const ergebnis = await q.search!.search(anfrage);
+
+        expect(ergebnis.foldersSearched).toBe(7);
+        expect(ergebnis.totalFound).toBe(40);
+    });
+
+    it('macht aus einer Ablehnung kein leeres Ergebnis', async () => {
+        // Sonst sieht „Der Server hat abgelehnt" aus wie „nichts gefunden" —
+        // und niemand erfaehrt den Grund.
+        const { q } = mitSuche({ success: false, message: 'Diese Suche schränkt nichts ein.' });
+
+        const ergebnis = await q.search!.search(anfrage);
+
+        expect(ergebnis.failure).toBe('Diese Suche schränkt nichts ein.');
+    });
+});

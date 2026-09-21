@@ -3,6 +3,7 @@ import type { FolderSource } from './useMailboxFolders';
 import type { MessageHandle, RowMessage } from './rows';
 import type { ListParams, MailboxListSource, MessagePage } from './useMailboxList';
 import type { OpenMessageSource, OpenedMessage } from './useOpenMessage';
+import type { MailboxSearchSource, SearchCriteria } from './useMailboxSearch';
 
 /**
  * The standard way to reach a mailbox over HTTP.
@@ -44,6 +45,11 @@ export interface MailboxRoutes {
     targets?(accountId: number | string): string;
     messages(accountId: number | string, params: Omit<ListParams, 'accountId'>): string;
     message(accountId: number | string, params: { uid: MessageHandle; folder: string }): string;
+    /**
+     * Die Suche. Weglassen, wenn dieses Produkt keine hat — dann fehlt
+     * `search` in den Quellen und die Maske zeigt kein Suchfeld.
+     */
+    search?(accountId: number | string, params: SearchCriteria & { folder: string; fresh: boolean }): string;
 }
 
 export interface HttpMailboxSourcesOptions {
@@ -60,6 +66,8 @@ export interface HttpMailboxSources<M extends RowMessage, D> {
     folders: FolderSource;
     messages: MailboxListSource<M>;
     message: OpenMessageSource<M, D>;
+    /** Nur gesetzt, wenn `routes.search` da ist. */
+    search?: MailboxSearchSource<M>;
 }
 
 export function httpMailboxSources<M extends RowMessage, D>({
@@ -140,5 +148,32 @@ export function httpMailboxSources<M extends RowMessage, D>({
                 } as OpenedMessage<D>;
             },
         },
+        ...(routes.search
+            ? {
+                  search: {
+                      async search(params: SearchCriteria & { folder: string; fresh: boolean }) {
+                          const daten = await frage(routes.search!(accountId(), params));
+
+                          if (!daten.success) {
+                              // Dieselbe Trennung wie ueberall hier: Eine
+                              // Ablehnung ist eine Antwort mit Grund, ein
+                              // geworfener fetch ist gar keine.
+                              return { messages: [], total: 0, failure: daten.message as string | undefined };
+                          }
+
+                          return {
+                              messages: (daten.messages ?? []) as M[],
+                              total: (daten.total ?? 0) as number,
+                              // Ohne diese Zahl sieht eine Suche, die still das
+                              // halbe Postfach ausgelassen hat, wie eine
+                              // vollstaendige aus.
+                              foldersSearched: daten.folders_searched as number | undefined,
+                              totalFound: daten.total_found as number | undefined,
+                              searchedIndex: daten.searched_index as boolean | undefined,
+                          };
+                      },
+                  },
+              }
+            : {}),
     };
 }
