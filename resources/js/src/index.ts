@@ -21,6 +21,7 @@ export { default as MailMessageView } from './MailMessageView';
 export * from './bulk';
 export * from './transport';
 export * from './useMailboxList';
+export * from './useMailboxSearch';
 export * from './useMailboxFolders';
 export * from './useOpenMessage';
 export * from './useMessageSelection';
