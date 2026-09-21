@@ -198,3 +198,76 @@ it('nimmt auch bei find() die Mitte dazu', function () {
     expect($speicher->find(7)?->field('imap_host'))->toBe('neu.example.test')
         ->and($speicher->find(999))->toBeNull();
 });
+
+it('laesst den Ausweis des Produkts in Ruhe, auch wenn er zentral anders heisst', function () {
+    // `provider` gibt es auf beiden Seiten und bedeutet Verschiedenes: Die
+    // Mitte schreibt, WAS fuer ein Postfach es ist (office365, imap), ein
+    // gewachsenes Produkt, mit welchem Anbieter es sich anmeldet (microsoft,
+    // google). Wandert der zentrale Wert mit, bekommt das Produkt ein Wort,
+    // das sein eigener Code nicht kennt — gemessen am 21.09.2026 an
+    // info@crewtex.de: zentral 'imap', hier erwartet 'microsoft'/'google'.
+    $speicher = new MergedAccountStore(
+        speicher([lokalesKonto(['provider' => 'microsoft'])]),
+        speicher([MailAccount::fromRemote([
+            'email' => 'department@example.test',
+            'provider' => 'office365',
+            'imap_host' => 'outlook.office365.com',
+        ])]),
+    );
+
+    $konto = $speicher->all()->first();
+
+    expect($konto->getAttribute('provider'))->toBe('microsoft')
+        ->and($konto->field('imap_host'))->toBe('outlook.office365.com');
+});
+
+it('nimmt Token und Gueltigkeit zusammen — oder gar nicht', function () {
+    // Ein Token und der Moment, in dem es aufhoert zu wirken, sind nicht zwei
+    // Tatsachen. AI Brain praegt bei jedem Lesen ein frisches Token und hat
+    // deshalb zur Gueltigkeit nichts zu sagen. Bliebe die EIGENE alte
+    // Gueltigkeit stehen, stuende sie neben einem fremden Token — ein
+    // Zeitstempel ueber ein Token, das niemand mehr haelt.
+    $speicher = new MergedAccountStore(
+        speicher([lokalesKonto([
+            'auth_type' => 'oauth',
+            'oauth_access_token' => 'altes-token',
+            'oauth_token_expires_at' => '2026-09-21 12:00:00',
+        ])]),
+        speicher([MailAccount::fromRemote([
+            'email' => 'department@example.test',
+            'auth_type' => 'oauth',
+            'oauth_access_token' => 'frisch-gepraegt',
+            'oauth_token_expires_at' => null,
+        ])]),
+    );
+
+    $konto = $speicher->all()->first();
+
+    expect($konto->field('oauth_access_token'))->toBe('frisch-gepraegt')
+        ->and($konto->field('oauth_token_expires_at'))->toBeNull()
+        // Und damit faellt die Frage, die auf der falschen Uhr beruht hätte.
+        ->and($konto->isTokenExpiringSoon())->toBeFalse();
+});
+
+it('laesst die Gueltigkeit stehen, wenn die Mitte das Token gar nicht kennt', function () {
+    // Kein Teil des Paares kommt zentral — dann gilt die Luecken-Regel wie bei
+    // jedem anderen Feld, und das Produkt behaelt sein funktionierendes Paar.
+    $speicher = new MergedAccountStore(
+        speicher([lokalesKonto([
+            'auth_type' => 'oauth',
+            'oauth_access_token' => 'eigenes-token',
+            'oauth_token_expires_at' => '2030-01-01 00:00:00',
+        ])]),
+        speicher([MailAccount::fromRemote([
+            'email' => 'department@example.test',
+            'imap_host' => 'neu.example.test',
+            'oauth_access_token' => null,
+            'oauth_token_expires_at' => null,
+        ])]),
+    );
+
+    $konto = $speicher->all()->first();
+
+    expect($konto->getAttribute('oauth_access_token'))->toBe('eigenes-token')
+        ->and((string) $konto->getAttribute('oauth_token_expires_at'))->toContain('2030');
+});

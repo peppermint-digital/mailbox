@@ -48,15 +48,45 @@ class MergedAccountStore implements AccountStore
     /**
      * What a protocol client needs in order to connect — and nothing else.
      *
+     * `provider` is deliberately NOT in here, although both sides have a field
+     * by that name. They do not mean the same thing: the centre writes what
+     * KIND of mailbox it is (`office365`, `imap`), a grown product writes which
+     * OAuth vendor to sign in with (`microsoft`, `google`). Nothing in this
+     * package reads it, so letting it travel would buy nothing and hand a
+     * product a word its own code does not understand.
+     *
      * @var list<string>
      */
     public const CORE = [
         'protocol', 'jmap_url',
         'imap_host', 'imap_port', 'imap_encryption',
         'smtp_host', 'smtp_port', 'smtp_encryption',
-        'auth_type', 'username', 'password', 'provider',
+        'auth_type', 'username', 'password',
         'oauth_tenant_id', 'oauth_client_id', 'oauth_client_secret',
         'oauth_access_token', 'oauth_refresh_token', 'oauth_token_expires_at',
+    ];
+
+    /**
+     * Fields that are one value in two columns — they travel together or not at all.
+     *
+     * A token and the moment it stops working are not two facts. Under the
+     * gap rule below, a centre that hands out a token but no expiry would
+     * leave the product's OWN old expiry standing next to someone else's
+     * token — a timestamp that describes a token nobody holds any more.
+     *
+     * That is not hypothetical: AI Brain mints a fresh access token on every
+     * read and therefore has nothing to say about expiry. Whoever later wires
+     * a token refresher into the client would act on the wrong clock, and the
+     * symptom — a mailbox that signs in fine for a while and then stops —
+     * points nowhere near here.
+     *
+     * So: if ANY member of a pair comes from the centre, the whole pair does,
+     * and a member the centre does not have becomes null.
+     *
+     * @var list<list<string>>
+     */
+    private const PAIRS = [
+        ['oauth_access_token', 'oauth_token_expires_at'],
     ];
 
     public function __construct(
@@ -128,14 +158,17 @@ class MergedAccountStore implements AccountStore
         }
 
         $werte = [];
+        $gepaart = $this->pairedFields($quelle);
 
         foreach (self::CORE as $feld) {
             $wert = $quelle->field($feld);
 
-            if ($wert === null) {
+            if ($wert === null && ! in_array($feld, $gepaart, true)) {
                 // Ein zentral leeres Feld ist keine Aussage, sondern eine
                 // Luecke — sonst loescht ein noch nicht gepflegtes SMTP-Feld
-                // den funktionierenden lokalen Wert.
+                // den funktionierenden lokalen Wert. Ausgenommen sind Felder
+                // aus einem Paar, dessen anderer Teil zentral gepflegt ist:
+                // dort IST das Schweigen eine Aussage.
                 continue;
             }
 
@@ -143,6 +176,28 @@ class MergedAccountStore implements AccountStore
         }
 
         return $lokal->withCentral($werte);
+    }
+
+    /**
+     * Which fields must travel because their partner does.
+     *
+     * @return list<string>
+     */
+    private function pairedFields(MailAccount $quelle): array
+    {
+        $felder = [];
+
+        foreach (self::PAIRS as $paar) {
+            foreach ($paar as $feld) {
+                if ($quelle->field($feld) !== null) {
+                    $felder = array_merge($felder, $paar);
+
+                    break;
+                }
+            }
+        }
+
+        return $felder;
     }
 
     private function address(MailAccount $konto): ?string
