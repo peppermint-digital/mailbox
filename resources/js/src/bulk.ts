@@ -22,7 +22,7 @@ import type { MessageHandle } from './rows';
  * @param fallback the folder for everything `folderOf` does not know
  */
 export function groupUidsByFolder(
-    uids: Iterable<number>,
+    uids: Iterable<MessageHandle>,
     folderOf: (uid: MessageHandle) => string | null | undefined,
     fallback: string,
 ): Map<string, MessageHandle[]> {
@@ -61,7 +61,7 @@ export interface BulkVerdict {
 }
 
 export interface RunBulkOptions {
-    uids: Iterable<number>;
+    uids: Iterable<MessageHandle>;
     /** Says where a uid sits; unknown falls back to `currentFolder`. */
     folderOf: (uid: MessageHandle) => string | null | undefined;
     currentFolder: string;

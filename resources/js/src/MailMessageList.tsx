@@ -78,7 +78,7 @@ export interface MailMessageListProps<M extends RowMessage> {
     rows: DisplayRow<M>[];
     labels: MailMessageListLabels;
     /** The message currently open, so its row can be marked. */
-    openedUid?: number | null;
+    openedUid?: MessageHandle | null;
     /** Which rows are ticked. */
     selectedUids?: ReadonlySet<MessageHandle>;
     /** Which conversations are expanded, by `key`. */

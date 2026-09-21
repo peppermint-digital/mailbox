@@ -3,6 +3,7 @@ import { useMemo, useState, type ComponentType } from 'react';
 import EmailBodyViewer, { type EmailBodyViewerLabels } from '../EmailBodyViewer';
 import { buildForwardQuote, type QuoteOptions } from '../quote';
 import type { ReplyAddress } from '../replyRecipients';
+import type { MessageHandle } from '../rows';
 
 /**
  * Forwarding a mail.
@@ -22,7 +23,7 @@ import type { ReplyAddress } from '../replyRecipients';
  * form displays.
  */
 
-export type ForwardSource = { type: 'imap'; folder: string; uid: number } | { type: 'stored'; emailId: number };
+export type ForwardSource = { type: 'imap'; folder: string; uid: MessageHandle } | { type: 'stored'; emailId: number };
 
 export interface ForwardComposerLabels {
     forward: string;
