@@ -15,6 +15,21 @@ import type { ReactNode } from 'react';
  * one links a mail to a task, the next to a contact. Those go into the panes,
  * not into this frame.
  *
+ * ## Jede Spalte scrollt selbst
+ *
+ * Der Rahmen ist so hoch wie das Fenster und schneidet ab, was darueber
+ * hinausgeht (`overflow-hidden`). Damit darin ueberhaupt etwas erreichbar
+ * bleibt, muss JEDE Spalte ihren eigenen Scroll-Container haben.
+ *
+ * Der Listen-Spalte fehlte er bis zum 21.09.2026 — die Ordner-Spalte hatte
+ * ihn, die Liste nicht. Solange ein Ordner wenige Nachrichten hatte, fiel das
+ * nicht auf; mit eingeschalteten Konversationen wuchs die Liste, und der
+ * untere Teil war schlicht nicht mehr erreichbar. Kein Fehler, keine Meldung —
+ * die Zeilen waren einfach weg.
+ *
+ * Der Manager baute sich denselben Container seit je von Hand um seine Liste.
+ * Genau die Sorte Antwort, die hierher gehoert statt in jedes Produkt.
+ *
  * ## The folder column collapses, and that is a preference
  *
  * Whether it is open is remembered by the product — it is a per-person setting
@@ -49,7 +64,7 @@ export function MailboxBrowser({ folders, list, view, aside, toolbar, showFolder
                     </div>
                 )}
 
-                <div className={`flex ${listWidth} flex-col border-r`} data-slot="mailbox-list">
+                <div className={`flex ${listWidth} flex-col overflow-y-auto border-r`} data-slot="mailbox-list">
                     {list}
                 </div>
 

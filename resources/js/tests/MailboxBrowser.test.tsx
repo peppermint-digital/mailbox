@@ -59,4 +59,21 @@ describe('MailboxBrowser', () => {
         expect(container.querySelector('[data-slot="mailbox-list"]')?.className).toContain('w-96');
         unmount();
     });
+
+    it('laesst jede Spalte selbst scrollen', () => {
+        // Der Rahmen ist so hoch wie das Fenster und schneidet ab, was darueber
+        // hinausgeht. Fehlt einer Spalte ihr eigener Scroll-Container, ist ihr
+        // unterer Teil schlicht nicht mehr erreichbar — ohne Fehler, ohne
+        // Meldung, die Zeilen sind einfach weg.
+        //
+        // Der Liste fehlte er bis zum 21.09.2026. Gemeldet wurde es erst, als
+        // eingeschaltete Konversationen die Liste laenger machten.
+        const { container, unmount } = render(<MailboxBrowser {...panes} />);
+
+        for (const spalte of ['mailbox-folders', 'mailbox-list']) {
+            expect(container.querySelector(`[data-slot="${spalte}"]`)?.className, spalte).toContain('overflow-y-auto');
+        }
+
+        unmount();
+    });
 });
