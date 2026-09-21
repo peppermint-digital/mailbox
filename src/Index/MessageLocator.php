@@ -52,7 +52,7 @@ class MessageLocator
      *                                                                        index knows, newest first
      * @return array{folder: string, uid: int, message: array<string, mixed>}|null
      */
-    public function locate(string $folder, int $uid, iterable $alternatives = []): ?array
+    public function locate(string $folder, int|string $uid, iterable $alternatives = []): ?array
     {
         $message = ($this->fetch)($folder, $uid);
 
