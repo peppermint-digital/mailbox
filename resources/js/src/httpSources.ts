@@ -1,6 +1,6 @@
 import type { MailFolder } from './MailFolderList';
 import type { FolderSource } from './useMailboxFolders';
-import type { RowMessage } from './rows';
+import type { MessageHandle, RowMessage } from './rows';
 import type { ListParams, MailboxListSource, MessagePage } from './useMailboxList';
 import type { OpenMessageSource, OpenedMessage } from './useOpenMessage';
 
@@ -43,7 +43,7 @@ export interface MailboxRoutes {
     /** Every folder a message may be moved into. Omit if the product has no such route. */
     targets?(accountId: number | string): string;
     messages(accountId: number | string, params: Omit<ListParams, 'accountId'>): string;
-    message(accountId: number | string, params: { uid: number; folder: string }): string;
+    message(accountId: number | string, params: { uid: MessageHandle; folder: string }): string;
 }
 
 export interface HttpMailboxSourcesOptions {

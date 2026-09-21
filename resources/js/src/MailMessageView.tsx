@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import EmailBodyViewer, { type EmailBodyViewerLabels } from './EmailBodyViewer';
 import { Button } from './ui/button';
 import { cn } from './ui/utils';
+import type { MessageHandle } from './rows';
 
 /**
  * The reading pane: what one opened message shows and what may be done to it.
@@ -46,7 +47,7 @@ export interface MailMessageViewAttachment {
 }
 
 export interface MailMessageViewMessage {
-    uid: number | null;
+    uid: MessageHandle | null;
     message_id: string;
     subject: string;
     from_address: string;

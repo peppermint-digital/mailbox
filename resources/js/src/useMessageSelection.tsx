@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { bulkTargets } from './rows';
-import type { RowMessage, Thread } from './rows';
+import type { MessageHandle, RowMessage, Thread } from './rows';
 
 /**
  * What is ticked, and which conversations are open.
@@ -20,14 +20,14 @@ import type { RowMessage, Thread } from './rows';
 
 export interface MessageSelection {
     /** The uids that were ticked — what the checkboxes show. */
-    ticked: ReadonlySet<number>;
+    ticked: ReadonlySet<MessageHandle>;
     /** What an action really hits. In conversation mode more than was ticked. */
-    targets: number[];
+    targets: MessageHandle[];
     /** Whether anything is ticked at all. */
     any: boolean;
     /** Which conversations are expanded, by thread id. */
     expanded: ReadonlySet<string>;
-    toggle: (uid: number, checked: boolean) => void;
+    toggle: (uid: MessageHandle, checked: boolean) => void;
     clear: () => void;
     toggleThread: (key: string) => void;
     collapseAll: () => void;
@@ -44,7 +44,7 @@ export function useMessageSelection<M extends RowMessage>({
     grouped,
     isSearchMode,
 }: UseMessageSelectionOptions<M>): MessageSelection {
-    const [ticked, setTicked] = useState<Set<number>>(new Set());
+    const [ticked, setTicked] = useState<Set<MessageHandle>>(new Set());
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
     const targets = useMemo(
@@ -52,7 +52,7 @@ export function useMessageSelection<M extends RowMessage>({
         [ticked, threads, grouped, isSearchMode],
     );
 
-    const toggle = useCallback((uid: number, checked: boolean) => {
+    const toggle = useCallback((uid: MessageHandle, checked: boolean) => {
         setTicked((before) => {
             const next = new Set(before);
 

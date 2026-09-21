@@ -379,3 +379,49 @@ describe('bulkTargets and threadActionUids agree with the guard', () => {
         expect(threadActionUids(negative, 1)).toEqual([1]);
     });
 });
+
+describe('JMAP-Kennungen sind Zeichenketten', () => {
+    // Der Fehler vom 21.09.2026, vier Tage lang live: Die PHP-Seite wurde am
+    // 17.09. auf `int|string` umgestellt, die JavaScript-Seite nie. Alles hier
+    // stand auf `number`, `hasUsableUid()` fragte `typeof uid === 'number'` —
+    // und die Oberflaeche meldete „Diese Nachricht laesst sich nicht oeffnen —
+    // sie traegt keine Kennung." Kein Fehler im Protokoll, kein Ausfall: ein
+    // Postfach, in dem sich einfach nichts oeffnen liess.
+    it('haelt eine Zeichenketten-Kennung fuer brauchbar', () => {
+        expect(hasUsableUid({ uid: 'bpyaaaal1' })).toBe(true);
+        expect(canOpenMessage({ uid: 'bpyaaaal1' })).toBe(true);
+    });
+
+    it('haelt eine leere Zeichenkette NICHT fuer brauchbar', () => {
+        // Sonst ginge eine Anfrage ohne Kennung ans Postfach hinaus — genau
+        // das, wogegen die Pruefung ueberhaupt existiert.
+        expect(hasUsableUid({ uid: '' })).toBe(false);
+        expect(hasUsableUid({ uid: '   ' })).toBe(false);
+        expect(canOpenMessage({ uid: '' })).toBe(false);
+    });
+
+    it('bleibt bei Zahlen streng: 0 und negativ sind keine Kennung', () => {
+        expect(hasUsableUid({ uid: 0 })).toBe(false);
+        expect(hasUsableUid({ uid: -1 })).toBe(false);
+    });
+
+    it('findet die Kette einer Zeichenketten-Kennung', () => {
+        const thread: Thread<RowMessage> = {
+            thread_id: 't1',
+            messages: [message({ uid: 'aaa' }), message({ uid: 'bbb' })],
+            has_unread: false,
+        } as Thread<RowMessage>;
+
+        expect(threadOf([thread], 'bbb', true, false)?.thread_id).toBe('t1');
+    });
+
+    it('sammelt Zeichenketten-Kennungen fuer eine Sammelaktion', () => {
+        const thread: Thread<RowMessage> = {
+            thread_id: 't1',
+            messages: [message({ uid: 'aaa' }), message({ uid: 'bbb' })],
+            has_unread: false,
+        } as Thread<RowMessage>;
+
+        expect(threadActionUids(thread, 'aaa')).toEqual(['aaa', 'bbb']);
+    });
+});

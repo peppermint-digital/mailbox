@@ -1,4 +1,5 @@
 import { didSomething, type BulkOutcome } from './transport';
+import type { MessageHandle } from './rows';
 
 /**
  * Acting on many messages at once.
@@ -22,10 +23,10 @@ import { didSomething, type BulkOutcome } from './transport';
  */
 export function groupUidsByFolder(
     uids: Iterable<number>,
-    folderOf: (uid: number) => string | null | undefined,
+    folderOf: (uid: MessageHandle) => string | null | undefined,
     fallback: string,
-): Map<string, number[]> {
-    const byFolder = new Map<string, number[]>();
+): Map<string, MessageHandle[]> {
+    const byFolder = new Map<string, MessageHandle[]>();
 
     for (const uid of uids) {
         const folder = folderOf(uid) || fallback;
@@ -62,12 +63,12 @@ export interface BulkVerdict {
 export interface RunBulkOptions {
     uids: Iterable<number>;
     /** Says where a uid sits; unknown falls back to `currentFolder`. */
-    folderOf: (uid: number) => string | null | undefined;
+    folderOf: (uid: MessageHandle) => string | null | undefined;
     currentFolder: string;
     /** Set for a move; groups already in that folder are left out. */
     targetFolder?: string | null;
     /** Sends one folder's worth of work. Null means the answer cannot be trusted. */
-    send: (folder: string, uids: number[]) => Promise<BulkOutcome | null>;
+    send: (folder: string, uids: MessageHandle[]) => Promise<BulkOutcome | null>;
 }
 
 /**

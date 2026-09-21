@@ -4,6 +4,7 @@ import EmailBodyViewer, { type EmailBodyViewerLabels } from './EmailBodyViewer';
 import { buildReplyQuote, type QuoteOptions } from './quote';
 import { replyCcRecipients, replyToRecipients, type ReplyAddress } from './replyRecipients';
 import { Button } from './ui/button';
+import type { MessageHandle } from './rows';
 
 /**
  * A reply field right inside the mailbox view.
@@ -31,7 +32,7 @@ export interface InlineReplyAccount {
 }
 
 export interface InlineReplyMessage {
-    uid: number;
+    uid: MessageHandle;
     message_id: string;
     subject: string;
     from_address: string;

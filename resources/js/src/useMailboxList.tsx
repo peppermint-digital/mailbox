@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import type { RowMessage, Thread } from './rows';
+import type { MessageHandle, RowMessage, Thread } from './rows';
 
 /**
  * The list half of a mailbox: what is loaded, how it is paged, and what state
@@ -82,11 +82,11 @@ export interface MailboxList<M extends RowMessage> {
      * from the server. The Vue version removed from the flat list only, and a
      * conversation archived on its own stayed visible until a reload.
      */
-    messageLeft: (uid: number) => Promise<void>;
+    messageLeft: (uid: MessageHandle) => Promise<void>;
     /** The same for several at once — a bulk move, archive or delete. */
-    messagesLeft: (uids: Iterable<number>) => Promise<void>;
+    messagesLeft: (uids: Iterable<MessageHandle>) => Promise<void>;
     /** Applies the same change to several rows, without reloading. */
-    patchRows: (uids: Iterable<number>, changes: Partial<M>) => void;
+    patchRows: (uids: Iterable<MessageHandle>, changes: Partial<M>) => void;
     /** Switches between conversations and single messages, starting at page 1. */
     setGrouped: (grouped: boolean, accountId: number | string, folder: string) => Promise<void>;
     /**
@@ -94,7 +94,7 @@ export interface MailboxList<M extends RowMessage> {
      * conversation member. The unread dot of a conversation is recomputed
      * from its members, because that is what it means.
      */
-    patchRow: (uid: number, changes: Partial<M>) => void;
+    patchRow: (uid: MessageHandle, changes: Partial<M>) => void;
     /**
      * Changes a row found by message id rather than uid.
      *
@@ -105,7 +105,7 @@ export interface MailboxList<M extends RowMessage> {
      */
     patchRowById: (messageId: string, changes: Partial<M>) => void;
     /** Drops rows the mailbox no longer holds, and corrects the total. */
-    removeRows: (uids: Iterable<number>) => void;
+    removeRows: (uids: Iterable<MessageHandle>) => void;
     /**
      * Shows rows that did not come from `source.list` — search results, most
      * often. Always flat: hits come from every folder, conversations only ever
@@ -221,7 +221,7 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
         [load],
     );
 
-    const patchRow = useCallback((uid: number, changes: Partial<M>) => {
+    const patchRow = useCallback((uid: MessageHandle, changes: Partial<M>) => {
         setMessages((before) => (before.some((m) => m.uid === uid) ? before.map((m) => (m.uid === uid ? { ...m, ...changes } : m)) : before));
 
         setThreads((before) =>
@@ -250,7 +250,7 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
     }, []);
 
     const patchRows = useCallback(
-        (uids: Iterable<number>, changes: Partial<M>) => {
+        (uids: Iterable<MessageHandle>, changes: Partial<M>) => {
             for (const uid of uids) {
                 patchRow(uid, changes);
             }
@@ -267,7 +267,7 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
         );
     }, []);
 
-    const removeRows = useCallback((uids: Iterable<number>) => {
+    const removeRows = useCallback((uids: Iterable<MessageHandle>) => {
         const weg = new Set(uids);
 
         setMessages((before) => {
@@ -300,7 +300,7 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
     }, []);
 
     const messagesLeft = useCallback(
-        async (uids: Iterable<number>) => {
+        async (uids: Iterable<MessageHandle>) => {
             if (grouped) {
                 await reload({ refresh: true });
                 return;
@@ -311,7 +311,7 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
         [grouped, reload, removeRows],
     );
 
-    const messageLeft = useCallback((uid: number) => messagesLeft([uid]), [messagesLeft]);
+    const messageLeft = useCallback((uid: MessageHandle) => messagesLeft([uid]), [messagesLeft]);
 
     const clearFailure = useCallback(() => setFailure(null), []);
 

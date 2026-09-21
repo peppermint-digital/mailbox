@@ -23,9 +23,25 @@
  * which reads as data loss.
  */
 
+/**
+ * Die Kennung einer Nachricht — eine Zahl oder eine Zeichenkette.
+ *
+ * IMAP zaehlt uids, JMAP vergibt Zeichenketten (`bpyaaaal1`). Das ist der EINE
+ * Unterschied, den der Vertrag der PHP-Seite seit dem 17.09.2026 zulaesst —
+ * und die JavaScript-Seite hat ihn bis zum 21.09. nicht mitbekommen: Sie stand
+ * ueberall auf `number`.
+ *
+ * Die Folge war still und vollstaendig: `hasUsableUid()` fragte
+ * `typeof uid === 'number'`, eine JMAP-Zeichenkette fiel durch, und die
+ * Oberflaeche meldete „Diese Nachricht laesst sich nicht oeffnen — sie traegt
+ * keine Kennung." Kein Fehler im Protokoll, keine Ausnahme: ein Postfach, in
+ * dem sich einfach nichts oeffnen liess.
+ */
+export type MessageHandle = number | string;
+
 /** A message as the list renders it. Product types may carry more. */
 export interface RowMessage {
-    uid: number;
+    uid: MessageHandle;
     message_id?: string;
     subject: string;
     from_address: string;
@@ -47,7 +63,7 @@ export interface RowMessage {
 
 /** A message as it appears inside a conversation. Leaner than a list row. */
 export interface ThreadMessage {
-    uid?: number;
+    uid?: MessageHandle;
     message_id?: string;
     subject?: string;
     from_address?: string;
@@ -156,6 +172,11 @@ export function buildDisplayRows<M extends RowMessage>(options: BuildDisplayRows
  * by truthiness, which lets a negative number through.
  */
 export function hasUsableUid(message: Pick<RowMessage, 'uid'>): boolean {
+    // JMAP: eine nicht-leere Zeichenkette IST die Kennung.
+    if (typeof message.uid === 'string') {
+        return message.uid.trim() !== '';
+    }
+
     return typeof message.uid === 'number' && message.uid > 0;
 }
 
@@ -198,7 +219,7 @@ export function navigableRows<M extends RowMessage>(rows: DisplayRow<M>[]): Disp
 }
 
 export interface BulkTargetsOptions<M extends RowMessage> {
-    selectedUids: Iterable<number>;
+    selectedUids: Iterable<MessageHandle>;
     threads: Thread<M>[];
     groupByThread: boolean;
     isSearchMode: boolean;
@@ -214,7 +235,7 @@ export interface BulkTargetsOptions<M extends RowMessage> {
  * Stored replies and members without a uid stay out: they have nothing the
  * mailbox could act on.
  */
-export function bulkTargets<M extends RowMessage>(options: BulkTargetsOptions<M>): number[] {
+export function bulkTargets<M extends RowMessage>(options: BulkTargetsOptions<M>): MessageHandle[] {
     const { selectedUids, threads, groupByThread, isSearchMode } = options;
     const ticked = [...selectedUids];
 
@@ -222,7 +243,7 @@ export function bulkTargets<M extends RowMessage>(options: BulkTargetsOptions<M>
         return ticked;
     }
 
-    const all = new Set<number>();
+    const all = new Set<MessageHandle>();
 
     for (const uid of ticked) {
         const thread = threads.find((candidate) => candidate.messages.some((message) => message.uid === uid));
@@ -251,18 +272,18 @@ export function bulkTargets<M extends RowMessage>(options: BulkTargetsOptions<M>
  * Own stored replies stay out: they sit in the sent folder and have no uid
  * here.
  */
-export function threadActionUids<M extends RowMessage>(thread: Thread<M> | null, fallbackUid: number | null | undefined): number[] {
+export function threadActionUids<M extends RowMessage>(thread: Thread<M> | null, fallbackUid: MessageHandle | null | undefined): MessageHandle[] {
     if (!thread) {
         return fallbackUid ? [fallbackUid] : [];
     }
 
-    return [...new Set(thread.messages.filter((message) => message.source !== 'stored' && hasUsableUid(message as RowMessage)).map((message) => message.uid as number))];
+    return [...new Set(thread.messages.filter((message) => message.source !== 'stored' && hasUsableUid(message as RowMessage)).map((message) => message.uid as MessageHandle))];
 }
 
 /** The conversation the open message sits in, or null outside conversation mode. */
 export function threadOf<M extends RowMessage>(
     threads: Thread<M>[],
-    uid: number | null | undefined,
+    uid: MessageHandle | null | undefined,
     groupByThread: boolean,
     isSearchMode: boolean,
 ): Thread<M> | null {

@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight, Paperclip, Star } from 'lucide-react';
 import type { MouseEvent, ReactNode } from 'react';
-import type { DisplayRow, RowMessage } from './rows';
+import type { DisplayRow, MessageHandle, RowMessage } from './rows';
 import { Checkbox } from './ui/checkbox';
 import { cn } from './ui/utils';
 
@@ -80,7 +80,7 @@ export interface MailMessageListProps<M extends RowMessage> {
     /** The message currently open, so its row can be marked. */
     openedUid?: number | null;
     /** Which rows are ticked. */
-    selectedUids?: ReadonlySet<number>;
+    selectedUids?: ReadonlySet<MessageHandle>;
     /** Which conversations are expanded, by `key`. */
     expandedThreads?: ReadonlySet<string>;
     /** Search changes what a row has to say about itself. */
@@ -91,7 +91,7 @@ export interface MailMessageListProps<M extends RowMessage> {
     formatSender: (message: M) => string;
     onOpen: (message: M) => void;
     onToggleThread?: (key: string) => void;
-    onToggleSelect?: (uid: number, checked: boolean) => void;
+    onToggleSelect?: (uid: MessageHandle, checked: boolean) => void;
     /** What the product hangs on a row — an assignee, a linked contact. */
     rowAccessory?: (row: DisplayRow<M>) => ReactNode;
     /** The product's own row menu, e.g. right-click to assign. */
@@ -114,7 +114,7 @@ export function MailMessageList<M extends RowMessage>({
     rowAccessory,
     onRowContextMenu,
 }: MailMessageListProps<M>) {
-    const ticked = selectedUids ?? new Set<number>();
+    const ticked = selectedUids ?? new Set<MessageHandle>();
     const expanded = expandedThreads ?? new Set<string>();
 
     return (
