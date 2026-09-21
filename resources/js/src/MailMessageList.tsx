@@ -118,7 +118,11 @@ export function MailMessageList<M extends RowMessage>({
     const expanded = expandedThreads ?? new Set<string>();
 
     return (
-        <div data-slot="mail-message-list">
+        // `flex-1 min-h-0`: Die Liste nimmt den Platz, der nach Werkzeugleiste
+        // und Blaetterung uebrig ist — und `min-h-0` erlaubt ihr, kleiner zu
+        // werden als ihr Inhalt. Ohne das waechst sie in einer Flex-Spalte
+        // ueber den Rand hinaus, und `overflow-y-auto` bekommt nie etwas zu tun.
+        <div className="min-h-0 flex-1 overflow-y-auto" data-slot="mail-message-list">
             {rows.map((row) => {
                 const isOpen = openedUid === row.msg.uid && !row.isOutbound;
                 const isExpanded = expanded.has(row.key);

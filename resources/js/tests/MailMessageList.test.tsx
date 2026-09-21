@@ -197,3 +197,23 @@ describe('MailMessageList', () => {
         unmount();
     });
 });
+
+describe('wer scrollt', () => {
+    it('scrollt selbst, statt die ganze Spalte scrollen zu lassen', () => {
+        // Die Liste ist das, was lang wird — also gehoert das Scrollen an sie
+        // und nicht an die Spalte darum. Sonst wandern Werkzeugleiste und
+        // Blaetterung mit nach oben weg (gemeldet 21.09.2026).
+        //
+        // `min-h-0` ist kein Beiwerk: Ohne das waechst die Liste in einer
+        // Flex-Spalte ueber den Rand hinaus, und `overflow-y-auto` bekommt nie
+        // etwas zu tun.
+        const { container, unmount } = render(<MailMessageList rows={[]} labels={labels} />);
+        const wurzel = container.querySelector('[data-slot="mail-message-list"]')?.className ?? '';
+
+        expect(wurzel).toContain('overflow-y-auto');
+        expect(wurzel).toContain('min-h-0');
+        expect(wurzel).toContain('flex-1');
+
+        unmount();
+    });
+});

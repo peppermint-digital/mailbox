@@ -15,20 +15,20 @@ import type { ReactNode } from 'react';
  * one links a mail to a task, the next to a contact. Those go into the panes,
  * not into this frame.
  *
- * ## Jede Spalte scrollt selbst
+ * ## Wer scrollt, und wer nicht
  *
  * Der Rahmen ist so hoch wie das Fenster und schneidet ab, was darueber
- * hinausgeht (`overflow-hidden`). Damit darin ueberhaupt etwas erreichbar
- * bleibt, muss JEDE Spalte ihren eigenen Scroll-Container haben.
+ * hinausgeht. Die Ordner-Spalte scrollt als Ganzes — sie enthaelt nur Ordner.
  *
- * Der Listen-Spalte fehlte er bis zum 21.09.2026 — die Ordner-Spalte hatte
- * ihn, die Liste nicht. Solange ein Ordner wenige Nachrichten hatte, fiel das
- * nicht auf; mit eingeschalteten Konversationen wuchs die Liste, und der
- * untere Teil war schlicht nicht mehr erreichbar. Kein Fehler, keine Meldung —
- * die Zeilen waren einfach weg.
+ * Die Listen-Spalte NICHT. Sie enthaelt bei einem gewachsenen Produkt mehr als
+ * die Liste: Werkzeugleiste, Filter, Sammelaktionen, Blaetterung. Wuerde die
+ * Spalte scrollen, wanderten die alle mit nach oben weg — und man verlaert
+ * beim Blaettern genau die Knoepfe, die man zum Blaettern braucht.
  *
- * Der Manager baute sich denselben Container seit je von Hand um seine Liste.
- * Genau die Sorte Antwort, die hierher gehoert statt in jedes Produkt.
+ * Deshalb schneidet die Spalte nur ab, und {@see MailMessageList} scrollt
+ * selbst. Gemeldet am 21.09.2026, nachdem hier zuerst die ganze Spalte
+ * gescrollt hat: „die Menue-Elemente scrollen mit und auch oben die
+ * Pagination."
  *
  * ## The folder column collapses, and that is a preference
  *
@@ -64,7 +64,7 @@ export function MailboxBrowser({ folders, list, view, aside, toolbar, showFolder
                     </div>
                 )}
 
-                <div className={`flex ${listWidth} flex-col overflow-y-auto border-r`} data-slot="mailbox-list">
+                <div className={`flex ${listWidth} flex-col overflow-hidden border-r`} data-slot="mailbox-list">
                     {list}
                 </div>
 
