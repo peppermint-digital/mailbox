@@ -31,6 +31,35 @@ use Peppermint\Mailbox\Models\MailAccount;
  */
 final class Mailboxes
 {
+    /** @var (\Closure(MailAccount): Mailbox)|null */
+    private static ?\Closure $fake = null;
+
+    /**
+     * Substitutes the mailbox — for a product testing its own wiring.
+     *
+     * ## Why this exists although a container binding was rejected
+     *
+     * A binding would hide which transport was chosen, and in production that
+     * is the one thing that must stay visible. This does the opposite: it is
+     * explicit, it lives only in a test, and it has to be cleared again.
+     *
+     * What it makes testable is the part that breaks silently. A product
+     * decides which verb to call — `search()` in one folder or `searchAll()`
+     * across the mailbox — and if that decision is wrong, nothing fails: the
+     * search simply looks in one place while someone believes it looked
+     * everywhere. Without a seam that question needs a real mailbox, and a
+     * question that needs a real mailbox does not get asked.
+     *
+     * Pass null to clear. A test that forgets leaves the next one testing a
+     * ghost, so clear it in `afterEach`.
+     *
+     * @param  (\Closure(MailAccount): Mailbox)|null  $factory
+     */
+    public static function fake(?\Closure $factory): void
+    {
+        self::$fake = $factory;
+    }
+
     /**
      * The mailbox for this account.
      *
@@ -40,6 +69,10 @@ final class Mailboxes
      */
     public static function for(MailAccount $account, ?TokenRefresher $refresher = null): Mailbox
     {
+        if (self::$fake !== null) {
+            return (self::$fake)($account);
+        }
+
         if ($account->usesJmap()) {
             return new JmapClient(account: $account, refresher: $refresher);
         }

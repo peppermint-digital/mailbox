@@ -39,3 +39,30 @@ it('gibt in beiden Faellen dasselbe Versprechen heraus', function () {
     expect(Mailboxes::for(kontoMit(['protocol' => 'jmap'])))->toBeInstanceOf(Mailbox::class)
         ->and(Mailboxes::for(kontoMit()))->toBeInstanceOf(Mailbox::class);
 });
+
+describe('die Test-Attrappe', function () {
+    afterEach(fn () => Mailboxes::fake(null));
+
+    it('ersetzt das Postfach und reicht das Konto durch', function () {
+        $gesehen = null;
+        $attrappe = Mockery::mock(Mailbox::class);
+
+        Mailboxes::fake(function ($konto) use (&$gesehen, $attrappe) {
+            $gesehen = $konto->field('email');
+
+            return $attrappe;
+        });
+
+        expect(Mailboxes::for(kontoMit(['email' => 'info@example.test'])))->toBe($attrappe)
+            ->and($gesehen)->toBe('info@example.test');
+    });
+
+    it('laesst sich wieder abschalten', function () {
+        // Ein Test, der das vergisst, laesst den naechsten gegen ein Gespenst
+        // pruefen — und das faellt erst irgendwo ganz anders auf.
+        Mailboxes::fake(fn () => Mockery::mock(Mailbox::class));
+        Mailboxes::fake(null);
+
+        expect(Mailboxes::for(kontoMit()))->toBeInstanceOf(MailboxClient::class);
+    });
+});
