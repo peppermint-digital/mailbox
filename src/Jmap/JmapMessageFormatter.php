@@ -2,6 +2,8 @@
 
 namespace Peppermint\Mailbox\Jmap;
 
+use Peppermint\Mailbox\Support\Betreff;
+
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Peppermint\Mailbox\Content\CidReplacer;
@@ -47,7 +49,7 @@ class JmapMessageFormatter
         return [
             'uid' => $email['id'] ?? null,
             'message_id' => $this->firstMessageId($email['messageId'] ?? null),
-            'subject' => $email['subject'] ?? null,
+            'subject' => Betreff::lesbar($email['subject'] ?? null),
             'from_address' => $from['email'] ?? '',
             'from_name' => $from['name'] ?? '',
             'date' => $this->date($email),
@@ -111,7 +113,7 @@ class JmapMessageFormatter
         return [
             'uid' => $email['id'] ?? null,
             'message_id' => $this->firstMessageId($email['messageId'] ?? null),
-            'subject' => $email['subject'] ?? null,
+            'subject' => Betreff::lesbar($email['subject'] ?? null),
             'from_address' => $from['email'] ?? '',
             'from_name' => $from['name'] ?? '',
             'to' => $this->addresses($email['to'] ?? []),
@@ -215,7 +217,7 @@ class JmapMessageFormatter
         return [
             'uid' => $email['id'] ?? null,
             'message_id' => $this->firstMessageId($email['messageId'] ?? null),
-            'subject' => $email['subject'] ?? null,
+            'subject' => Betreff::lesbar($email['subject'] ?? null),
             'from_address' => $from['email'] ?? '',
             'from_name' => $from['name'] ?? null,
             'to' => $this->addresses($email['to'] ?? []),

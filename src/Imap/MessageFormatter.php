@@ -2,6 +2,8 @@
 
 namespace Peppermint\Mailbox\Imap;
 
+use Peppermint\Mailbox\Support\Betreff;
+
 use DirectoryTree\ImapEngine\Message;
 use Illuminate\Support\Str;
 use Peppermint\Mailbox\Content\CidReplacer;
@@ -48,7 +50,7 @@ class MessageFormatter
         return [
             'uid' => $message->uid(),
             'message_id' => $message->messageId(),
-            'subject' => $message->subject(),
+            'subject' => Betreff::lesbar($message->subject()),
             'from_address' => $from?->email() ?? '',
             'from_name' => $from?->name() ?? '',
             'date' => $message->date()?->toIso8601String(),
@@ -109,7 +111,7 @@ class MessageFormatter
         return [
             'uid' => $message->uid(),
             'message_id' => $message->messageId(),
-            'subject' => $message->subject(),
+            'subject' => Betreff::lesbar($message->subject()),
             'from_address' => $from?->email() ?? '',
             'from_name' => $from?->name() ?? '',
             'to' => $this->addresses($message->to()),
@@ -182,7 +184,7 @@ class MessageFormatter
         return [
             'uid' => $message->uid(),
             'message_id' => $message->messageId(),
-            'subject' => $message->subject(),
+            'subject' => Betreff::lesbar($message->subject()),
             'from_address' => $from?->email() ?? '',
             'from_name' => $from?->name(),
             'to' => $this->addresses($message->to()),

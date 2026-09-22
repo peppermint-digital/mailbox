@@ -19,6 +19,7 @@ export * from './MailAddressBook';
 export * from './useFolderActions';
 export * from './MailFolderManager';
 export * from './useMailboxKeyboard';
+export * from './useAutoOpen';
 export * from './MailListToolbar';
 export * from './MailMessageList';
 export { default as MailMessageList } from './MailMessageList';
