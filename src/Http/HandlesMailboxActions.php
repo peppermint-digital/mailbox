@@ -4,6 +4,7 @@ namespace Peppermint\Mailbox\Http;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Folders\FolderNames;
 
@@ -108,6 +109,41 @@ trait HandlesMailboxActions
         return $this->mailboxFailure(fn (): array => [
             'success' => $this->mailboxFor($account)->delete($daten['folder'], $uid),
         ]);
+    }
+
+    /**
+     * Einen Anhang herunterladen.
+     *
+     * Der Anhang wird ueber seine POSITION angesprochen, nicht ueber seinen
+     * Namen: Zwei Dateien in einer Mail duerfen gleich heissen, und eine
+     * kaputte Mail hat gar keinen Namen. Die Position ist das Einzige, was
+     * eindeutig ist.
+     *
+     * `Content-Disposition: attachment` ist Absicht: Ein PDF, das der Browser
+     * selbst oeffnet, kann Schriftarten und Bilder nachladen — und ein
+     * praeparierter Anhang bekaeme damit den Kontext dieser Anwendung. Wer die
+     * Datei ansehen will, oeffnet sie aus dem Download.
+     */
+    public function downloadAttachment(Request $request, int $account, int|string $uid, int $index): StreamedResponse|JsonResponse
+    {
+        $daten = $request->validate(['folder' => ['required', 'string']]);
+
+        $anhang = $this->mailboxFor($account)->attachment($daten['folder'], $uid, $index);
+
+        if ($anhang === null) {
+            abort(404, 'Diesen Anhang gibt es nicht (mehr).');
+        }
+
+        return response()->streamDownload(
+            static function () use ($anhang): void {
+                echo $anhang['contents'];
+            },
+            $anhang['filename'] !== '' ? $anhang['filename'] : 'anhang',
+            [
+                'Content-Type' => $anhang['mime_type'] !== '' ? $anhang['mime_type'] : 'application/octet-stream',
+                'X-Content-Type-Options' => 'nosniff',
+            ],
+        );
     }
 
     /**

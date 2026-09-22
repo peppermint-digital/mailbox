@@ -1,0 +1,143 @@
+<?php
+
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
+use Peppermint\Mailbox\Http\HandlesAssignments;
+use Peppermint\Mailbox\Models\MailAssignment;
+
+/**
+ * Wer sich um welche Unterhaltung kuemmert (22.09.2026).
+ *
+ * Geprueft wird das, was still falsch sein kann:
+ *
+ * - Wird die KETTE zugewiesen oder nur die eine Nachricht? Bei der Nachricht
+ *   waere die naechste Antwort in derselben Sache wieder niemandem zugeordnet.
+ * - Haelt die Pruefung, wer zugewiesen werden darf? Ohne sie landet Arbeit bei
+ *   jemandem, der das Postfach gar nicht sehen kann.
+ * - Verschwindet beim Aufheben AUCH der Altbestand ohne Kettenkennung?
+ */
+class TestControllerFuerZuweisungen
+{
+    use HandlesAssignments;
+
+    /** @param  list<array{id: int, name: string}>  $personen */
+    public function __construct(private readonly array $personen, private readonly ?int $ich = 7) {}
+
+    protected function assignableUsers(int $account): array
+    {
+        return $this->personen;
+    }
+
+    protected function currentUserId(): ?int
+    {
+        return $this->ich;
+    }
+}
+
+uses(RefreshDatabase::class);
+
+function zuweisungsAnfrage(array $daten): Request
+{
+    $r = Request::create('/', 'POST', $daten);
+    $r->headers->set('Accept', 'application/json');
+
+    return $r;
+}
+
+$personen = [['id' => 3, 'name' => 'Anna Meier'], ['id' => 4, 'name' => 'Bernd Schulz']];
+
+it('weist die KETTE zu, nicht nur die Nachricht', function () use ($personen) {
+    // Sonst ist die naechste Antwort in derselben Sache wieder niemandem
+    // zugeordnet, und dieselbe Unterhaltung wird zweimal sortiert.
+    (new TestControllerFuerZuweisungen($personen))->assign(zuweisungsAnfrage([
+        'message_id' => '<zweite@example.test>',
+        'assigned_to_user_id' => 3,
+        'in_reply_to' => '<erste@example.test>',
+    ]), 1);
+
+    $zeile = MailAssignment::first();
+
+    expect($zeile->thread_id)->not->toBeNull()
+        ->and($zeile->message_id)->toBe('<zweite@example.test>')
+        ->and($zeile->assigned_to_user_id)->toBe(3);
+});
+
+it('laesst niemanden zuweisen, der nicht ins Postfach darf', function () use ($personen) {
+    // Die Liste der zulaessigen Personen IST die Pruefung. Eine zweite daneben
+    // liefe irgendwann auseinander.
+    $antwort = (new TestControllerFuerZuweisungen($personen))->assign(zuweisungsAnfrage([
+        'message_id' => '<a@example.test>',
+        'assigned_to_user_id' => 99,
+    ]), 1);
+
+    expect($antwort->getStatusCode())->toBe(422)
+        ->and(MailAssignment::count())->toBe(0);
+});
+
+it('haelt je Kette genau eine Zuweisung', function () use ($personen) {
+    // Zweimal zuweisen heisst umhaengen, nicht verdoppeln — sonst zeigt die
+    // Liste eine von zwei Zeilen, und welche, entscheidet der Zufall.
+    $controller = new TestControllerFuerZuweisungen($personen);
+    $daten = ['message_id' => '<a@example.test>', 'in_reply_to' => '<wurzel@example.test>'];
+
+    $controller->assign(zuweisungsAnfrage($daten + ['assigned_to_user_id' => 3]), 1);
+    $controller->assign(zuweisungsAnfrage($daten + ['assigned_to_user_id' => 4]), 1);
+
+    expect(MailAssignment::count())->toBe(1)
+        ->and(MailAssignment::first()->assigned_to_user_id)->toBe(4);
+});
+
+it('haelt die Postfaecher auseinander', function () use ($personen) {
+    // Dieselbe Kette kann in zwei Postfaechern liegen; die Zustaendigkeit ist
+    // deshalb nicht dieselbe.
+    $controller = new TestControllerFuerZuweisungen($personen);
+    $daten = ['message_id' => '<a@example.test>', 'in_reply_to' => '<wurzel@example.test>', 'assigned_to_user_id' => 3];
+
+    $controller->assign(zuweisungsAnfrage($daten), 1);
+    $controller->assign(zuweisungsAnfrage($daten), 2);
+
+    expect(MailAssignment::count())->toBe(2);
+});
+
+it('hebt auch Zuweisungen ohne Kettenkennung auf', function () use ($personen) {
+    // Altbestand: Zuweisungen, die entstanden sind, bevor es Kettenkennungen
+    // gab. Wer nur nach der Kette sucht, laesst sie stehen — und die Zeile
+    // traegt danach ein Kennzeichen, das sich nicht mehr entfernen laesst.
+    MailAssignment::create([
+        'email_account_id' => 1,
+        'message_id' => '<alt@example.test>',
+        'thread_id' => null,
+        'assigned_to_user_id' => 3,
+        'status' => MailAssignment::STATUS_OPEN,
+    ]);
+
+    (new TestControllerFuerZuweisungen($personen))->unassign(zuweisungsAnfrage([
+        'message_id' => '<alt@example.test>',
+    ]), 1);
+
+    expect(MailAssignment::count())->toBe(0);
+});
+
+it('gibt die Zuweisungen mit Namen und Initialen heraus', function () use ($personen) {
+    (new TestControllerFuerZuweisungen($personen))->assign(zuweisungsAnfrage([
+        'message_id' => '<a@example.test>',
+        'assigned_to_user_id' => 3,
+    ]), 1);
+
+    $daten = (new TestControllerFuerZuweisungen($personen))->assignments(1)->getData(true);
+
+    expect($daten['assignments'][0])->toMatchArray([
+        'user_id' => 3,
+        'name' => 'Anna Meier',
+        'initials' => 'AM',
+    ]);
+});
+
+it('macht aus einem einzelnen Namen brauchbare Initialen', function () {
+    $controller = new TestControllerFuerZuweisungen([['id' => 1, 'name' => 'Cher'], ['id' => 2, 'name' => 'Anna von Meier']]);
+
+    $nutzer = collect($controller->assignmentUsers(1)->getData(true)['users'])->keyBy('id');
+
+    expect($nutzer[1]['initials'])->toBe('C')
+        ->and($nutzer[2]['initials'])->toBe('AM');
+});

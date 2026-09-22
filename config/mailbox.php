@@ -63,6 +63,11 @@ return [
     */
     'tables' => [
         'accounts' => 'mail_accounts',
+
+        // Wer sich um welche Unterhaltung kuemmert. Der Projekt-Manager fuehrt
+        // diese Daten seit Juni 2026 unter `email_assignments` und stellt den
+        // Namen deshalb um — gewachsene Daten zu bewegen hilft niemandem.
+        'assignments' => 'mail_assignments',
     ],
 
     'columns' => [
