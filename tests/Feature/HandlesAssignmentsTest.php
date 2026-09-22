@@ -141,3 +141,29 @@ it('macht aus einem einzelnen Namen brauchbare Initialen', function () {
     expect($nutzer[1]['initials'])->toBe('C')
         ->and($nutzer[2]['initials'])->toBe('AM');
 });
+
+it('laesst das Produkt einen Riegel vor ALLE Wege setzen', function () {
+    // Der Anlass: Die Verwaltung verlangt `canEdit()` fuers Lesen des
+    // Postfachs, und ihre Pruefung sitzt in `mailboxFor()`. Die
+    // Zuweisungs-Wege rufen `mailboxFor()` gar nicht auf — sie brauchen kein
+    // Postfach, nur die Datenbank. Ohne diesen Haken waeren sie an der
+    // Schranke vorbei erreichbar, und zwar lautlos.
+    $streng = new class(([['id' => 3, 'name' => 'Anna Meier']])) extends TestControllerFuerZuweisungen
+    {
+        protected function guardAssignments(int $account): void
+        {
+            abort(403);
+        }
+    };
+
+    foreach ([
+        fn () => $streng->assignmentUsers(1),
+        fn () => $streng->assignments(1),
+        fn () => $streng->assign(zuweisungsAnfrage(['message_id' => '<a@b.test>', 'assigned_to_user_id' => 3]), 1),
+        fn () => $streng->unassign(zuweisungsAnfrage(['message_id' => '<a@b.test>']), 1),
+    ] as $i => $weg) {
+        expect($weg)->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class, '', "Weg {$i} ungeschuetzt");
+    }
+
+    expect(MailAssignment::count())->toBe(0);
+});

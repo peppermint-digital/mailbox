@@ -50,10 +50,27 @@ trait HandlesAssignments
     abstract protected function currentUserId(): ?int;
 
     /**
+     * Der Riegel vor JEDEM Weg dieses Merkmals.
+     *
+     * Standardmaessig offen — die Zuteilung des Postfachs regelt schon, wer es
+     * ueberhaupt sieht. Produkte mit strengeren Regeln setzen ihn hier, an
+     * EINER Stelle.
+     *
+     * Dass es ihn gibt, hat einen Anlass: Die Verwaltung verlangt `canEdit()`
+     * fuers Lesen des Postfachs, und ihre Pruefung sitzt in `mailboxFor()`.
+     * Die Zuweisungs-Wege rufen `mailboxFor()` aber gar nicht auf — sie
+     * brauchen kein Postfach, nur die Datenbank. Ohne diesen Haken waeren sie
+     * an der Schranke vorbei erreichbar gewesen, und zwar lautlos.
+     */
+    protected function guardAssignments(int $account): void {}
+
+    /**
      * Die Liste fuer die Auswahl.
      */
     public function assignmentUsers(int $account): JsonResponse
     {
+        $this->guardAssignments($account);
+
         return response()->json([
             'users' => array_map(
                 static fn (array $nutzer): array => $nutzer + ['initials' => static::initialen($nutzer['name'])],
@@ -70,6 +87,8 @@ trait HandlesAssignments
      */
     public function assignments(int $account): JsonResponse
     {
+        $this->guardAssignments($account);
+
         $nachName = collect($this->assignableUsers($account))->keyBy('id');
 
         $zeilen = MailAssignment::query()
@@ -93,6 +112,8 @@ trait HandlesAssignments
      */
     public function assign(Request $request, int $account): JsonResponse
     {
+        $this->guardAssignments($account);
+
         $daten = $request->validate([
             'message_id' => ['required', 'string', 'max:255'],
             'assigned_to_user_id' => ['required', 'integer'],
@@ -135,6 +156,8 @@ trait HandlesAssignments
      */
     public function unassign(Request $request, int $account): JsonResponse
     {
+        $this->guardAssignments($account);
+
         $daten = $request->validate([
             'message_id' => ['required', 'string', 'max:255'],
             'in_reply_to' => ['nullable', 'string', 'max:998'],
