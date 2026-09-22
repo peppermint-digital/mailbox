@@ -14,6 +14,8 @@ export * from './MailboxBrowser';
 export { default as MailboxBrowser } from './MailboxBrowser';
 export * from './MailFolderList';
 export { default as MailFolderList } from './MailFolderList';
+export * from './MailboxHeader';
+export * from './MailAddressBook';
 export * from './MailListToolbar';
 export * from './MailMessageList';
 export { default as MailMessageList } from './MailMessageList';

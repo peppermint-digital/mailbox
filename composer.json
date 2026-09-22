@@ -11,7 +11,8 @@
     "suggest": {
         "peppermint/ai-brain-bridge": "Postfach-Einstellungen zentral aus AI Brain lesen statt lokal zu halten.",
         "laravel/mcp": "Stellt die Postfächer als MCP-Werkzeuge bereit.",
-        "directorytree/imapengine": "Die IMAP-Schicht des Pakets — Verbindungsaufbau, Ordner, Nachrichten."
+        "directorytree/imapengine": "Die IMAP-Schicht des Pakets — Verbindungsaufbau, Ordner, Nachrichten.",
+        "peppermint/contacts": "Speist das Adressbuch aus dem gepflegten Kontaktbestand, den sich alle Produkte teilen."
     },
     "autoload": {
         "psr-4": {
