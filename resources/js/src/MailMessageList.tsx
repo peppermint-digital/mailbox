@@ -1,7 +1,8 @@
-import { ChevronDown, ChevronRight, Paperclip, Star } from 'lucide-react';
+import { ChevronDown, ChevronRight, Mail, Paperclip, Star } from 'lucide-react';
 import type { MouseEvent, ReactNode } from 'react';
 import type { DisplayRow, MessageHandle, RowMessage } from './rows';
 import { Checkbox } from './ui/checkbox';
+import { Skeleton } from './ui/skeleton';
 import { cn } from './ui/utils';
 
 /**
@@ -72,6 +73,10 @@ export interface MailMessageListLabels {
      * else — in a list of twenty rows that is twenty identical controls.
      */
     selectMessage: (subject: string) => string;
+    /** Shown when the folder has nothing in it. Omit to render nothing. */
+    empty?: string;
+    /** The same, but after a search that found nothing. */
+    emptyInSearch?: string;
 }
 
 export interface MailMessageListProps<M extends RowMessage> {
@@ -96,6 +101,10 @@ export interface MailMessageListProps<M extends RowMessage> {
     rowAccessory?: (row: DisplayRow<M>) => ReactNode;
     /** The product's own row menu, e.g. right-click to assign. */
     onRowContextMenu?: (event: MouseEvent<HTMLElement>, message: M) => void;
+    /** While true the rows give way to `loadingPlaceholder`. */
+    loading?: boolean;
+    /** What to show while loading. Without it the list simply stays empty. */
+    loadingPlaceholder?: ReactNode;
 }
 
 export function MailMessageList<M extends RowMessage>({
@@ -113,6 +122,8 @@ export function MailMessageList<M extends RowMessage>({
     onToggleSelect,
     rowAccessory,
     onRowContextMenu,
+    loading = false,
+    loadingPlaceholder,
 }: MailMessageListProps<M>) {
     const ticked = selectedUids ?? new Set<MessageHandle>();
     const expanded = expandedThreads ?? new Set<string>();
@@ -127,7 +138,30 @@ export function MailMessageList<M extends RowMessage>({
         // Ein geteiltes Bauteil weiss nicht, worin es steckt. Wo gescrollt
         // wird, entscheidet, wer die Spalte fuellt.
         <div data-slot="mail-message-list">
-            {rows.map((row) => {
+            {/* Laden und „nichts da" sahen bisher in jedem Produkt anders aus,
+                weil jedes sie selbst baute — CRM und Verwaltung zeigten in
+                beiden Faellen dieselbe leere Flaeche. Wer auf eine leere Liste
+                sieht, muss erkennen koennen, ob er warten soll. */}
+            {loading &&
+                (loadingPlaceholder ?? (
+                    /* Eine Vorgabe, damit ein frisch installiertes Produkt nicht
+                       erst einen Platzhalter mitbringen muss, um so auszusehen
+                       wie die anderen. Wer einen eigenen hat, reicht ihn durch. */
+                    <div className="space-y-2 p-2">
+                        {Array.from({ length: 10 }, (_, i) => (
+                            <Skeleton key={i} className="h-16 w-full" />
+                        ))}
+                    </div>
+                ))}
+
+            {!loading && rows.length === 0 && (labels.empty || labels.emptyInSearch) && (
+                <div className="p-8 text-center text-muted-foreground" data-slot="mail-message-list-empty">
+                    <Mail className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                    <p>{(isSearchMode ? labels.emptyInSearch : labels.empty) ?? labels.empty ?? labels.emptyInSearch}</p>
+                </div>
+            )}
+
+            {!loading && rows.map((row) => {
                 const isOpen = openedUid === row.msg.uid && !row.isOutbound;
                 const isExpanded = expanded.has(row.key);
 
