@@ -379,6 +379,32 @@ describe('several messages at once', () => {
         unmount();
     });
 
+    it('rechnet die Seitenzahl aus der Seitengroesse des Endpunkts', async () => {
+        // Ohne `per_page` aus der Antwort muesste jedes Produkt eine Kopie der
+        // serverseitigen Seitengroesse fuehren. Laufen die auseinander, zeigt
+        // die Blaetterung „3 von 7", waehrend es 5 Seiten gibt — und nichts
+        // faellt dabei aus.
+        const source = { list: vi.fn(async () => ({ messages: [msg(1)], threads: [], total: 130, perPage: 50 })) };
+        const { ref, unmount } = mount(source);
+
+        await act(async () => { await ref.current.load({ accountId: 1, folder: 'INBOX' }); });
+
+        expect(ref.current.perPage).toBe(50);
+        expect(ref.current.totalPages).toBe(3);
+        unmount();
+    });
+
+    it('bleibt bei 25 pro Seite, solange der Endpunkt nichts sagt', async () => {
+        const source = { list: vi.fn(async () => seite([msg(1)], 60)) };
+        const { ref, unmount } = mount(source);
+
+        await act(async () => { await ref.current.load({ accountId: 1, folder: 'INBOX' }); });
+
+        expect(ref.current.perPage).toBe(25);
+        expect(ref.current.totalPages).toBe(3);
+        unmount();
+    });
+
     it('changes several rows at once', async () => {
         const source = { list: vi.fn(async () => seite([msg(1, { is_read: false }), msg(2, { is_read: false }), msg(3, { is_read: false })])) };
         const { ref, unmount } = mount(source);

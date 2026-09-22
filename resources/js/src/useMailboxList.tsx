@@ -32,6 +32,13 @@ export interface MessagePage<M extends RowMessage> {
     messages: M[];
     threads: Thread<M>[];
     total: number;
+    /**
+     * How many rows a page holds. Only the endpoint knows it, and the
+     * pagination in `MailListToolbar` needs it to say "3 of 7" — without it
+     * every product would have to keep a copy of the server's page size and
+     * keep it in step by hand. Absent, the last known value stands.
+     */
+    perPage?: number;
 }
 
 export interface ListParams {
@@ -62,6 +69,10 @@ export interface MailboxList<M extends RowMessage> {
     messages: M[];
     threads: Thread<M>[];
     total: number;
+    /** Rows per page, as the endpoint reports it. */
+    perPage: number;
+    /** Pages the current total spans — 0 while nothing is loaded. */
+    totalPages: number;
     page: number;
     grouped: boolean;
     loading: boolean;
@@ -121,6 +132,7 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
     const [messages, setMessages] = useState<M[]>([]);
     const [threads, setThreads] = useState<Thread<M>[]>([]);
     const [total, setTotal] = useState(0);
+    const [perPage, setPerPage] = useState(25);
     const [page, setPage] = useState(1);
     const [grouped, setGroupedState] = useState(initialGrouped);
     const [loading, setLoading] = useState(false);
@@ -178,6 +190,11 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
                 }
 
                 setTotal(result.total);
+
+                if (typeof result.perPage === 'number' && result.perPage > 0) {
+                    setPerPage(result.perPage);
+                }
+
                 setPage(params.page);
                 setGroupedState(params.grouped);
             } catch {
@@ -316,7 +333,7 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
     const clearFailure = useCallback(() => setFailure(null), []);
 
     return {
-        messages, threads, total, page, grouped, loading, refreshing, failure,
+        messages, threads, total, perPage, totalPages: perPage > 0 ? Math.ceil(total / perPage) : 0, page, grouped, loading, refreshing, failure,
         load, refresh, reload, messageLeft, messagesLeft, setGrouped, patchRow, patchRows, patchRowById, removeRows, showRows, clear, clearFailure,
     };
 }

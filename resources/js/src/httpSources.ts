@@ -127,6 +127,11 @@ export function httpMailboxSources<M extends RowMessage, D>({
                     messages: (daten.messages ?? []) as M[],
                     threads: (daten.threads ?? []) as MessagePage<M>['threads'],
                     total: (daten.total ?? 0) as number,
+                    // Die Seitengroesse kennt nur der Endpunkt. Ohne sie
+                    // muesste jedes Produkt eine Kopie davon fuehren und von
+                    // Hand nachziehen — und „Seite 3 von 7" waere irgendwann
+                    // falsch, ohne dass etwas ausfaellt.
+                    perPage: daten.per_page as number | undefined,
                 } satisfies MessagePage<M>;
             },
         },
