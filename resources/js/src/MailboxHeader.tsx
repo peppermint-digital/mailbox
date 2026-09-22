@@ -46,6 +46,14 @@ export interface MailboxHeaderAccount {
     name: string;
 }
 
+/**
+ * Anything a product wants to say about one mailbox in the picker — the
+ * project manager marks shared mailboxes with a globe, nobody else has the
+ * concept. Same rule as `extras`, one level down: the shared shape stays, the
+ * product decorates its own rows.
+ */
+export type MailboxHeaderAccessory = (account: MailboxHeaderAccount) => ReactNode;
+
 export interface MailboxHeaderProps {
     /** The page's own name — "E-Mails" here, "E-Mail Browser" there. */
     title: string;
@@ -66,6 +74,9 @@ export interface MailboxHeaderProps {
 
     /** The product's own tools, in their own area after the shared ones. */
     extras?: ReactNode;
+
+    /** Decorates one row of the mailbox picker. */
+    accountAccessory?: MailboxHeaderAccessory;
 }
 
 export function MailboxHeader({
@@ -80,6 +91,7 @@ export function MailboxHeader({
     refreshing = false,
     error,
     extras,
+    accountAccessory,
 }: MailboxHeaderProps) {
     return (
         <div className="flex items-center justify-between gap-4 border-b px-6 py-4" data-slot="mailbox-header">
@@ -93,9 +105,12 @@ export function MailboxHeader({
                     <SelectContent>
                         {accounts.map((konto) => (
                             <SelectItem key={konto.id} value={String(konto.id)}>
-                                <span className="truncate" title={konto.name}>
-                                    {konto.name}
-                                </span>
+                                <div className="flex min-w-0 items-center gap-2">
+                                    {accountAccessory?.(konto)}
+                                    <span className="truncate" title={konto.name}>
+                                        {konto.name}
+                                    </span>
+                                </div>
                             </SelectItem>
                         ))}
                     </SelectContent>

@@ -101,6 +101,18 @@ describe('MailboxHeader', () => {
         unmount();
     });
 
+    /*
+     * `accountAccessory` hat hier BEWUSST keinen Test.
+     *
+     * Radix baut die Zeilen der Auswahlliste erst, wenn sie geoeffnet ist, und
+     * das Oeffnen braucht Zeiger-APIs, die jsdom nicht hat. Ein Test waere
+     * gruen, ohne je an der Kennzeichnung vorbeizukommen — ein Waechter, der
+     * nie zuschnappt, und damit schlimmer als keiner: Er sagt, die Sache sei
+     * geprueft.
+     *
+     * Geprueft wird sie am ausgerollten Stand im Browser.
+     */
+
     it('zeigt eine Stoerung neben dem Titel', () => {
         const { container, unmount } = render(<MailboxHeader {...grund} error="Das Postfach ist gerade nicht erreichbar." />);
 
