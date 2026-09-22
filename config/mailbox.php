@@ -68,6 +68,9 @@ return [
         // diese Daten seit Juni 2026 unter `email_assignments` und stellt den
         // Namen deshalb um — gewachsene Daten zu bewegen hilft niemandem.
         'assignments' => 'mail_assignments',
+
+        // „Nicht jetzt — erinnere mich wieder ab dann." Pro Person.
+        'snoozes' => 'mail_snoozes',
     ],
 
     'columns' => [

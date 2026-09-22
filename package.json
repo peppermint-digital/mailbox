@@ -1,6 +1,6 @@
 {
     "name": "@peppermint-digital/mailbox",
-    "version": "0.97.0",
+    "version": "0.98.0",
     "description": "Mail browser logic to go with the PHP package: quoting an original message, without a word of user-facing text.",
     "license": "MIT",
     "type": "module",
