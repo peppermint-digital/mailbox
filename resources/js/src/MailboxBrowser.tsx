@@ -25,10 +25,17 @@ import type { ReactNode } from 'react';
  * Spalte scrollen, wanderten die alle mit nach oben weg — und man verlaert
  * beim Blaettern genau die Knoepfe, die man zum Blaettern braucht.
  *
- * Deshalb schneidet die Spalte nur ab, und {@see MailMessageList} scrollt
- * selbst. Gemeldet am 21.09.2026, nachdem hier zuerst die ganze Spalte
- * gescrollt hat: „die Menue-Elemente scrollen mit und auch oben die
- * Pagination."
+ * Deshalb schneidet die Spalte nur ab (`overflow-hidden`) — und WER darin
+ * scrollt, entscheidet das Produkt. Es weiss als Einziges, was ausser der
+ * Liste noch in der Spalte steht.
+ *
+ * Der Manager wickelt seine Liste seit je in ein eigenes ScrollArea. Als das
+ * Scrollen am 21.09.2026 kurz in {@see MailMessageList} lag, hatte er zwei
+ * Scroll-Container ineinander — und der innere bekam nie eine begrenzte Hoehe.
+ * Danach ging gar nichts mehr.
+ *
+ * Die Spalte muss trotzdem abschneiden: Ohne das hat auch der Container des
+ * Produkts keine Hoehe, an der er sich begrenzen koennte.
  *
  * ## The folder column collapses, and that is a preference
  *

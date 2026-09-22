@@ -199,20 +199,19 @@ describe('MailMessageList', () => {
 });
 
 describe('wer scrollt', () => {
-    it('scrollt selbst, statt die ganze Spalte scrollen zu lassen', () => {
-        // Die Liste ist das, was lang wird — also gehoert das Scrollen an sie
-        // und nicht an die Spalte darum. Sonst wandern Werkzeugleiste und
-        // Blaetterung mit nach oben weg (gemeldet 21.09.2026).
+    it('bringt KEIN eigenes Layout mit', () => {
+        // Am 21.09.2026 standen hier kurz `flex-1 min-h-0 overflow-y-auto`.
+        // Der Manager wickelt seine Liste aber seit je in ein eigenes
+        // ScrollArea — und ein Scroll-Container innerhalb eines
+        // Scroll-Containers bekommt nie eine begrenzte Hoehe. Danach ging dort
+        // gar nichts mehr.
         //
-        // `min-h-0` ist kein Beiwerk: Ohne das waechst die Liste in einer
-        // Flex-Spalte ueber den Rand hinaus, und `overflow-y-auto` bekommt nie
-        // etwas zu tun.
+        // Ein geteiltes Bauteil weiss nicht, worin es steckt. Wo gescrollt
+        // wird, entscheidet, wer die Spalte fuellt.
         const { container, unmount } = render(<MailMessageList rows={[]} labels={labels} />);
-        const wurzel = container.querySelector('[data-slot="mail-message-list"]')?.className ?? '';
+        const wurzel = container.querySelector('[data-slot="mail-message-list"]');
 
-        expect(wurzel).toContain('overflow-y-auto');
-        expect(wurzel).toContain('min-h-0');
-        expect(wurzel).toContain('flex-1');
+        expect(wurzel?.className ?? '').toBe('');
 
         unmount();
     });

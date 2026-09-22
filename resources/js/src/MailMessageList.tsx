@@ -118,11 +118,15 @@ export function MailMessageList<M extends RowMessage>({
     const expanded = expandedThreads ?? new Set<string>();
 
     return (
-        // `flex-1 min-h-0`: Die Liste nimmt den Platz, der nach Werkzeugleiste
-        // und Blaetterung uebrig ist — und `min-h-0` erlaubt ihr, kleiner zu
-        // werden als ihr Inhalt. Ohne das waechst sie in einer Flex-Spalte
-        // ueber den Rand hinaus, und `overflow-y-auto` bekommt nie etwas zu tun.
-        <div className="min-h-0 flex-1 overflow-y-auto" data-slot="mail-message-list">
+        // KEINE Layout-Klassen hier. Am 21.09.2026 standen hier kurz
+        // `flex-1 min-h-0 overflow-y-auto` — und der Manager, der seine Liste
+        // seit je in ein eigenes ScrollArea wickelt, konnte danach gar nicht
+        // mehr scrollen: Ein Scroll-Container INNERHALB eines Scroll-Containers
+        // bekommt nie eine begrenzte Hoehe.
+        //
+        // Ein geteiltes Bauteil weiss nicht, worin es steckt. Wo gescrollt
+        // wird, entscheidet, wer die Spalte fuellt.
+        <div data-slot="mail-message-list">
             {rows.map((row) => {
                 const isOpen = openedUid === row.msg.uid && !row.isOutbound;
                 const isExpanded = expanded.has(row.key);
