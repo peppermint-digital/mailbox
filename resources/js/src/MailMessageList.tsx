@@ -1,5 +1,4 @@
 import { ChevronDown, ChevronRight, Mail, Paperclip, Star } from 'lucide-react';
-import { useState } from 'react';
 import type { MouseEvent, ReactElement, ReactNode } from 'react';
 import type { DisplayRow, MessageHandle, RowMessage } from './rows';
 import { Checkbox } from './ui/checkbox';
@@ -117,34 +116,32 @@ export interface MailMessageListProps<M extends RowMessage> {
  * der Browser zeigt es erst nach ein bis zwei Sekunden und als kleinen grauen
  * Kasten. Wer den Betreff lesen will, hat bis dahin schon geklickt.
  *
- * Nur wenn wirklich abgeschnitten ist: Ein Popover ueber einem Text, den man
- * ohnehin ganz sieht, ist Rauschen. Gemessen wird beim Ueberfahren an der
- * echten Breite (`scrollWidth > clientWidth`), nicht an einer Zeichenzahl —
- * die haengt von Schriftart und Spaltenbreite ab.
+ * ## Warum ohne „nur wenn abgeschnitten"
+ *
+ * Der erste Wurf zeigte das Popover nur bei `scrollWidth > clientWidth` — ein
+ * Popover ueber einem Text, den man ohnehin ganz sieht, ist ja Rauschen.
+ *
+ * Am ausgerollten Stand gemessen: Von 51 Ausloesern meldete sich KEIN
+ * einziger als abgeschnitten, obwohl die Zeilen sichtbar gekuerzt waren. Der
+ * Grund liegt im Aufbau der Zeile — der `<span>` ist ein Flex-Element ohne
+ * `flex-1`, also genau so breit wie sein Inhalt. Gekuerzt wird er vom
+ * Container darueber, und davon weiss er nichts. Die Bedingung konnte nie
+ * zutreffen; das Popover ging nie auf.
+ *
+ * Statt die Messung immer komplizierter zu machen: immer zeigen. Ein Popover
+ * zu viel ist besser als eine Bedingung, die niemand nachvollziehen kann.
  */
 function VollerText({ text, children }: { text: string; children: ReactElement }) {
-    const [abgeschnitten, setAbgeschnitten] = useState(false);
-
     if (!text) {
         return children;
     }
 
     return (
         <Tooltip>
-            <TooltipTrigger
-                asChild
-                onMouseEnter={(e) => {
-                    const el = e.currentTarget as HTMLElement;
-                    setAbgeschnitten(el.scrollWidth > el.clientWidth);
-                }}
-            >
-                {children}
-            </TooltipTrigger>
-            {abgeschnitten && (
-                <TooltipContent side="bottom" align="start" className="max-w-md break-words">
-                    {text}
-                </TooltipContent>
-            )}
+            <TooltipTrigger asChild>{children}</TooltipTrigger>
+            <TooltipContent side="bottom" align="start" className="max-w-md break-words">
+                {text}
+            </TooltipContent>
         </Tooltip>
     );
 }
