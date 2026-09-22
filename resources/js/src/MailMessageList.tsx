@@ -1,8 +1,10 @@
 import { ChevronDown, ChevronRight, Mail, Paperclip, Star } from 'lucide-react';
-import type { MouseEvent, ReactNode } from 'react';
+import { useState } from 'react';
+import type { MouseEvent, ReactElement, ReactNode } from 'react';
 import type { DisplayRow, MessageHandle, RowMessage } from './rows';
 import { Checkbox } from './ui/checkbox';
 import { Skeleton } from './ui/skeleton';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { cn } from './ui/utils';
 
 /**
@@ -105,6 +107,46 @@ export interface MailMessageListProps<M extends RowMessage> {
     loading?: boolean;
     /** What to show while loading. Without it the list simply stays empty. */
     loadingPlaceholder?: ReactNode;
+}
+
+/**
+ * Zeigt beim Ueberfahren den vollstaendigen Text.
+ *
+ * In einer 320 px schmalen Spalte ist fast jeder Absender und fast jeder
+ * Betreff abgeschnitten. Das native `title`-Attribut war der erste Versuch —
+ * der Browser zeigt es erst nach ein bis zwei Sekunden und als kleinen grauen
+ * Kasten. Wer den Betreff lesen will, hat bis dahin schon geklickt.
+ *
+ * Nur wenn wirklich abgeschnitten ist: Ein Popover ueber einem Text, den man
+ * ohnehin ganz sieht, ist Rauschen. Gemessen wird beim Ueberfahren an der
+ * echten Breite (`scrollWidth > clientWidth`), nicht an einer Zeichenzahl —
+ * die haengt von Schriftart und Spaltenbreite ab.
+ */
+function VollerText({ text, children }: { text: string; children: ReactElement }) {
+    const [abgeschnitten, setAbgeschnitten] = useState(false);
+
+    if (!text) {
+        return children;
+    }
+
+    return (
+        <Tooltip>
+            <TooltipTrigger
+                asChild
+                onMouseEnter={(e) => {
+                    const el = e.currentTarget as HTMLElement;
+                    setAbgeschnitten(el.scrollWidth > el.clientWidth);
+                }}
+            >
+                {children}
+            </TooltipTrigger>
+            {abgeschnitten && (
+                <TooltipContent side="bottom" align="start" className="max-w-md break-words">
+                    {text}
+                </TooltipContent>
+            )}
+        </Tooltip>
+    );
 }
 
 export function MailMessageList<M extends RowMessage>({
@@ -234,12 +276,11 @@ export function MailMessageList<M extends RowMessage>({
                                         `title`: In einer 320 px schmalen Spalte ist fast jeder
                                         Name abgeschnitten. Wer wissen will, wer da schreibt,
                                         soll nicht die Mail oeffnen muessen. */}
-                                    <span
-                                        className={cn('truncate text-sm', !row.msg.is_read ? 'font-semibold' : 'font-medium')}
-                                        title={row.isOutbound ? labels.outboundSender : formatSender(row.msg)}
-                                    >
-                                        {row.isOutbound ? labels.outboundSender : formatSender(row.msg)}
-                                    </span>
+                                    <VollerText text={row.isOutbound ? labels.outboundSender : formatSender(row.msg)}>
+                                        <span className={cn('truncate text-sm', !row.msg.is_read ? 'font-semibold' : 'font-medium')}>
+                                            {row.isOutbound ? labels.outboundSender : formatSender(row.msg)}
+                                        </span>
+                                    </VollerText>
 
                                     {row.isOutbound && (
                                         <span
@@ -283,12 +324,16 @@ export function MailMessageList<M extends RowMessage>({
                             <div className="flex items-center gap-1">
                                 {row.msg.has_attachments && <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" aria-label={labels.hasAttachments} />}
 
-                                <span
-                                    className={cn('truncate text-sm font-normal', !row.msg.is_read ? 'text-foreground' : 'text-muted-foreground')}
-                                    title={row.msg.subject}
-                                >
-                                    {row.msg.subject}
-                                </span>
+                                <VollerText text={row.msg.subject}>
+                                    <span
+                                        className={cn(
+                                            'truncate text-sm font-normal',
+                                            !row.msg.is_read ? 'text-foreground' : 'text-muted-foreground',
+                                        )}
+                                    >
+                                        {row.msg.subject}
+                                    </span>
+                                </VollerText>
 
                                 {/* In search, WHERE the hit sits is the point. */}
                                 {isSearchMode && row.msg.folder && row.msg.folder !== currentFolder ? (

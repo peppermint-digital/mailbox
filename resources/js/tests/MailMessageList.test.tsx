@@ -216,21 +216,41 @@ describe('wer scrollt', () => {
         unmount();
     });
 
-    it('zeigt Absender und Betreff beim Ueberfahren vollstaendig', () => {
-        // Die Spalte ist 320 px schmal; fast jeder Name und fast jeder Betreff
-        // sind abgeschnitten. Wer wissen will, worum es geht, soll dafuer nicht
-        // die Mail oeffnen muessen.
+    it('haengt an Absender und Betreff je einen Popover-Ausloeser', () => {
+        // In einer 320 px schmalen Spalte ist fast jeder Name und fast jeder
+        // Betreff abgeschnitten. Wer wissen will, worum es geht, soll dafuer
+        // nicht die Mail oeffnen muessen.
+        //
+        // Ob das Popover AUFGEHT, kann dieser Harness nicht pruefen: Radix
+        // haengt es an `scrollWidth > clientWidth`, und jsdom meldet fuer
+        // beides 0. Ein Test darauf waere gruen, ohne je etwas zu beruehren —
+        // ein Waechter, der nie zuschnappt. Geprueft wird er am ausgerollten
+        // Stand im Browser.
         const { container, unmount } = render(
             <MailMessageList
-                rows={[row({ msg: msg({ from_name: 'Eine sehr lange Absenderin mit Titel', subject: 'Ein ebenso langer Betreff, der niemals passt' }) })]}
+                rows={[row({ msg: msg({ from_name: 'Eine sehr lange Absenderin', subject: 'Ein ebenso langer Betreff' }) })]}
                 {...base}
             />,
         );
 
-        const titel = [...container.querySelectorAll('span[title]')].map((e) => e.getAttribute('title'));
+        const ausloeser = [...container.querySelectorAll('[data-slot="tooltip-trigger"]')].map((e) => e.textContent?.trim());
 
-        expect(titel).toContain('Eine sehr lange Absenderin mit Titel');
-        expect(titel).toContain('Ein ebenso langer Betreff, der niemals passt');
+        expect(ausloeser).toContain('Eine sehr lange Absenderin');
+        expect(ausloeser).toContain('Ein ebenso langer Betreff');
+        unmount();
+    });
+
+    it('setzt KEIN title-Attribut mehr daneben', () => {
+        // Sonst zeigt der Browser zusaetzlich seinen eigenen grauen Kasten —
+        // zwei Hinweise uebereinander fuer dieselbe Zeile.
+        const { container, unmount } = render(
+            <MailMessageList rows={[row({ msg: msg({ from_name: 'Anna', subject: 'Betreff' }) })]} {...base} />,
+        );
+
+        const zeile = container.querySelector('[data-slot="mail-message-row"]')!;
+
+        expect(zeile.querySelector('span[title="Anna"]')).toBeNull();
+        expect(zeile.querySelector('span[title="Betreff"]')).toBeNull();
         unmount();
     });
 
@@ -239,18 +259,14 @@ describe('wer scrollt', () => {
         // dabei WEITER die Unterscheidung gelesen/ungelesen — es soll nur nicht
         // mehr so aussehen, als waere der Betreff genauso wichtig wie der Name.
         const { container, unmount } = render(
-            <MailMessageList
-                rows={[row({ msg: msg({ is_read: true, from_name: 'Anna', subject: 'Betreff' }) })]}
-                {...base}
-            />,
+            <MailMessageList rows={[row({ msg: msg({ is_read: true, from_name: 'Anna', subject: 'Betreff' }) })]} {...base} />,
         );
 
-        const absender = container.querySelector('span[title="Anna"]')!;
-        const betreff = container.querySelector('span[title="Betreff"]')!;
+        const finde = (text: string) => [...container.querySelectorAll('span')].find((e) => e.textContent === text)!;
 
-        expect(absender.className).toContain('font-medium');
-        expect(betreff.className).toContain('font-normal');
-        expect(betreff.className).toContain('text-muted-foreground');
+        expect(finde('Anna').className).toContain('font-medium');
+        expect(finde('Betreff').className).toContain('font-normal');
+        expect(finde('Betreff').className).toContain('text-muted-foreground');
         unmount();
     });
 

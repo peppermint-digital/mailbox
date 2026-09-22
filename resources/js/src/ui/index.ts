@@ -34,3 +34,4 @@ export * from './checkbox';
 export * from './dropdown-menu';
 export * from './skeleton';
 export * from './dialog';
+export * from './tooltip';
