@@ -179,27 +179,36 @@ export function MailMessageView({
                         </div>
                     ) : (
                         <div className="flex shrink-0 items-center gap-2" data-slot="mail-message-actions">
-                            {isDraft && (
+                            {isDraft && onEditDraft && (
                                 <Button onClick={onEditDraft} size="sm" title={labels.editDraft}>
                                     <Pencil className="mr-2 h-4 w-4" />
                                     {labels.editDraft}
                                 </Button>
                             )}
 
-                            <Button onClick={() => onReply?.(false)} size="sm" title={labels.reply}>
-                                <Reply className="mr-2 h-4 w-4" />
-                                {labels.reply}
-                            </Button>
+                            {/* Nur was einen Rueckruf hat. Bis zum 22.09.2026 standen
+                                Antworten und Weiterleiten hier immer — auch in
+                                Produkten ohne Sendeweg, wo sie beim Klick nichts
+                                taten. Ein Knopf ohne Wirkung sieht aus wie ein
+                                Defekt, nicht wie eine fehlende Funktion. */}
+                            {onReply && (
+                                <Button onClick={() => onReply(false)} size="sm" title={labels.reply}>
+                                    <Reply className="mr-2 h-4 w-4" />
+                                    {labels.reply}
+                                </Button>
+                            )}
 
-                            {hasMoreRecipients && (
-                                <Button onClick={() => onReply?.(true)} size="sm" variant="outline" title={labels.replyAll}>
+                            {onReply && hasMoreRecipients && (
+                                <Button onClick={() => onReply(true)} size="sm" variant="outline" title={labels.replyAll}>
                                     <Users className="h-4 w-4" />
                                 </Button>
                             )}
 
-                            <Button onClick={onForward} size="sm" variant="outline" title={labels.forward}>
-                                <Forward className="h-4 w-4" />
-                            </Button>
+                            {onForward && (
+                                <Button onClick={onForward} size="sm" variant="outline" title={labels.forward}>
+                                    <Forward className="h-4 w-4" />
+                                </Button>
+                            )}
 
                             {extraActions}
 

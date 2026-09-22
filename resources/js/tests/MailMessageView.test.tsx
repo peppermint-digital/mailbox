@@ -76,7 +76,7 @@ describe('MailMessageView', () => {
 
         it('appears with a second recipient', () => {
             const two = message({ to: [{ email: 'a@x.de', name: '' }, { email: 'b@x.de', name: '' }] });
-            const { container, unmount } = render(<MailMessageView {...base} message={two} />);
+            const { container, unmount } = render(<MailMessageView {...base} message={two} onReply={() => {}} />);
 
             expect(container.querySelector('[title="Allen antworten"]')).not.toBeNull();
             unmount();
@@ -84,7 +84,7 @@ describe('MailMessageView', () => {
 
         it('appears with a CC', () => {
             const cc = message({ cc: [{ email: 'c@x.de', name: '' }] });
-            const { container, unmount } = render(<MailMessageView {...base} message={cc} />);
+            const { container, unmount } = render(<MailMessageView {...base} message={cc} onReply={() => {}} />);
 
             expect(container.querySelector('[title="Allen antworten"]')).not.toBeNull();
             unmount();
@@ -122,7 +122,7 @@ describe('MailMessageView', () => {
         expect(plain.container.querySelector('[title="Weiter bearbeiten"]')).toBeNull();
         plain.unmount();
 
-        const draft = render(<MailMessageView {...base} message={message()} isDraft />);
+        const draft = render(<MailMessageView {...base} message={message()} isDraft onEditDraft={() => {}} />);
         expect(draft.container.querySelector('[title="Weiter bearbeiten"]')).not.toBeNull();
         draft.unmount();
     });
@@ -191,6 +191,22 @@ describe('MailMessageView', () => {
 
         expect(textOf(container)).toContain('Zugewiesen an Bastian');
         expect(textOf(container)).toContain('Aufgabe zuordnen');
+        unmount();
+    });
+
+    it('zeigt Antworten und Weiterleiten nur mit Rueckruf', () => {
+        // Bis zum 22.09.2026 standen sie immer da — auch in Produkten ohne
+        // Sendeweg, wo sie beim Klick nichts taten. Ein Knopf ohne Wirkung
+        // sieht aus wie ein Defekt, nicht wie eine fehlende Funktion.
+        const { container, rerender, unmount } = render(<MailMessageView {...base} message={message()} />);
+
+        expect(container.querySelector('button[title="Antworten"]')).toBeNull();
+        expect(container.querySelector('button[title="Weiterleiten"]')).toBeNull();
+
+        rerender(<MailMessageView {...base} message={message()} onReply={() => {}} onForward={() => {}} />);
+
+        expect(container.querySelector('button[title="Antworten"]')).not.toBeNull();
+        expect(container.querySelector('button[title="Weiterleiten"]')).not.toBeNull();
         unmount();
     });
 });
