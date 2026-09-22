@@ -215,4 +215,58 @@ describe('wer scrollt', () => {
 
         unmount();
     });
+
+    it('zeigt Absender und Betreff beim Ueberfahren vollstaendig', () => {
+        // Die Spalte ist 320 px schmal; fast jeder Name und fast jeder Betreff
+        // sind abgeschnitten. Wer wissen will, worum es geht, soll dafuer nicht
+        // die Mail oeffnen muessen.
+        const { container, unmount } = render(
+            <MailMessageList
+                rows={[row({ msg: msg({ from_name: 'Eine sehr lange Absenderin mit Titel', subject: 'Ein ebenso langer Betreff, der niemals passt' }) })]}
+                {...base}
+            />,
+        );
+
+        const titel = [...container.querySelectorAll('span[title]')].map((e) => e.getAttribute('title'));
+
+        expect(titel).toContain('Eine sehr lange Absenderin mit Titel');
+        expect(titel).toContain('Ein ebenso langer Betreff, der niemals passt');
+        unmount();
+    });
+
+    it('gibt dem Absender mehr Gewicht als dem Betreff', () => {
+        // Damit sich die beiden Zeilen voneinander abheben. Das Gewicht traegt
+        // dabei WEITER die Unterscheidung gelesen/ungelesen — es soll nur nicht
+        // mehr so aussehen, als waere der Betreff genauso wichtig wie der Name.
+        const { container, unmount } = render(
+            <MailMessageList
+                rows={[row({ msg: msg({ is_read: true, from_name: 'Anna', subject: 'Betreff' }) })]}
+                {...base}
+            />,
+        );
+
+        const absender = container.querySelector('span[title="Anna"]')!;
+        const betreff = container.querySelector('span[title="Betreff"]')!;
+
+        expect(absender.className).toContain('font-medium');
+        expect(betreff.className).toContain('font-normal');
+        expect(betreff.className).toContain('text-muted-foreground');
+        unmount();
+    });
+
+    it('laesst die Vorschauzeile weg, wenn es keine gibt', () => {
+        // IMAP liefert keinen Vorschautext — ein leeres `<p>` mit `mt-1` machte
+        // daraus einen unerklaerlichen Abstand unter jeder Zeile.
+        const { container, rerender, unmount } = render(
+            <MailMessageList rows={[row({ msg: msg({ preview: '' }) })]} {...base} />,
+        );
+        expect(container.querySelector('p')).toBeNull();
+
+        rerender(
+            <MailMessageList
+                rows={[row({ msg: msg({ preview: 'Guten Tag, anbei …' }) })]} {...base} />,
+        );
+        expect(container.querySelector('p')?.textContent).toContain('Guten Tag');
+        unmount();
+    });
 });

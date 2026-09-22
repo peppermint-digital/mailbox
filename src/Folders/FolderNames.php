@@ -92,6 +92,47 @@ class FolderNames
     }
 
     /**
+     * Ordner, die niemand umbenennen oder loeschen darf.
+     *
+     * Der Posteingang und die vier Standardordner. Das Postfach haengt an
+     * ihnen: Wer `Sent` loescht, verliert nicht nur einen Ordner, sondern den
+     * Ort, an dem kuenftig Gesendetes landet — und der Fehler faellt erst
+     * Wochen spaeter auf.
+     *
+     * ## Warum das hier steht und nicht nur in der Oberflaeche
+     *
+     * Bis zum 22.09.2026 gab es diese Pruefung NUR im Browser
+     * (`isProtectedFolder` in `folders.ts`). Sie blendete das Kontextmenue
+     * aus — und das war alles. Ein Aufruf des Endpunkts von Hand haette den
+     * Posteingang geloescht, ohne dass irgendwo etwas widersprochen haette.
+     *
+     * Eine Regel, die nur die Maske kennt, ist keine Regel. Sie ist eine
+     * Bitte.
+     *
+     * @param  list<string>  $flags  IMAP-Marken des Ordners, falls bekannt
+     */
+    public static function isProtected(string $path, array $flags = []): bool
+    {
+        if (mb_strtoupper(trim($path)) === 'INBOX') {
+            return true;
+        }
+
+        // Der Server sagt selbst, welcher Ordner welcher ist — in jeder
+        // Sprache und jeder Kodierung. Das schlaegt jede Namensliste.
+        foreach ($flags as $marke) {
+            $marke = mb_strtolower((string) $marke);
+
+            foreach (['sent', 'drafts', 'draft', 'trash', 'junk', 'archive', 'all', 'flagged', 'important'] as $bekannt) {
+                if (str_contains($marke, $bekannt)) {
+                    return true;
+                }
+            }
+        }
+
+        return self::classify($path) !== null;
+    }
+
+    /**
      * @param  list<string>  $needles
      */
     private static function containsAny(string $path, array $needles): bool

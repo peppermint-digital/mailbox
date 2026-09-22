@@ -225,7 +225,19 @@ export function MailMessageList<M extends RowMessage>({
                                         <span className="h-2.5 w-2.5 shrink-0" />
                                     )}
 
-                                    <span className={cn('truncate text-sm', !row.msg.is_read ? 'font-semibold' : '')}>
+                                    {/* Absender und Betreff sollen sich voneinander abheben: Der
+                                        Name traegt immer mehr Gewicht als die Zeile darunter,
+                                        ungelesen noch etwas mehr. Das Gewicht bleibt damit
+                                        Traeger BEIDER Aussagen — „wer" und „schon gelesen?" —,
+                                        ohne dass eine die andere verdeckt.
+
+                                        `title`: In einer 320 px schmalen Spalte ist fast jeder
+                                        Name abgeschnitten. Wer wissen will, wer da schreibt,
+                                        soll nicht die Mail oeffnen muessen. */}
+                                    <span
+                                        className={cn('truncate text-sm', !row.msg.is_read ? 'font-semibold' : 'font-medium')}
+                                        title={row.isOutbound ? labels.outboundSender : formatSender(row.msg)}
+                                    >
                                         {row.isOutbound ? labels.outboundSender : formatSender(row.msg)}
                                     </span>
 
@@ -271,7 +283,12 @@ export function MailMessageList<M extends RowMessage>({
                             <div className="flex items-center gap-1">
                                 {row.msg.has_attachments && <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" aria-label={labels.hasAttachments} />}
 
-                                <span className={cn('truncate text-sm', !row.msg.is_read ? 'font-medium' : '')}>{row.msg.subject}</span>
+                                <span
+                                    className={cn('truncate text-sm font-normal', !row.msg.is_read ? 'text-foreground' : 'text-muted-foreground')}
+                                    title={row.msg.subject}
+                                >
+                                    {row.msg.subject}
+                                </span>
 
                                 {/* In search, WHERE the hit sits is the point. */}
                                 {isSearchMode && row.msg.folder && row.msg.folder !== currentFolder ? (
@@ -288,7 +305,12 @@ export function MailMessageList<M extends RowMessage>({
                                 ) : null}
                             </div>
 
-                            <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{row.msg.preview}</p>
+                            {/* Nur zeichnen, wenn es etwas zu zeigen gibt. IMAP liefert
+                                keinen Vorschautext (der kostet je Nachricht einen
+                                Rumpf-Abruf, siehe Bug #877), JMAP schon — ein leeres
+                                `<p>` mit `mt-1` machte daraus einen unerklaerlichen
+                                Abstand unter jeder Zeile. */}
+                            {row.msg.preview ? <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{row.msg.preview}</p> : null}
                         </button>
                     </div>
                 );

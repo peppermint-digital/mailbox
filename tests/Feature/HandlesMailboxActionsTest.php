@@ -133,3 +133,81 @@ it('meldet Erfolg nur, wenn wirklich nichts danebenging', function () {
 
     expect($antwort->getData(true))->toMatchArray(['success' => true, 'processed' => 2, 'failed' => 0]);
 });
+
+/**
+ * Ordnerverwaltung — und der Schutz, den es bis heute nur im Browser gab.
+ */
+it('legt einen Ordner an', function () {
+    $gesehen = null;
+    $postfach = Mockery::mock(Mailbox::class);
+    $postfach->shouldReceive('createFolder')->andReturnUsing(function ($pfad) use (&$gesehen) {
+        $gesehen = $pfad;
+    });
+
+    (new TestControllerFuerAktionen($postfach))->createFolder(anfrage(['path' => 'Kunden/2026']), 1);
+
+    expect($gesehen)->toBe('Kunden/2026');
+});
+
+it('laesst den Posteingang nicht loeschen', function () {
+    // Die Pruefung stand bis zum 22.09.2026 NUR im Browser: Sie blendete das
+    // Kontextmenue aus, und das war alles. Ein Aufruf des Endpunkts von Hand
+    // haette den Posteingang geloescht.
+    $postfach = Mockery::mock(Mailbox::class);
+    $postfach->shouldReceive('folders')->andReturn([]);
+    $postfach->shouldReceive('deleteFolder')->never();
+
+    expect(fn () => (new TestControllerFuerAktionen($postfach))->deleteFolder(anfrage(['path' => 'INBOX']), 1))
+        ->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class);
+});
+
+it('laesst auch die Standardordner in Ruhe', function () {
+    // Wer `Sent` loescht, verliert nicht nur einen Ordner, sondern den Ort, an
+    // dem kuenftig Gesendetes landet — und das faellt erst Wochen spaeter auf.
+    $postfach = Mockery::mock(Mailbox::class);
+    $postfach->shouldReceive('folders')->andReturn([]);
+    $postfach->shouldReceive('deleteFolder')->never();
+    $postfach->shouldReceive('renameFolder')->never();
+
+    foreach (['Gesendete Elemente', 'Papierkorb', 'Entwürfe', 'Archiv'] as $ordner) {
+        expect(fn () => (new TestControllerFuerAktionen($postfach))->deleteFolder(anfrage(['path' => $ordner]), 1))
+            ->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class, '', "loeschbar: {$ordner}");
+    }
+});
+
+it('glaubt den Marken des Servers mehr als dem Namen', function () {
+    // Ein Ordner kann „Zeug" heissen und trotzdem der Papierkorb sein. Der
+    // Server sagt es ueber seine Marken — in jeder Sprache.
+    $postfach = Mockery::mock(Mailbox::class);
+    $postfach->shouldReceive('folders')->andReturn([
+        ['path' => 'Zeug', 'flags' => ['\\Trash']],
+    ]);
+    $postfach->shouldReceive('deleteFolder')->never();
+
+    expect(fn () => (new TestControllerFuerAktionen($postfach))->deleteFolder(anfrage(['path' => 'Zeug']), 1))
+        ->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class);
+});
+
+it('laesst einen gewoehnlichen Ordner loeschen', function () {
+    // Der Schutz darf nicht so weit gehen, dass gar nichts mehr geht.
+    $geloescht = null;
+    $postfach = Mockery::mock(Mailbox::class);
+    $postfach->shouldReceive('folders')->andReturn([['path' => 'Kunden/2026', 'flags' => []]]);
+    $postfach->shouldReceive('deleteFolder')->andReturnUsing(function ($pfad) use (&$geloescht) {
+        $geloescht = $pfad;
+    });
+
+    (new TestControllerFuerAktionen($postfach))->deleteFolder(anfrage(['path' => 'Kunden/2026']), 1);
+
+    expect($geloescht)->toBe('Kunden/2026');
+});
+
+it('schuetzt auch beim Umbenennen, nicht nur beim Loeschen', function () {
+    // Ein umbenannter Posteingang ist so kaputt wie ein geloeschter.
+    $postfach = Mockery::mock(Mailbox::class);
+    $postfach->shouldReceive('folders')->andReturn([]);
+    $postfach->shouldReceive('renameFolder')->never();
+
+    expect(fn () => (new TestControllerFuerAktionen($postfach))->renameFolder(anfrage(['path' => 'INBOX', 'name' => 'Posteingang']), 1))
+        ->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class);
+});

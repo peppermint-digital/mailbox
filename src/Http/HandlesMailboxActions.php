@@ -5,6 +5,7 @@ namespace Peppermint\Mailbox\Http;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Peppermint\Mailbox\Contracts\Mailbox;
+use Peppermint\Mailbox\Folders\FolderNames;
 
 /**
  * Die Aktionen, die an den Nachrichten eines Postfachs vorgenommen werden:
@@ -107,6 +108,94 @@ trait HandlesMailboxActions
         return $this->mailboxFailure(fn (): array => [
             'success' => $this->mailboxFor($account)->delete($daten['folder'], $uid),
         ]);
+    }
+
+    /**
+     * Einen Ordner anlegen.
+     *
+     * Ein Unterordner entsteht ueber den Pfad: „Kunden/2026".
+     */
+    public function createFolder(Request $request, int $account): JsonResponse
+    {
+        $daten = $request->validate(['path' => ['required', 'string', 'max:255']]);
+
+        return $this->mailboxFailure(function () use ($daten, $account): array {
+            $this->mailboxFor($account)->createFolder($daten['path']);
+
+            return ['success' => true];
+        });
+    }
+
+    /**
+     * Einen Ordner umbenennen.
+     */
+    public function renameFolder(Request $request, int $account): JsonResponse
+    {
+        $daten = $request->validate([
+            'path' => ['required', 'string', 'max:255'],
+            'name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $this->schuetzeOrdner($daten['path'], $account);
+
+        return $this->mailboxFailure(function () use ($daten, $account): array {
+            $neu = $this->mailboxFor($account)->renameFolder($daten['path'], $daten['name']);
+
+            return ['success' => true, 'path' => $neu];
+        });
+    }
+
+    /**
+     * Einen Ordner loeschen.
+     */
+    public function deleteFolder(Request $request, int $account): JsonResponse
+    {
+        $daten = $request->validate(['path' => ['required', 'string', 'max:255']]);
+
+        $this->schuetzeOrdner($daten['path'], $account);
+
+        return $this->mailboxFailure(function () use ($daten, $account): array {
+            $this->mailboxFor($account)->deleteFolder($daten['path']);
+
+            return ['success' => true];
+        });
+    }
+
+    /**
+     * Haelt den Posteingang und die Standardordner aus Umbenennen und Loeschen
+     * heraus.
+     *
+     * Bis zum 22.09.2026 gab es diese Pruefung NUR im Browser: Sie blendete
+     * das Kontextmenue aus, und das war alles. Ein Aufruf des Endpunkts von
+     * Hand haette den Posteingang geloescht, ohne dass irgendwo etwas
+     * widersprochen haette.
+     *
+     * Die Marken des Servers zaehlen mehr als der Name — deshalb wird, wo
+     * moeglich, die Ordnerliste gefragt. Antwortet sie nicht, bleibt der Name
+     * als Anhaltspunkt: lieber einmal zu viel geschuetzt als einmal zu wenig.
+     */
+    protected function schuetzeOrdner(string $pfad, int $account): void
+    {
+        $marken = [];
+
+        try {
+            foreach ($this->mailboxFor($account)->folders() as $ordner) {
+                $o = (array) $ordner;
+
+                if (($o['path'] ?? null) === $pfad) {
+                    $marken = (array) ($o['flags'] ?? []);
+                    break;
+                }
+            }
+        } catch (\Throwable) {
+            // Ohne Ordnerliste entscheidet der Name allein.
+        }
+
+        abort_if(
+            FolderNames::isProtected($pfad, $marken),
+            422,
+            'Dieser Ordner gehört zur Grundausstattung des Postfachs und lässt sich nicht ändern.',
+        );
     }
 
     /**
