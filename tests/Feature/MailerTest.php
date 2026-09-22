@@ -18,7 +18,7 @@ use Symfony\Component\Mailer\Transport\Smtp\EsmtpTransport;
  * - Die Einschraenkung auf XOAUTH2 (10,3 s auf 0,3 s je Versand).
  * - Die Anmeldung mit der Hauptadresse statt der eingetragenen.
  */
-function konto(array $felder = []): MailAccount
+function sendeKonto(array $felder = []): MailAccount
 {
     return MailAccount::fromRemote([
         'id' => 1,
@@ -29,7 +29,7 @@ function konto(array $felder = []): MailAccount
 }
 
 /** Ein JWT-Nutzdatenteil, wie ihn Microsoft ausstellt — ohne gueltige Signatur. */
-function tokenMit(array $ansprueche): string
+function sendeToken(array $ansprueche): string
 {
     $teil = static fn (array $d): string => rtrim(strtr(base64_encode(json_encode($d)), '+/', '-_'), '=');
 
@@ -39,7 +39,7 @@ function tokenMit(array $ansprueche): string
 it('setzt Absender, Empfaenger und beide Textzweige', function () {
     // Eine Mail ohne Klartext ist bei Spamfiltern ein schwaches Signal, und
     // Vorschau-Erzeuger lesen ihn.
-    $mime = (new Mailer)->build(konto(), new Outgoing(
+    $mime = (new Mailer)->build(sendeKonto(), new Outgoing(
         subject: 'Angebot',
         html: '<p>Guten Tag</p>',
         to: [['email' => 'kunde@example.test', 'name' => 'Anna Meier']],
@@ -59,7 +59,7 @@ it('vergibt eine eigene Message-ID aus der Absenderdomain', function () {
     // Das Produkt braucht sie, um die gesendete Nachricht wiederzufinden und
     // Antworten derselben Unterhaltung zuzuordnen. Wer sie erst aus der
     // Antwort des Servers liest, hat sie bei der Haelfte der Anbieter nicht.
-    $mime = (new Mailer)->build(konto(), new Outgoing('Betreff', '<p>x</p>', [['email' => 'a@b.test']]));
+    $mime = (new Mailer)->build(sendeKonto(), new Outgoing('Betreff', '<p>x</p>', [['email' => 'a@b.test']]));
 
     $id = $mime->getHeaders()->get('Message-ID')->getBodyAsString();
 
@@ -71,14 +71,14 @@ it('reicht In-Reply-To und References durch', function () {
     $nachricht = (new Outgoing('Re: Angebot', '<p>x</p>', [['email' => 'a@b.test']]))
         ->withHeaders(['In-Reply-To' => '<erste@example.test>', 'References' => '<erste@example.test>']);
 
-    $mime = (new Mailer)->build(konto(), $nachricht);
+    $mime = (new Mailer)->build(sendeKonto(), $nachricht);
 
     expect($mime->getHeaders()->get('In-Reply-To')->getBodyAsString())->toContain('erste@example.test')
         ->and($mime->getHeaders()->get('References')->getBodyAsString())->toContain('erste@example.test');
 });
 
 it('haengt Dateien und Bytes an', function () {
-    $mime = (new Mailer)->build(konto(), new Outgoing(
+    $mime = (new Mailer)->build(sendeKonto(), new Outgoing(
         subject: 'Mit Anhang',
         html: '<p>x</p>',
         to: [['email' => 'a@b.test']],
@@ -94,10 +94,10 @@ it('beschraenkt OAuth-Anmeldungen auf XOAUTH2', function () {
     // 10,3 Sekunden je Versand haengen daran. Symfony probiert sonst CRAM-MD5,
     // LOGIN und PLAIN zuerst durch; Office 365 laesst die Fehlversuche ins
     // Leere laufen, bevor das Verfahren drankommt, das funktioniert.
-    $transport = (new Mailer)->transportFor(konto([
+    $transport = (new Mailer)->transportFor(sendeKonto([
         'auth_type' => 'oauth',
         'oauth_provider' => 'microsoft',
-        'oauth_access_token' => tokenMit(['upn' => 'buero@example.test']),
+        'oauth_access_token' => sendeToken(['upn' => 'buero@example.test']),
     ]));
 
     expect($transport)->toBeInstanceOf(EsmtpTransport::class);
@@ -118,11 +118,11 @@ it('meldet sich mit der Hauptadresse aus dem Token an, nicht mit der eingetragen
     // Als Absender steht sie trotzdem in der Nachricht — das regelt der Aufbau
     // der Mail, nicht die Anmeldung.
     $mailer = new Mailer;
-    $k = konto([
+    $k = sendeKonto([
         'email' => 'zweitname@example.test',
         'auth_type' => 'oauth',
         'oauth_provider' => 'microsoft',
-        'oauth_access_token' => tokenMit(['upn' => 'haupt@example.test']),
+        'oauth_access_token' => sendeToken(['upn' => 'haupt@example.test']),
     ]);
 
     $transport = $mailer->transportFor($k);
@@ -136,10 +136,10 @@ it('meldet sich mit der Hauptadresse aus dem Token an, nicht mit der eingetragen
 });
 
 it('faellt auf die eingetragene Adresse zurueck, wenn das Token keine nennt', function () {
-    $transport = (new Mailer)->transportFor(konto([
+    $transport = (new Mailer)->transportFor(sendeKonto([
         'auth_type' => 'oauth',
         'oauth_provider' => 'microsoft',
-        'oauth_access_token' => tokenMit(['sub' => 'ohne-adresse']),
+        'oauth_access_token' => sendeToken(['sub' => 'ohne-adresse']),
     ]));
 
     $eigenschaft = (new ReflectionClass(EsmtpTransport::class))->getProperty('username');
@@ -151,7 +151,7 @@ it('faellt auf die eingetragene Adresse zurueck, wenn das Token keine nennt', fu
 it('weigert sich ohne Zugriffstoken, statt eine leere Anmeldung zu versuchen', function () {
     // Sonst kommt die Absage vom Anbieter — und die liest sich wie eine
     // Stoerung, nicht wie eine offene Einrichtung.
-    expect(fn () => (new Mailer)->transportFor(konto(['auth_type' => 'oauth', 'oauth_access_token' => ''])))
+    expect(fn () => (new Mailer)->transportFor(sendeKonto(['auth_type' => 'oauth', 'oauth_access_token' => ''])))
         ->toThrow(RuntimeException::class);
 });
 
@@ -160,10 +160,10 @@ it('kennt die Ziele der Anbieter, wenn niemand sie eingetragen hat', function ()
     $mailer = new Mailer;
 
     foreach ([['google', 'smtp.gmail.com'], ['microsoft', 'smtp.office365.com']] as [$anbieter, $erwartet]) {
-        $transport = $mailer->transportFor(konto([
+        $transport = $mailer->transportFor(sendeKonto([
             'auth_type' => 'oauth',
             'oauth_provider' => $anbieter,
-            'oauth_access_token' => tokenMit(['upn' => 'a@b.test']),
+            'oauth_access_token' => sendeToken(['upn' => 'a@b.test']),
         ]));
 
         expect($transport->getStream()->getHost())->toBe($erwartet, "Ziel fuer {$anbieter}");
@@ -171,7 +171,7 @@ it('kennt die Ziele der Anbieter, wenn niemand sie eingetragen hat', function ()
 });
 
 it('nimmt eingetragene SMTP-Angaben, wo es welche gibt', function () {
-    $transport = (new Mailer)->transportFor(konto([
+    $transport = (new Mailer)->transportFor(sendeKonto([
         'auth_type' => 'password',
         'username' => 'buero',
         'password' => 'geheim',
