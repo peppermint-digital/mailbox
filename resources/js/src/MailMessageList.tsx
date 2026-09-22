@@ -305,12 +305,18 @@ export function MailMessageList<M extends RowMessage>({
                                 ) : null}
                             </div>
 
-                            {/* Nur zeichnen, wenn es etwas zu zeigen gibt. IMAP liefert
-                                keinen Vorschautext (der kostet je Nachricht einen
-                                Rumpf-Abruf, siehe Bug #877), JMAP schon — ein leeres
-                                `<p>` mit `mt-1` machte daraus einen unerklaerlichen
-                                Abstand unter jeder Zeile. */}
-                            {row.msg.preview ? <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{row.msg.preview}</p> : null}
+                            {/* KEINE Vorschauzeile.
+                                
+                                JMAP liefert einen Auszug des Nachrichtenkoerpers gratis
+                                mit, IMAP nicht — dort kostet er je Nachricht einen
+                                Rumpf-Abruf (Bug #877). Die Liste sah damit je nach
+                                Postfach verschieden aus: dasselbe Produkt, zwei
+                                Darstellungen, und der Unterschied lag im Protokoll.
+                                
+                                Entschieden am 22.09.2026, zugunsten der Gleichheit und
+                                der Geschwindigkeit: Der Auszug entfaellt ueberall. Was
+                                gebraucht wurde, war der VOLLE BETREFF — und der steht
+                                jetzt im `title` und erscheint beim Ueberfahren. */}
                         </button>
                     </div>
                 );

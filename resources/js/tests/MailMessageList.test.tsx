@@ -254,19 +254,18 @@ describe('wer scrollt', () => {
         unmount();
     });
 
-    it('laesst die Vorschauzeile weg, wenn es keine gibt', () => {
-        // IMAP liefert keinen Vorschautext — ein leeres `<p>` mit `mt-1` machte
-        // daraus einen unerklaerlichen Abstand unter jeder Zeile.
-        const { container, rerender, unmount } = render(
-            <MailMessageList rows={[row({ msg: msg({ preview: '' }) })]} {...base} />,
+    it('zeichnet gar keine Vorschauzeile mehr', () => {
+        // JMAP liefert einen Auszug des Nachrichtenkoerpers gratis mit, IMAP
+        // nicht. Die Liste sah damit je nach Postfach verschieden aus —
+        // dasselbe Produkt, zwei Darstellungen, und der Unterschied lag im
+        // Protokoll. Gebraucht wurde der volle Betreff, und der steht im
+        // `title`.
+        const { container, unmount } = render(
+            <MailMessageList rows={[row({ msg: msg({ preview: 'Guten Tag, anbei die Rechnung …' }) })]} {...base} />,
         );
-        expect(container.querySelector('p')).toBeNull();
 
-        rerender(
-            <MailMessageList
-                rows={[row({ msg: msg({ preview: 'Guten Tag, anbei …' }) })]} {...base} />,
-        );
-        expect(container.querySelector('p')?.textContent).toContain('Guten Tag');
+        expect(container.querySelector('p')).toBeNull();
+        expect(container.textContent).not.toContain('anbei die Rechnung');
         unmount();
     });
 });
