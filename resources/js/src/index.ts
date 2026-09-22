@@ -22,6 +22,7 @@ export * from './useMailboxKeyboard';
 export * from './useAutoOpen';
 export * from './useMailAssignments';
 export * from './MailAssignmentPicker';
+export * from './PlainTextEditor';
 export * from './MailListToolbar';
 export * from './MailMessageList';
 export { default as MailMessageList } from './MailMessageList';

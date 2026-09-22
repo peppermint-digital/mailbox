@@ -35,3 +35,4 @@ export * from './dropdown-menu';
 export * from './skeleton';
 export * from './dialog';
 export * from './tooltip';
+export * from './textarea';
