@@ -122,6 +122,32 @@ describe('MailAddressBook', () => {
         unmount();
     });
 
+    it('nimmt die alten Treffer weg, sobald jemand weitertippt', async () => {
+        // Sonst stehen Zeilen in der Liste, die zu einem Suchbegriff gehoeren,
+        // der im Feld gar nicht mehr steht — und niemand sieht ihnen an, dass
+        // sie veraltet sind.
+        let antwort: AddressBookEntry[] = [eintrag('erste@example.test')];
+        const { container, unmount } = render(
+            <MailAddressBook labels={texte} onCompose={() => {}} source={{ external: async () => antwort }} />,
+        );
+
+        tippe(container, 'erste');
+        await act(async () => { await new Promise((r) => setTimeout(r, 400)); });
+        expect(textOf(container)).toContain('erste@example.test');
+
+        antwort = [eintrag('zweite@example.test')];
+        tippe(container, 'zweite');
+        await act(async () => { await Promise.resolve(); });
+
+        // Noch vor der neuen Antwort: die alte Zeile ist weg.
+        expect(textOf(container)).not.toContain('erste@example.test');
+        expect(textOf(container)).toContain('Suche läuft…');
+
+        await act(async () => { await new Promise((r) => setTimeout(r, 400)); });
+        expect(textOf(container)).toContain('zweite@example.test');
+        unmount();
+    });
+
     it('kommt ohne externe Quelle aus', async () => {
         // Ein Produkt, das nur seinen eigenen Bestand hat, soll benutzbar sein
         // und nicht auf eine Antwort warten, die niemand schickt.

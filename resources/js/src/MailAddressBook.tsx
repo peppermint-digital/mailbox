@@ -128,6 +128,13 @@ export function MailAddressBook({ labels, source, onCompose, onBack, onCopied, b
             return;
         }
 
+        // Die alten Treffer gehen SOFORT weg, nicht erst mit der neuen
+        // Antwort. Sonst stehen waehrend des Tippens Zeilen in der Liste, die
+        // zu einem Suchbegriff gehoeren, der im Feld gar nicht mehr steht —
+        // und niemand sieht ihnen an, dass sie veraltet sind. Ein kurzes
+        // „Suche laeuft" ist die Wahrheit; eine stehengebliebene Trefferliste
+        // ist es nicht. (Am 22.09.2026 im CRM beobachtet.)
+        setExtern([]);
         setSuchtExtern(true);
         const abbruch = new AbortController();
 
