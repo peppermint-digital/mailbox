@@ -845,7 +845,12 @@ class MailboxClient implements Mailbox
     {
         return $this->session(function ($mailbox) use ($folder, $uid): ?array {
             $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
-            $nachricht = $ordner?->messages()->withHeaders()->withBody()->find((int) $uid);
+            // `withSize()` gehoert dazu und ist kein Beiwerk: Ohne sie liefert
+            // die Bibliothek `RFC822.SIZE` gar nicht erst, und die Pruefung
+            // unten kann nichts vergleichen. Beim ersten Livelauf am
+            // 23.09.2026 meldete daraufhin JEDE Nachricht „unbestaetigt" —
+            // die Pruefung war richtig, die Abfrage unvollstaendig.
+            $nachricht = $ordner?->messages()->withHeaders()->withBody()->withSize()->find((int) $uid);
 
             if (! $nachricht) {
                 return null;
