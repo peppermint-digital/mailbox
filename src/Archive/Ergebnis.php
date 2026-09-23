@@ -42,6 +42,8 @@ class Ergebnis
 
     public bool $uebersprungen = false;
 
+    public bool $stichtag = false;
+
     public function __construct(
         public readonly string $ordner,
         public readonly ?int $uidvalidity = null,
@@ -60,6 +62,12 @@ class Ergebnis
     public function unveraendert(): void
     {
         $this->uebersprungen = true;
+    }
+
+    /** Erster Blick: nur gemerkt, wo der Ordner steht. */
+    public function stichtagGesetzt(): void
+    {
+        $this->stichtag = true;
     }
 
     public function aufgenommen(): void
@@ -137,6 +145,7 @@ class Ergebnis
                 : null,
             'folder_missing' => $this->ordnerFehlt,
             'skipped' => $this->uebersprungen,
+            'baseline_set' => $this->stichtag,
             'clean' => $this->sauber(),
         ];
     }

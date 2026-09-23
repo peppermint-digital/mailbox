@@ -285,6 +285,18 @@ class ArchiveTables
             $t->unsignedBigInteger('uidnext')->nullable();
             $t->unsignedInteger('messages')->nullable();
 
+            /*
+             * Der Stichtag: die juengste Kennung beim ersten Blick.
+             *
+             * Ab hier wird aufgenommen, davor nicht. Ohne diese Spalte waere
+             * beim ersten Lauf jede vorhandene Nachricht „neu", und ein
+             * gewachsenes Postfach kaeme vollstaendig herein — genau das, was
+             * nicht gewollt ist.
+             *
+             * `null` heisst „Ordner war leer": Dann ist alles, was kommt, neu.
+             */
+            $t->string('since_handle', 191)->nullable();
+
             $t->timestamp('checked_at')->nullable();
             $t->timestamps();
 

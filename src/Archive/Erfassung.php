@@ -81,17 +81,63 @@ class Erfassung
             return $ergebnis;
         }
 
+        /*
+         * Der Stichtag.
+         *
+         * Beim ALLERERSTEN Blick in einen Ordner ist jede vorhandene Nachricht
+         * „neu" — ein Lauf ohne diese Stelle zoege den gesamten gewachsenen
+         * Bestand herein. Genau das soll er nicht: Die alten Mails liegen
+         * weiter im Postfach, und wer sie braucht, oeffnet sie (dann greift
+         * {@see einzelne()}).
+         *
+         * Also wird beim ersten Mal nur gemerkt, wo der Ordner gerade steht.
+         * Aufgenommen wird ab dem naechsten Lauf, und zwar das, was seitdem
+         * dazugekommen ist.
+         */
+        if (! $gemerkt->exists) {
+            $juengste = $this->postfach->newest($ordner, 1);
+            $gemerkt->fill([
+                'uidvalidity' => $zustand['uidvalidity'] ?? null,
+                'uidnext' => $zustand['uidnext'] ?? null,
+                'messages' => $zustand['messages'] ?? null,
+                'since_handle' => isset($juengste[0]['uid']) ? (string) $juengste[0]['uid'] : null,
+                'checked_at' => now(),
+            ])->save();
+
+            $ergebnis->stichtagGesetzt();
+
+            return $ergebnis;
+        }
+
         $imOrdner = $this->postfach->handles($ordner);
         $bekannt = $this->bekannteOrte($ordner, $zustand['uidvalidity'] ?? null, $ergebnis);
 
-        $neu = array_values(array_diff(
-            array_map(static fn ($u): string => (string) $u, $imOrdner),
-            array_keys($bekannt),
-        ));
+        /*
+         * Was seit dem Stichtag dazugekommen ist — NICHT alles, was der
+         * Ordner hat und wir nicht kennen.
+         *
+         * `newerThan()` fragt genau das: die Zeilen nach einer bestimmten
+         * Nachricht. Einen Ordner mit zehntausend alten Mails abzugleichen und
+         * die Differenz zu bilden haette bei jedem Lauf zehntausend
+         * Kandidaten ergeben, von denen keiner gewollt ist.
+         */
+        $seit = $gemerkt->since_handle;
+
+        $kandidaten = $seit === null
+            // Der Ordner war beim Stichtag LEER. Dann ist alles, was jetzt
+            // drin liegt, danach gekommen — und `newerThan` hat nichts, woran
+            // es sich orientieren koennte.
+            ? array_map(static fn ($u): string => (string) $u, $imOrdner)
+            : array_map(static fn (array $z): string => (string) $z['uid'], $this->postfach->newerThan($ordner, $seit, $hoechstens * 2));
+
+        $neu = array_values(array_diff($kandidaten, array_keys($bekannt)));
+
+        $letzteKennung = null;
 
         foreach (array_slice($neu, 0, $hoechstens) as $uid) {
             try {
                 $this->aufnehmen($ordner, $uid, $zustand['uidvalidity'] ?? null, $ergebnis);
+                $letzteKennung = $uid;
             } catch (Throwable $e) {
                 // Eine Nachricht, die sich nicht holen laesst, darf die
                 // uebrigen nicht aufhalten — und sie darf auch nicht
@@ -120,6 +166,9 @@ class Erfassung
                 'uidvalidity' => $zustand['uidvalidity'] ?? null,
                 'uidnext' => $zustand['uidnext'] ?? null,
                 'messages' => $zustand['messages'] ?? null,
+                // Der Stichtag wandert mit: Beim naechsten Lauf beginnt die
+                // Suche hinter dem, was gerade aufgenommen wurde.
+                'since_handle' => $letzteKennung ?? $gemerkt->since_handle,
                 'checked_at' => now(),
             ])->save();
         }
