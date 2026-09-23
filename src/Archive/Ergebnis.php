@@ -40,6 +40,8 @@ class Ergebnis
 
     public bool $ordnerFehlt = false;
 
+    public bool $uebersprungen = false;
+
     public function __construct(
         public readonly string $ordner,
         public readonly ?int $uidvalidity = null,
@@ -52,6 +54,12 @@ class Ergebnis
         $e->ordnerFehlt = true;
 
         return $e;
+    }
+
+    /** Der Ordner sah aus wie beim letzten Mal — nicht geoeffnet. */
+    public function unveraendert(): void
+    {
+        $this->uebersprungen = true;
     }
 
     public function aufgenommen(): void
@@ -128,6 +136,7 @@ class Ergebnis
                 ? ['from' => $this->umbruchVon, 'to' => $this->umbruchNach]
                 : null,
             'folder_missing' => $this->ordnerFehlt,
+            'skipped' => $this->uebersprungen,
             'clean' => $this->sauber(),
         ];
     }

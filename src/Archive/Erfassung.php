@@ -5,6 +5,7 @@ namespace Peppermint\Mailbox\Archive;
 use Peppermint\Mailbox\Content\Gespraechstext;
 use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Models\MailBody;
+use Peppermint\Mailbox\Models\MailFolderState;
 use Peppermint\Mailbox\Models\MailLocation;
 use Peppermint\Mailbox\Models\MailMessage;
 use Peppermint\Mailbox\Threading\ThreadKey;
@@ -65,6 +66,21 @@ class Erfassung
 
         $ergebnis = new Ergebnis($ordner, $zustand['uidvalidity'] ?? null, $zustand['uidnext'] ?? null);
 
+        $gemerkt = MailFolderState::firstOrNew([
+            'email_account_id' => $this->accountId,
+            'folder' => $ordner,
+        ]);
+
+        if ($gemerkt->exists && $gemerkt->unveraendert($zustand)) {
+            // Der teure Teil beginnt erst danach. Hier ist die Arbeit fertig:
+            // Gueltigkeitsnummer, naechste Kennung und Anzahl sind dieselben
+            // wie beim letzten Mal — in diesem Ordner ist nichts passiert.
+            $gemerkt->update(['checked_at' => now()]);
+            $ergebnis->unveraendert();
+
+            return $ergebnis;
+        }
+
         $imOrdner = $this->postfach->handles($ordner);
         $bekannt = $this->bekannteOrte($ordner, $zustand['uidvalidity'] ?? null, $ergebnis);
 
@@ -90,7 +106,66 @@ class Erfassung
 
         $this->verschwundeneSchliessen($imOrdner, $bekannt, $ergebnis);
 
+        /*
+         * Den Zustand erst JETZT merken, und nur wenn der Lauf sauber war.
+         *
+         * Wer ihn auch nach einem halben Lauf speichert, ueberspringt den
+         * Ordner beim naechsten Mal — und das Uebersprungene bleibt fuer immer
+         * aus. Dasselbe gilt fuer einen Lauf, der am Deckel abgebrochen ist:
+         * Solange noch etwas offen ist, hat sich der Ordner fuer uns sehr wohl
+         * geaendert.
+         */
+        if ($ergebnis->sauber() && $ergebnis->offen === 0) {
+            $gemerkt->fill([
+                'uidvalidity' => $zustand['uidvalidity'] ?? null,
+                'uidnext' => $zustand['uidnext'] ?? null,
+                'messages' => $zustand['messages'] ?? null,
+                'checked_at' => now(),
+            ])->save();
+        }
+
         return $ergebnis;
+    }
+
+    /**
+     * Eine einzelne Nachricht nachtraeglich aufnehmen.
+     *
+     * ## Wofuer
+     *
+     * Der laufende Betrieb nimmt nur Neues auf — alles, was vor dem Stichtag
+     * im Postfach lag, bleibt draussen. Den ganzen Bestand nachzuziehen waere
+     * stundenlange Last fuer Nachrichten, die niemand mehr ansieht.
+     *
+     * Wer aber eine alte Nachricht im Browser OEFFNET, sagt damit, dass sie
+     * ihn interessiert — und das Postfach hat sie in diesem Moment ohnehin
+     * schon herausgegeben. Sie dabei zu behalten kostet einen zusaetzlichen
+     * Abruf der Rohfassung und fuellt die Ablage mit dem, womit gearbeitet
+     * wird.
+     *
+     * ## Nichts tun ist der Normalfall
+     *
+     * Ist die Nachricht schon da, passiert nichts — kein Abruf, kein
+     * Schreibvorgang. Sonst holte jeder zweite Blick auf dieselbe Mail ihre
+     * Bytes erneut ueber die Leitung.
+     */
+    public function einzelne(string $ordner, int|string $uid): bool
+    {
+        $ergebnis = new Ergebnis($ordner);
+
+        $vorhanden = MailLocation::query()
+            ->where('email_account_id', $this->accountId)
+            ->where('folder', $ordner)
+            ->where('uid', (string) $uid)
+            ->whereNull('gone_at')
+            ->exists();
+
+        if ($vorhanden) {
+            return false;
+        }
+
+        $this->aufnehmen($ordner, (string) $uid, null, $ergebnis);
+
+        return $ergebnis->aufgenommen > 0;
     }
 
     /**

@@ -61,11 +61,13 @@ class ArchiveTables
         self::messages();
         self::locations();
         self::bodies();
+        self::folderStates();
     }
 
     public static function drop(): void
     {
         // Rueckwaerts: Die Orte und der Text haengen an der Nachricht.
+        Schema::dropIfExists(self::name('folder_states', 'mail_folder_states'));
         Schema::dropIfExists(self::name('bodies', 'mail_bodies'));
         Schema::dropIfExists(self::name('locations', 'mail_locations'));
         Schema::dropIfExists(self::name('messages', 'mail_messages'));
@@ -239,6 +241,54 @@ class ArchiveTables
             $t->string('parser_version', 16)->nullable()->index();
             $t->timestamp('parsed_at')->nullable();
             $t->timestamps();
+        });
+    }
+
+    /**
+     * Was ein Ordner beim letzten Blick fuer ein Zustand hatte.
+     *
+     * ## Wozu
+     *
+     * Sieben Postfaecher haben zusammen 220 Ordner. Ein stuendlicher Lauf, der
+     * in jedem davon die Kennungen auflistet, macht 220 Auflistungen die
+     * Stunde — fuer eine Handvoll neuer Nachrichten. O365 drosselt pro
+     * Postfach ueber alle Verbindungen; der Lauf wuerde den Mailbrowser
+     * ausbremsen, den er eigentlich schneller machen soll.
+     *
+     * `STATUS` dagegen ist eine Zeile: Gueltigkeitsnummer, naechste Kennung,
+     * Anzahl. Sind alle drei wie beim letzten Mal, hat sich in diesem Ordner
+     * nichts getan — weder etwas dazugekommen noch etwas verschwunden. Dann
+     * braucht ihn niemand zu oeffnen.
+     *
+     * ## Warum alle drei Werte
+     *
+     * `uidnext` allein wuerde Loeschungen uebersehen: Wer eine Nachricht
+     * entfernt, aendert die naechste Kennung nicht. `messages` allein
+     * uebersaehe „eine geloescht, eine gekommen". Und ohne `uidvalidity`
+     * bliebe ein Ordner nach einem Serverumzug fuer unveraendert gehalten,
+     * obwohl jede gespeicherte Kennung ungueltig geworden ist.
+     */
+    private static function folderStates(): void
+    {
+        $name = self::name('folder_states', 'mail_folder_states');
+
+        if (Schema::hasTable($name)) {
+            return;
+        }
+
+        Schema::create($name, function (Blueprint $t) {
+            $t->id();
+            $t->unsignedBigInteger('email_account_id')->index();
+            $t->string('folder', 500);
+
+            $t->unsignedBigInteger('uidvalidity')->nullable();
+            $t->unsignedBigInteger('uidnext')->nullable();
+            $t->unsignedInteger('messages')->nullable();
+
+            $t->timestamp('checked_at')->nullable();
+            $t->timestamps();
+
+            $t->unique(['email_account_id', 'folder'], 'mail_folder_states_unique');
         });
     }
 

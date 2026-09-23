@@ -81,6 +81,7 @@ return [
         'messages' => 'mail_messages',
         'locations' => 'mail_locations',
         'bodies' => 'mail_bodies',
+        'folder_states' => 'mail_folder_states',
     ],
 
     'columns' => [

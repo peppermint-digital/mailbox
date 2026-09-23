@@ -5,6 +5,7 @@ use Peppermint\Mailbox\Archive\Ablage;
 use Peppermint\Mailbox\Archive\Erfassung;
 use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Database\ArchiveTables;
+use Peppermint\Mailbox\Models\MailFolderState;
 use Peppermint\Mailbox\Models\MailLocation;
 use Peppermint\Mailbox\Models\MailMessage;
 
@@ -58,6 +59,7 @@ function testPostfach(array $nachrichten, ?int $uidvalidity = 7): Mailbox
     ]);
 
     $postfach->shouldReceive('handles')->andReturn(array_keys($nachrichten));
+
 
     $postfach->shouldReceive('raw')->andReturnUsing(function ($ordner, $uid) use ($nachrichten) {
         $n = $nachrichten[$uid] ?? null;
@@ -278,4 +280,94 @@ it('meldet einen fehlenden Ordner, statt ihn für leer zu halten', function () {
     expect($ergebnis->ordnerFehlt)->toBeTrue()
         ->and($ergebnis->sauber())->toBeFalse()
         ->and($ergebnis->verschwunden)->toBe(0);
+});
+
+it('öffnet einen Ordner nicht, der aussieht wie beim letzten Mal', function () {
+    // Der Grund, warum ein stuendlicher Lauf ueber 220 Ordner vertretbar ist:
+    // `STATUS` ist eine Zeile, das Auflisten der Kennungen ist der teure Teil.
+    $ablage = testAblage();
+    $postfach = testPostfach([5 => ['message_id' => '<a@example.test>']]);
+
+    (new Erfassung($postfach, 1, $ablage))->ordner('INBOX');
+
+    $zustand = MailFolderState::first();
+
+    expect($zustand)->not->toBeNull()
+        ->and($zustand->folder)->toBe('INBOX')
+        ->and($zustand->uidvalidity)->toBe(7);
+
+    $zweiter = (new Erfassung($postfach, 1, $ablage))->ordner('INBOX');
+
+    expect($zweiter->uebersprungen)->toBeTrue()
+        ->and($zweiter->aufgenommen)->toBe(0);
+});
+
+it('überspringt einen Ordner nicht, in dem etwas gelöscht wurde', function () {
+    // `uidnext` aendert sich beim Loeschen NICHT. Ohne die Anzahl daneben
+    // bliebe eine Loeschung fuer immer unbemerkt.
+    $ablage = testAblage();
+
+    (new Erfassung(testPostfach([5 => ['message_id' => '<a@example.test>']]), 1, $ablage))->ordner('INBOX');
+
+    $ergebnis = (new Erfassung(testPostfach([]), 1, $ablage))->ordner('INBOX');
+
+    expect($ergebnis->uebersprungen)->toBeFalse()
+        ->and($ergebnis->verschwunden)->toBe(1);
+});
+
+it('merkt sich den Zustand nicht, solange noch etwas offen ist', function () {
+    // Sonst ueberspringt der naechste Lauf den Ordner — und das Uebersprungene
+    // bliebe fuer immer aus.
+    $nachrichten = [];
+
+    for ($i = 1; $i <= 5; $i++) {
+        $nachrichten[$i] = ['message_id' => "<n{$i}@example.test>"];
+    }
+
+    $postfach = testPostfach($nachrichten);
+    $ablage = testAblage();
+
+    $erster = (new Erfassung($postfach, 1, $ablage))->ordner('INBOX', hoechstens: 2);
+
+    expect($erster->offen)->toBe(3)
+        ->and(MailFolderState::count())->toBe(0);
+
+    $zweiter = (new Erfassung($postfach, 1, $ablage))->ordner('INBOX', hoechstens: 2);
+
+    expect($zweiter->uebersprungen)->toBeFalse()
+        ->and($zweiter->aufgenommen)->toBe(2);
+});
+
+it('merkt sich den Zustand nicht nach einem Lauf mit Fehlern', function () {
+    $ergebnis = (new Erfassung(
+        testPostfach([5 => ['message_id' => '']]),
+        1,
+        testAblage(),
+    ))->ordner('INBOX');
+
+    expect($ergebnis->fehler)->toHaveCount(1)
+        ->and(MailFolderState::count())->toBe(0);
+});
+
+it('holt eine einzelne Nachricht nach, wenn jemand sie öffnet', function () {
+    // Der Weg rueckwaerts: Was vor dem Stichtag lag, kommt herein, sobald es
+    // jemanden interessiert.
+    $ablage = testAblage();
+    $erfassung = new Erfassung(testPostfach([77 => ['message_id' => '<alt@example.test>']]), 1, $ablage);
+
+    expect($erfassung->einzelne('INBOX', 77))->toBeTrue()
+        ->and(MailMessage::count())->toBe(1)
+        ->and(MailMessage::first()->body->content)->toBe('Die Freigabe ist da.');
+});
+
+it('holt eine Nachricht nicht zweimal, wenn sie schon da ist', function () {
+    // Sonst kaeme bei jedem zweiten Blick auf dieselbe Mail ihre Rohfassung
+    // erneut ueber die Leitung.
+    $ablage = testAblage();
+    $erfassung = new Erfassung(testPostfach([77 => ['message_id' => '<alt@example.test>']]), 1, $ablage);
+
+    $erfassung->einzelne('INBOX', 77);
+
+    expect($erfassung->einzelne('INBOX', 77))->toBeFalse()
+        ->and(MailMessage::count())->toBe(1);
 });
