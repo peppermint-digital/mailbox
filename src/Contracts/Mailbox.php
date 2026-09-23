@@ -151,6 +151,35 @@ interface Mailbox
     public function handles(string $folder): array;
 
     /**
+     * The state of a folder — what an archive needs to prove it missed nothing.
+     *
+     * ## `uidvalidity` is the one that matters
+     *
+     * A UID is unique only WITHIN a folder AND only as long as the server says
+     * so. When `uidvalidity` changes — after a migration, a restore, sometimes
+     * for no visible reason — every UID of that folder becomes meaningless at
+     * once. Not one reference, all of them.
+     *
+     * Whoever keeps UIDs and does not keep this number alongside will one day
+     * read the wrong messages and never find out. The failure is silent by
+     * construction: the UIDs still resolve, they just point somewhere else.
+     *
+     * ## `uidnext` answers „did I miss anything"
+     *
+     * It is the UID the next arriving message will get. An archive that stored
+     * `uidnext` at the end of its last run knows exactly which range it has to
+     * look at this time — and can state afterwards that nothing in between was
+     * skipped. Without it, „complete" is a feeling.
+     *
+     * JMAP has neither; it tracks change with its own state strings. There the
+     * values are null, and that is an answer, not a gap.
+     *
+     * @return array{uidvalidity: int|null, uidnext: int|null, messages: int|null}|null
+     *                                                                                  null when the folder is gone
+     */
+    public function folderState(string $folder): ?array;
+
+    /**
      * Header rows of messages that arrived AFTER this one.
      *
      * For anything that keeps its own copy and wants only the growth since

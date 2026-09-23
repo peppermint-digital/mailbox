@@ -432,6 +432,35 @@ class MailboxClient implements Mailbox
     }
 
     /**
+     * Der Zustand eines Ordners: Gueltigkeitsnummer, naechste Kennung, Anzahl.
+     *
+     * `STATUS` statt `SELECT`: Es beantwortet dieselbe Frage, ohne den Ordner
+     * zu oeffnen — und ohne dabei `\Recent`-Kennzeichen zu loeschen, was auf
+     * manchen Servern als „jemand hat hineingesehen" zaehlt. Ein Lauf, der nur
+     * nachzaehlt, soll im Postfach keine Spuren hinterlassen.
+     */
+    public function folderState(string $folder): ?array
+    {
+        return $this->session(function ($mailbox) use ($folder): ?array {
+            $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+
+            if (! $ordner) {
+                return null;
+            }
+
+            $werte = $ordner->status();
+
+            $zahl = static fn (string $name): ?int => isset($werte[$name]) ? (int) $werte[$name] : null;
+
+            return [
+                'uidvalidity' => $zahl('UIDVALIDITY'),
+                'uidnext' => $zahl('UIDNEXT'),
+                'messages' => $zahl('MESSAGES'),
+            ];
+        });
+    }
+
+    /**
      * Header rows of messages that arrived after this one.
      *
      * Ueber IMAP ist das die uid-Ordnung: Eine hoehere uid heisst, der Server

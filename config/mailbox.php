@@ -116,6 +116,23 @@ return [
     /*
     | Turn off when the tables already exist and are mapped above.
     */
+    /*
+    |--------------------------------------------------------------------------
+    | Die Ablage der Rohfassungen
+    |--------------------------------------------------------------------------
+    |
+    | Wo die Bytes einer archivierten Nachricht liegen. In der Datenbank steht
+    | nur Pfad und Pruefsumme — ein Anhang von zwanzig Megabyte macht dort jede
+    | Sicherung teurer, ohne dass je darin gesucht wuerde.
+    |
+    | Wer woanders hin will (Objektspeicher, WORM-Volume, ein Archivsystem),
+    | bindet eine eigene Umsetzung von `Archive\Ablage` — dieser Wert gilt
+    | dann nicht mehr.
+    */
+    'archive' => [
+        'disk' => env('MAILBOX_ARCHIVE_DISK', 'local'),
+    ],
+
     'run_migrations' => env('MAILBOX_RUN_MIGRATIONS', true),
 
     /*

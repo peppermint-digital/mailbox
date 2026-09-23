@@ -377,6 +377,39 @@ class JmapClient implements Mailbox
     }
 
     /**
+     * JMAP kennt keine UIDs und damit auch keine Gueltigkeitsnummer.
+     *
+     * Der Zustand eines Postfachs wird hier ueber Zustandszeichenketten
+     * verfolgt, nicht ueber fortlaufende Nummern. `null` ist deshalb eine
+     * Antwort und keine Luecke — und genau deswegen sagt die Schnittstelle
+     * „null moeglich" statt einen Wert zu erfinden, der nichts bedeutet.
+     */
+    public function folderState(string $folder): ?array
+    {
+        $ordner = $this->folderNamed($folder);
+
+        if ($ordner === null) {
+            return null;
+        }
+
+        /*
+         * Die Anzahl steht nicht in der Ordnerliste: `folders()` holt nur, was
+         * die Anzeige braucht (`id`, `name`, `role`). `totalEmails` waere ein
+         * zusaetzliches Feld in JEDEM Ordnerabruf — fuer eine Zahl, die nur
+         * die Erfassung interessiert.
+         *
+         * Sie hier eigens nachzufragen waere ein zweiter Rundruf pro Ordner.
+         * Und sie wuerde auch nichts beweisen: Ohne fortlaufende Kennungen
+         * sagt eine Gesamtzahl nichts darueber, ob dazwischen etwas fehlt.
+         */
+        return [
+            'uidvalidity' => null,
+            'uidnext' => null,
+            'messages' => null,
+        ];
+    }
+
+    /**
      * Wie viele Kennungen hoechstens auf einmal.
      *
      * Der Server deckelt ohnehin (`maxObjectsInGet`), aber eine Zahl im Code
