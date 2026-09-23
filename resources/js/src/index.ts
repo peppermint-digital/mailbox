@@ -27,6 +27,7 @@ export * from './useMailboxPreference';
 export * from './MailListToolbar';
 export * from './MailMessageList';
 export { default as MailMessageList } from './MailMessageList';
+export * from './MailConversation';
 export * from './MailMessageView';
 export { default as MailMessageView } from './MailMessageView';
 export * from './bulk';
