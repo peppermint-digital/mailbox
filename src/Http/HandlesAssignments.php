@@ -80,6 +80,34 @@ trait HandlesAssignments
     protected function afterAssign(MailAssignment $zuweisung, ?int $vorherZustaendig, array $daten): void {}
 
     /**
+     * Welche Kette gemeint ist.
+     *
+     * Standardmaessig aus den Kopfzeilen, die der Browser mitschickt — mehr
+     * weiss das Paket nicht.
+     *
+     * Ein Produkt kann mehr wissen. Der Projekt-Manager fuehrt ein
+     * Kopfzeilen-Verzeichnis und loest die Kette dagegen auf: Kommt eine
+     * Anfrage ohne `In-Reply-To`, findet er trotzdem die Wurzel, waehrend das
+     * Paket auf die Nachricht selbst zurueckfaellt. Beides ist richtig — nur
+     * mit verschieden viel Wissen.
+     *
+     * Aufgefallen ist das an einem roten Test bei der Umstellung. Ohne diesen
+     * Haken waere die Zuweisung dort danach an der falschen Kette gehangen:
+     * kein Fehler, keine Meldung, nur eine Unterhaltung, die sich in zwei
+     * teilt.
+     *
+     * @param  array<string, mixed>  $daten
+     */
+    protected function threadKeyFor(int $account, array $daten): ?string
+    {
+        return ThreadKey::fromHeaders(
+            (string) $daten['message_id'],
+            $daten['in_reply_to'] ?? null,
+            $daten['references'] ?? null,
+        );
+    }
+
+    /**
      * Wie eine Zuweisung nach aussen aussieht.
      *
      * Die Oberflaeche aktualisiert damit die Zeile, ohne die ganze Liste neu
@@ -168,7 +196,7 @@ trait HandlesAssignments
             return response()->json(['message' => 'Diese Person hat keinen Zugriff auf das Postfach.'], 422);
         }
 
-        $kette = ThreadKey::fromHeaders($daten['message_id'], $daten['in_reply_to'] ?? null, $daten['references'] ?? null);
+        $kette = $this->threadKeyFor($account, $daten);
 
         // Wer es VORHER war — vor dem Schreiben gelesen, sonst steht dort
         // schon die neue Person und der Vergleich unten geht immer aus.
@@ -214,7 +242,7 @@ trait HandlesAssignments
             'references' => ['nullable', 'string'],
         ]);
 
-        $kette = ThreadKey::fromHeaders($daten['message_id'], $daten['in_reply_to'] ?? null, $daten['references'] ?? null);
+        $kette = $this->threadKeyFor($account, $daten);
 
         // Die Suche nach der `message_id` bleibt daneben stehen, damit auch
         // Zuweisungen ohne Kettenkennung verschwinden.

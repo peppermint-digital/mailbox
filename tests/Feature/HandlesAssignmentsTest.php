@@ -208,3 +208,27 @@ it('gibt die Zuweisung zurueck, damit die Zeile sich ohne Neuladen aendert', fun
 
     expect($antwort['assignment'])->toMatchArray(['user_id' => 3, 'name' => 'Anna Meier', 'initials' => 'AM']);
 });
+
+it('laesst das Produkt die Kette selbst bestimmen', function () use ($personen) {
+    // Der Projekt-Manager fuehrt ein Kopfzeilen-Verzeichnis und findet die
+    // Wurzel auch ohne `In-Reply-To`. Das Paket faellt dann auf die Nachricht
+    // selbst zurueck — beides richtig, nur mit verschieden viel Wissen.
+    //
+    // Ohne diesen Haken haette die Umstellung des Managers seine Zuweisungen
+    // an die falsche Kette gehaengt: kein Fehler, keine Meldung, nur eine
+    // Unterhaltung, die sich in zwei teilt.
+    $controller = new class($personen) extends TestControllerFuerZuweisungen
+    {
+        protected function threadKeyFor(int $account, array $daten): ?string
+        {
+            return 'wurzel-aus-dem-verzeichnis';
+        }
+    };
+
+    $controller->assign(zuweisungsAnfrage([
+        'message_id' => '<zweite@example.test>',
+        'assigned_to_user_id' => 3,
+    ]), 1);
+
+    expect(MailAssignment::first()->thread_id)->toBe('wurzel-aus-dem-verzeichnis');
+});
