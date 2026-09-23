@@ -58,6 +58,12 @@ function testPostfach(array $nachrichten, ?int $uidvalidity = 7): Mailbox
         'messages' => count($nachrichten),
     ]);
 
+    $postfach->shouldReceive('batch')->andReturnUsing(function (callable $arbeit) use ($postfach) {
+        $GLOBALS['mailbox_batch_zaehler'] = ($GLOBALS['mailbox_batch_zaehler'] ?? 0) + 1;
+
+        return $arbeit($postfach);
+    });
+
     $postfach->shouldReceive('handles')->andReturn(array_keys($nachrichten));
 
     // Die juengste Kennung und der Zuwachs dahinter — beides braucht der
@@ -488,4 +494,20 @@ it('holt eine Nachricht nicht zweimal, wenn sie schon da ist', function () {
 
     expect($erfassung->einzelne('INBOX', 77))->toBeFalse()
         ->and(MailMessage::count())->toBe(1);
+});
+
+it('erfasst mehrere Ordner über eine einzige Verbindung', function () {
+    // Beim ersten Gesamtlauf wies Office 365 87 von 220 Ordnern ab: Jeder
+    // Aufruf baute seine eigene Anmeldung auf. Die Meldung lautete
+    // „User is authenticated but not connected" — klingt nach Rechten, ist
+    // aber die Drosselung.
+    $GLOBALS['mailbox_batch_zaehler'] = 0;
+
+    $ergebnisse = (new Erfassung(testPostfach([]), 1, testAblage()))
+        ->mehrereOrdner(['INBOX', 'Archiv', 'Gesendet']);
+
+    // Drei Ordner, EINE Anmeldung.
+    expect($GLOBALS['mailbox_batch_zaehler'])->toBe(1)
+        ->and($ergebnisse)->toHaveCount(3)
+        ->and($ergebnisse[0]->stichtag)->toBeTrue();
 });

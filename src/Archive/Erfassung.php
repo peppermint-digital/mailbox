@@ -54,6 +54,38 @@ class Erfassung
     ) {}
 
     /**
+     * Mehrere Ordner ueber EINE Verbindung.
+     *
+     * ## Warum das kein Beiwerk ist
+     *
+     * Jeder einzelne Aufruf am Postfach baut sonst seine eigene Verbindung auf
+     * und wieder ab. Bei einem Konto mit 76 Ordnern und zwei bis drei Aufrufen
+     * je Ordner sind das ueber zweihundert Anmeldungen in einer Minute.
+     *
+     * Office 365 macht dann zu. Die Antwort lautet
+     * `NO User is authenticated but not connected` — eine Meldung, die nach
+     * einem Rechteproblem klingt und keines ist. Beim ersten Gesamtlauf am
+     * 23.09.2026 traf es 87 von 220 Ordnern.
+     *
+     * Mit einer gemeinsamen Sitzung bleibt es bei einer Anmeldung je Konto.
+     *
+     * @param  list<string>  $ordner
+     * @return list<Ergebnis>
+     */
+    public function mehrereOrdner(array $ordner, int $hoechstens = 200): array
+    {
+        return $this->postfach->batch(function () use ($ordner, $hoechstens): array {
+            $ergebnisse = [];
+
+            foreach ($ordner as $pfad) {
+                $ergebnisse[] = $this->ordner($pfad, $hoechstens);
+            }
+
+            return $ergebnisse;
+        });
+    }
+
+    /**
      * Einen Ordner erfassen.
      */
     public function ordner(string $ordner, int $hoechstens = 200): Ergebnis
