@@ -71,6 +71,16 @@ return [
 
         // „Nicht jetzt — erinnere mich wieder ab dann." Pro Person.
         'snoozes' => 'mail_snoozes',
+
+        /*
+        | Die Ablage: Nachricht, Orte, Gespraechstext.
+        |
+        | Sie entsteht nur, wo eine Migration sie anlegt — ein Produkt, das
+        | bloss liest, braucht sie nicht.
+        */
+        'messages' => 'mail_messages',
+        'locations' => 'mail_locations',
+        'bodies' => 'mail_bodies',
     ],
 
     'columns' => [
