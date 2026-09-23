@@ -65,6 +65,43 @@ trait HandlesAssignments
     protected function guardAssignments(int $account): void {}
 
     /**
+     * Nach einer Zuweisung. Standardmaessig passiert nichts.
+     *
+     * `$vorherZustaendig` ist die Person, die es VORHER war — oder `null`.
+     * Damit laesst sich unterscheiden, ob jemand neu zustaendig wurde oder ob
+     * nur dieselbe Zuweisung bestaetigt wurde. Der Projekt-Manager
+     * benachrichtigt nur im ersten Fall; eine Nachricht bei jedem Klick
+     * waere nach einer Woche stummgeschaltet.
+     *
+     * Ohne diesen Haken haette die Umstellung des Managers auf dieses Merkmal
+     * seine Benachrichtigungen lautlos abgeschaltet — jemand bekommt Arbeit
+     * zugewiesen und erfaehrt nie davon. Genau deshalb gibt es ihn.
+     */
+    protected function afterAssign(MailAssignment $zuweisung, ?int $vorherZustaendig, array $daten): void {}
+
+    /**
+     * Wie eine Zuweisung nach aussen aussieht.
+     *
+     * Die Oberflaeche aktualisiert damit die Zeile, ohne die ganze Liste neu
+     * zu holen. Produkte mit mehr Feldern ueberschreiben das.
+     *
+     * @return array<string, mixed>
+     */
+    protected function formatAssignment(MailAssignment $zuweisung): array
+    {
+        $name = (string) (collect($this->assignableUsers((int) $zuweisung->email_account_id))
+            ->firstWhere('id', $zuweisung->assigned_to_user_id)['name'] ?? '');
+
+        return [
+            'message_id' => $zuweisung->message_id,
+            'thread_id' => $zuweisung->thread_id,
+            'user_id' => $zuweisung->assigned_to_user_id,
+            'name' => $name,
+            'initials' => static::initialen($name),
+        ];
+    }
+
+    /**
      * Die Liste fuer die Auswahl.
      */
     public function assignmentUsers(int $account): JsonResponse
@@ -133,7 +170,15 @@ trait HandlesAssignments
 
         $kette = ThreadKey::fromHeaders($daten['message_id'], $daten['in_reply_to'] ?? null, $daten['references'] ?? null);
 
-        MailAssignment::updateOrCreate(
+        // Wer es VORHER war — vor dem Schreiben gelesen, sonst steht dort
+        // schon die neue Person und der Vergleich unten geht immer aus.
+        $vorher = MailAssignment::query()
+            ->where('email_account_id', $account)
+            ->when($kette !== null, fn ($f) => $f->where('thread_id', $kette))
+            ->when($kette === null, fn ($f) => $f->where('message_id', $daten['message_id']))
+            ->value('assigned_to_user_id');
+
+        $zuweisung = MailAssignment::updateOrCreate(
             [
                 'email_account_id' => $account,
                 // Ohne Kettenkennung bleibt die Nachricht der Schluessel.
@@ -148,7 +193,12 @@ trait HandlesAssignments
             ],
         );
 
-        return response()->json(['success' => true]);
+        $this->afterAssign($zuweisung, $vorher !== null ? (int) $vorher : null, $daten);
+
+        return response()->json([
+            'success' => true,
+            'assignment' => $this->formatAssignment($zuweisung),
+        ]);
     }
 
     /**

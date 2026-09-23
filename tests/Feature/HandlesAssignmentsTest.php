@@ -167,3 +167,44 @@ it('laesst das Produkt einen Riegel vor ALLE Wege setzen', function () {
 
     expect(MailAssignment::count())->toBe(0);
 });
+
+it('sagt beim Zuweisen, WER es vorher war', function () use ($personen) {
+    // Der Projekt-Manager benachrichtigt nur bei einem Wechsel. Ohne diese
+    // Angabe muesste er bei jedem Klick benachrichtigen — und waere nach
+    // einer Woche stummgeschaltet.
+    //
+    // Dass es diesen Haken gibt, hat einen konkreten Anlass: Ohne ihn haette
+    // die Umstellung des Managers auf dieses Merkmal seine Benachrichtigungen
+    // lautlos abgeschaltet.
+    $gesehen = [];
+
+    $controller = new class($personen, $gesehen) extends TestControllerFuerZuweisungen
+    {
+        public function __construct(array $personen, public array &$gesehen)
+        {
+            parent::__construct($personen);
+        }
+
+        protected function afterAssign(Peppermint\Mailbox\Models\MailAssignment $zuweisung, ?int $vorher, array $daten): void
+        {
+            $this->gesehen[] = [$vorher, $zuweisung->assigned_to_user_id];
+        }
+    };
+
+    $anfrage = ['message_id' => '<a@example.test>', 'in_reply_to' => '<wurzel@example.test>'];
+
+    $controller->assign(zuweisungsAnfrage($anfrage + ['assigned_to_user_id' => 3]), 1);
+    $controller->assign(zuweisungsAnfrage($anfrage + ['assigned_to_user_id' => 4]), 1);
+    $controller->assign(zuweisungsAnfrage($anfrage + ['assigned_to_user_id' => 4]), 1);
+
+    expect($gesehen)->toBe([[null, 3], [3, 4], [4, 4]]);
+});
+
+it('gibt die Zuweisung zurueck, damit die Zeile sich ohne Neuladen aendert', function () use ($personen) {
+    $antwort = (new TestControllerFuerZuweisungen($personen))->assign(zuweisungsAnfrage([
+        'message_id' => '<a@example.test>',
+        'assigned_to_user_id' => 3,
+    ]), 1)->getData(true);
+
+    expect($antwort['assignment'])->toMatchArray(['user_id' => 3, 'name' => 'Anna Meier', 'initials' => 'AM']);
+});
