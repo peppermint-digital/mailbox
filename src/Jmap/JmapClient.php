@@ -2,6 +2,7 @@
 
 namespace Peppermint\Mailbox\Jmap;
 
+use Peppermint\Mailbox\Content\RohFassung;
 use Closure;
 use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
@@ -763,6 +764,36 @@ class JmapClient implements Mailbox
         }
 
         return $this->formatter->verbatim($mail, fn (string $blobId, string $name, string $type): ?string => $this->blob($blobId, $name, $type));
+    }
+
+    /**
+     * Die Nachricht als Bytes.
+     *
+     * Bei JMAP ist das einfacher als bei IMAP: Eine E-Mail HAT eine `blobId`,
+     * und dieser Blob IST die Nachricht in ihrer Rohfassung. Nichts muss
+     * zusammengesetzt werden, also kann auch nichts danebengehen —
+     * `complete` ist wahr, sobald Bytes da sind.
+     *
+     * Die Groesse liefert der Server als `size` mit; fehlt sie, wird die
+     * Laenge der geholten Bytes genommen. Das ist keine Pruefung, sondern eine
+     * Angabe — im Gegensatz zu IMAP gibt es hier nichts zu pruefen.
+     */
+    public function raw(string $folder, int|string $uid): ?array
+    {
+        $mail = $this->email((string) $uid, ['id', 'blobId', 'size']);
+
+        if ($mail === null) {
+            return null;
+        }
+
+        $blobId = (string) ($mail['blobId'] ?? '');
+        $roh = $blobId === '' ? null : $this->blob($blobId, 'message.eml', 'message/rfc822');
+
+        if ($roh === null) {
+            return null;
+        }
+
+        return RohFassung::amStueck($roh, isset($mail['size']) ? (int) $mail['size'] : null)->toArray();
     }
 
     /**

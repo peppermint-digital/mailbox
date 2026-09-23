@@ -330,6 +330,40 @@ interface Mailbox
     public function verbatim(string $folder, int|string $uid): ?array;
 
     /**
+     * The message exactly as it arrived — the bytes, not a reading of them.
+     *
+     * ## Why this is not `verbatim()`
+     *
+     * That one hands out the message taken APART: subject decoded, addresses
+     * parsed, attachments as separate strings. Everything a product needs to
+     * file a mail somewhere — and worthless as evidence.
+     *
+     * Nearly every business mail carries a DKIM signature. It proves
+     * cryptographically that exactly these bytes left the sender's domain, and
+     * it survives no transformation: no re-encoding, no reassembling, no
+     * pretty-printing of a header. A mail put back together from parsed parts
+     * looks identical to a human and fails verification.
+     *
+     * So whatever keeps mail for later — an archive, a legal hold — takes this
+     * and not the other one.
+     *
+     * ## `complete` is not decoration
+     *
+     * IMAP hands the source out in two pieces (headers, body) and states the
+     * size separately. Putting the pieces back together is almost always
+     * exact — almost. `complete` says whether the bytes match the size the
+     * server reported.
+     *
+     * Storing a copy as verbatim when it might not be is worse than storing
+     * none: nobody checks a claim that was never doubted, and it fails at the
+     * one moment it mattered.
+     *
+     * @return array{raw: string, size: int|null, complete: bool}|null
+     *                                                                 null when the message is gone
+     */
+    public function raw(string $folder, int|string $uid): ?array;
+
+    /**
      * Every attachment of a message, with its bytes.
      *
      * For forwarding: the original files have to be re-attached to the

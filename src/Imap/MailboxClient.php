@@ -2,6 +2,7 @@
 
 namespace Peppermint\Mailbox\Imap;
 
+use Peppermint\Mailbox\Content\RohFassung;
 use DirectoryTree\ImapEngine\Mailbox as ImapEngineMailbox;
 use DirectoryTree\ImapEngine\MailboxInterface;
 use Illuminate\Support\Facades\Log;
@@ -795,6 +796,37 @@ class MailboxClient implements Mailbox
             $nachricht = $ordner?->messages()->withHeaders()->withFlags()->withBody()->find((int) $uid);
 
             return $nachricht ? $this->formatter->verbatim($nachricht) : null;
+        });
+    }
+
+    /**
+     * Die Nachricht als Bytes.
+     *
+     * IMAP gibt die Quelle in zwei Stuecken heraus: `BODY[HEADER]` und
+     * `BODY[TEXT]`. Der Kopfteil endet laut RFC 3501 mit der Leerzeile, die
+     * Kopf und Rumpf trennt — aneinandergehaengt ergeben beide wieder die
+     * Nachricht.
+     *
+     * „Ergeben" ist hier eine Behauptung, und deshalb wird sie geprueft:
+     * `RFC822.SIZE` sagt, wie gross die Nachricht auf dem Server ist. Stimmt
+     * die Laenge nicht, ist `complete` falsch — und wer archiviert, weiss es,
+     * statt eine unvollstaendige Kopie fuer den Beweis zu halten.
+     */
+    public function raw(string $folder, int|string $uid): ?array
+    {
+        return $this->session(function ($mailbox) use ($folder, $uid): ?array {
+            $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
+            $nachricht = $ordner?->messages()->withHeaders()->withBody()->find((int) $uid);
+
+            if (! $nachricht) {
+                return null;
+            }
+
+            return RohFassung::ausTeilen(
+                $nachricht->head(),
+                $nachricht->body(),
+                $nachricht->size(),
+            )->toArray();
         });
     }
 
