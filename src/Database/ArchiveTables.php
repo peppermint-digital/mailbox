@@ -113,6 +113,18 @@ class ArchiveTables
             // hergeben — die sind dann ihre eigene Wurzel.
             $t->string('thread_key', 500)->nullable()->index();
 
+            /*
+             * Ist DIESE Nachricht der Anfang der Kette?
+             *
+             * Ausgerechnet und gespeichert, nicht beim Lesen verglichen. Der
+             * naheliegende Vergleich „Kettenschluessel == Message-ID" geht
+             * naemlich daneben: Der Schluessel ist normalisiert (`abc@x`), die
+             * Message-ID nicht (`<abc@x>`). Er waere nie wahr — und der
+             * Gespraechsverlauf saehe nicht kaputt aus, sondern wie „es gibt
+             * eben noch keine vollstaendige Kette".
+             */
+            $t->boolean('is_root')->default(false)->index();
+
             $t->string('subject', 1000)->nullable();
             $t->string('from_email', 320)->nullable()->index();
             $t->string('from_name', 255)->nullable();

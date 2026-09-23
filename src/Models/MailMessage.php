@@ -37,6 +37,7 @@ class MailMessage extends Model
         'last_seen_at' => 'datetime',
         'missing_since' => 'datetime',
         'has_attachments' => 'boolean',
+        'is_root' => 'boolean',
     ];
 
     public function getTable(): string
@@ -104,6 +105,17 @@ class MailMessage extends Model
     public function aktuelleOrte(): HasMany
     {
         return $this->locations()->whereNull('gone_at');
+    }
+
+    /**
+     * Ist das der Anfang der Kette?
+     *
+     * Gelesen und nicht gerechnet: Der Vergleich passiert beim Erfassen, wo
+     * die normalisierte Form vorliegt.
+     */
+    public function istWurzel(): bool
+    {
+        return (bool) $this->is_root;
     }
 
     /**

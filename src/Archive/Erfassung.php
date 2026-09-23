@@ -336,6 +336,11 @@ class Erfassung
         $hash = MailMessage::hash($messageId);
         $gesendet = isset($kopf['date']) ? \Carbon\Carbon::parse($kopf['date']) : null;
         $anhaenge = count((array) ($kopf['attachments'] ?? []));
+        $kette = ThreadKey::fromHeaders(
+            $messageId,
+            $kopf['in_reply_to'] ?? null,
+            $kopf['references'] ?? null,
+        );
         $pfad = Pfad::fuer($this->accountId, $hash, $gesendet);
 
         $this->ablage->ablegen($pfad, $roh['raw']);
@@ -350,11 +355,11 @@ class Erfassung
             ['email_account_id' => $this->accountId, 'message_id_hash' => $hash],
             [
                 'message_id' => $messageId,
-                'thread_key' => ThreadKey::fromHeaders(
-                    $messageId,
-                    $kopf['in_reply_to'] ?? null,
-                    $kopf['references'] ?? null,
-                ),
+                'thread_key' => $kette,
+                // Die Wurzel erkennt man daran, dass der Kettenschluessel auf
+                // sie selbst zeigt. Verglichen wird NORMALISIERT, sonst
+                // stolpert man ueber die spitzen Klammern.
+                'is_root' => $kette !== null && $kette === ThreadKey::normalize($messageId),
                 'subject' => $kopf['subject'] ?? null,
                 'from_email' => $kopf['from_address'] ?? ($kopf['from'] ?? null),
                 'from_name' => $kopf['from_name'] ?? null,
