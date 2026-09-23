@@ -179,6 +179,7 @@ class Erfassung
     {
         $hash = MailMessage::hash($messageId);
         $gesendet = isset($kopf['date']) ? \Carbon\Carbon::parse($kopf['date']) : null;
+        $anhaenge = count((array) ($kopf['attachments'] ?? []));
         $pfad = Pfad::fuer($this->accountId, $hash, $gesendet);
 
         $this->ablage->ablegen($pfad, $roh['raw']);
@@ -204,8 +205,13 @@ class Erfassung
                 'recipients' => $this->empfaenger($kopf),
                 'sent_at' => $gesendet,
                 'size_bytes' => $roh['size'],
-                'has_attachments' => (bool) ($kopf['has_attachments'] ?? false),
-                'attachment_count' => (int) ($kopf['attachment_count'] ?? 0),
+                // Aus der Liste gezaehlt und nicht aus einem Feld gelesen:
+                // `message()` liefert `attachments`, nicht `attachment_count`.
+                // Beim ersten Livelauf stand deshalb bei einer
+                // Auftragsbestaetigung mit 105-KB-PDF „0 Anhaenge" — falsch,
+                // und still falsch: Die Zahl sah plausibel aus.
+                'has_attachments' => $anhaenge > 0,
+                'attachment_count' => $anhaenge,
                 'raw_path' => $pfad,
                 'raw_sha256' => hash('sha256', $roh['raw']),
                 'source' => 'poll',

@@ -134,6 +134,27 @@ it('nimmt dieselbe Nachricht beim zweiten Lauf nicht noch einmal auf', function 
         ->and(MailLocation::count())->toBe(1);
 });
 
+it('zählt die Anhänge aus der Liste, nicht aus einem Feld', function () {
+    // Beim ersten Livelauf stand bei einer Auftragsbestaetigung mit einem
+    // 105-KB-PDF „0 Anhaenge". Der Grund war ein Feldname, den `message()`
+    // gar nicht liefert — und die Zahl sah plausibel genug aus, um
+    // durchzugehen.
+    (new Erfassung(
+        testPostfach([5 => ['message_id' => '<beleg@example.test>', 'kopf' => [
+            'attachments' => [
+                ['filename' => 'Auftragsbestaetigung.pdf', 'size' => 105350],
+            ],
+        ]]]),
+        1,
+        testAblage(),
+    ))->ordner('INBOX');
+
+    $n = MailMessage::first();
+
+    expect($n->attachment_count)->toBe(1)
+        ->and($n->has_attachments)->toBeTrue();
+});
+
 it('meldet eine Kopie, die nicht vollständig ist', function () {
     // Der Fall, der sonst als wortgetreu durchginge — und bei dem die
     // DKIM-Signatur wertlos ist.
