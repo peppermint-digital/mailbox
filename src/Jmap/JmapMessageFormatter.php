@@ -2,6 +2,7 @@
 
 namespace Peppermint\Mailbox\Jmap;
 
+use Peppermint\Mailbox\Threading\ThreadKey;
 use Peppermint\Mailbox\Support\Betreff;
 
 use Illuminate\Support\Carbon;
@@ -126,6 +127,21 @@ class JmapMessageFormatter
             'is_flagged' => $this->hasKeyword($email, '$flagged'),
             'in_reply_to' => $this->firstMessageId($email['inReplyTo'] ?? null),
             'references' => $this->joined($email['references'] ?? null),
+            /*
+             * Welche Unterhaltung das ist — aus den Kopfzeilen gerechnet, die
+             * hier ohnehin schon stehen.
+             *
+             * Die Listenzeile traegt das laengst; die geoeffnete Nachricht
+             * nicht. Aufgefallen ist es erst, als etwas davon abhing: Der
+             * Gespraechsverlauf fand nie eine Kette und zeigte seinen
+             * Umschalter deshalb nirgends. Kein Fehler, keine Meldung — nur
+             * eine Ansicht, die es scheinbar nicht gibt.
+             */
+            'thread_id' => ThreadKey::fromHeaders(
+                $this->firstMessageId($email['messageId'] ?? null),
+                $this->firstMessageId($email['inReplyTo'] ?? null),
+                $this->joined($email['references'] ?? null),
+            ),
         ];
     }
 

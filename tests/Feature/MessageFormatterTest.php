@@ -326,3 +326,16 @@ describe('verbatim — die Form fuers Aufbewahren', function () {
             ->and($archiv['files'][0]['contents'])->toBe('%PDF-1.7');
     });
 });
+
+it('gibt der geöffneten Nachricht ihre Kette mit', function () {
+    // Sie fehlte, und das fiel erst auf, als etwas davon abhing: Der
+    // Gespraechsverlauf fand nie eine Kette und zeigte seinen Umschalter
+    // nirgends. Kein Fehler, keine Meldung — nur eine Ansicht, die es
+    // scheinbar nicht gibt.
+    $voll = (new MessageFormatter)->full(nachricht([
+        'messageId' => '<antwort@example.test>',
+        'inReplyTo' => '<wurzel@example.test>',
+    ]));
+
+    expect($voll['thread_id'])->toBe('wurzel@example.test');
+});

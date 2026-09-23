@@ -2,6 +2,7 @@
 
 namespace Peppermint\Mailbox\Imap;
 
+use Peppermint\Mailbox\Threading\ThreadKey;
 use Peppermint\Mailbox\Support\Betreff;
 
 use DirectoryTree\ImapEngine\Message;
@@ -124,6 +125,21 @@ class MessageFormatter
             'is_flagged' => $message->isFlagged(),
             'in_reply_to' => $this->header($message, 'in-reply-to'),
             'references' => $this->header($message, 'references'),
+            /*
+             * Welche Unterhaltung das ist — aus den Kopfzeilen gerechnet, die
+             * hier ohnehin schon stehen.
+             *
+             * Die Listenzeile traegt das laengst; die geoeffnete Nachricht
+             * nicht. Aufgefallen ist es erst, als etwas davon abhing: Der
+             * Gespraechsverlauf fand nie eine Kette und zeigte seinen
+             * Umschalter deshalb nirgends. Kein Fehler, keine Meldung — nur
+             * eine Ansicht, die es scheinbar nicht gibt.
+             */
+            'thread_id' => ThreadKey::fromHeaders(
+                $message->messageId(),
+                $this->header($message, 'in-reply-to'),
+                $this->header($message, 'references'),
+            ),
         ];
     }
 
