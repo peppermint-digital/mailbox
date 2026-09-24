@@ -125,3 +125,48 @@ it('erkennt einen Verlauf auch dann, wenn die Antwort in ihrer Huelle steckt', f
 
     expect($s->verfuegbar(1, 'kette@example.test'))->toBeTrue();
 });
+
+it('fragt die Mitte nach der ADRESSE, nicht nach der oertlichen Nummer', function () {
+    // Dieselbe Mailbox hat in jedem System eine andere Kennung. Wer mit der
+    // eigenen Nummer fragt, bekommt die Unterhaltung eines fremden Postfachs —
+    // und zwar ohne Fehlermeldung, weil ein Kettenschluessel weltweit
+    // eindeutig ist und zufaellig auch dort passen kann.
+    $gefragt = [];
+
+    $s = new BrainVerlaufsspeicher(
+        function (string $f, array $a) use (&$gefragt): array {
+            $gefragt[] = $a;
+
+            return ['ok' => true, 'data' => ['available' => true]];
+        },
+        300,
+        60,
+        fn (int $account): ?string => $account === 3 ? 'buero@example.test' : null,
+    );
+
+    $s->verfuegbar(3, 'kette@example.test');
+
+    expect($gefragt[0]['mailbox'])->toBe('buero@example.test')
+        ->and($gefragt[0]['account_id'])->toBe(3);
+});
+
+it('laesst die Adresse weg, wenn es zur Nummer keine gibt', function () {
+    // Sonst stuende dort `null`, und die Mitte muesste raten, ob das „unbekannt"
+    // heisst oder „nicht gefragt".
+    $gefragt = [];
+
+    $s = new BrainVerlaufsspeicher(
+        function (string $f, array $a) use (&$gefragt): array {
+            $gefragt[] = $a;
+
+            return ['ok' => true, 'data' => ['available' => false]];
+        },
+        300,
+        60,
+        fn (int $account): ?string => null,
+    );
+
+    $s->verfuegbar(9, 'kette@example.test');
+
+    expect($gefragt[0])->not->toHaveKey('mailbox');
+});

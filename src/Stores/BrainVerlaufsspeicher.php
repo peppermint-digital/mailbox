@@ -20,6 +20,19 @@ use Peppermint\Mailbox\Contracts\Verlaufsspeicher;
  * kommt, und eine Unterhaltung, die sich gerade entwickelt, soll nicht
  * minutenlang alt aussehen.
  *
+ * ## Gefragt wird nach der ADRESSE, nicht nach der Nummer
+ *
+ * Dieselbe Mailbox hat in jedem System eine andere Kennung — die Adresse ist,
+ * was sie IST. Wer mit der oertlichen Nummer fragt, fragt die Mitte nach IHRER
+ * Nummer drei, und die gehoert einem anderen Postfach.
+ *
+ * Das faellt nicht als Fehler auf, sondern als falscher Inhalt: Ein
+ * Kettenschluessel ist eine Message-ID und weltweit eindeutig — passt er
+ * zufaellig auch im fremden Postfach, kommt dessen Unterhaltung zurueck.
+ *
+ * Die Nummer geht weiter mit, fuer Systeme, deren Kennungen ohnehin die der
+ * Mitte sind. Die Mitte bevorzugt die Adresse, wenn sie da ist.
+ *
  * ## Eine unerreichbare Mitte ist kein Fehler
  *
  * Dann gibt es eben keinen Verlauf — der Knopf erscheint nicht, die normale
@@ -33,11 +46,15 @@ class BrainVerlaufsspeicher implements Verlaufsspeicher
      *         dekodierte Antwort des Werkzeugs — die Huelle `{ok, data}`, wie
      *         sie drueben ueber die Leitung geht —, oder null, wenn die Mitte
      *         nicht erreichbar war.
+     * @param  (callable(int): ?string)|null  $adresse  Die Mailadresse zur
+     *         oertlichen Kennung. Ohne sie fragt dieser Speicher mit einer
+     *         Nummer, die nur HIER gilt — siehe unten.
      */
     public function __construct(
         private $fetch,
         private readonly int $verfuegbarkeitTtl = 300,
         private readonly int $verlaufTtl = 60,
+        private $adresse = null,
     ) {}
 
     public function verfuegbar(int $account, string $thread): bool
@@ -75,11 +92,12 @@ class BrainVerlaufsspeicher implements Verlaufsspeicher
     private function frage(int $account, string $thread, bool $nurVerfuegbarkeit = false): array
     {
         try {
-            $antwort = ($this->fetch)('mail.conversation', [
+            $antwort = ($this->fetch)('mail.conversation', array_filter([
                 'account_id' => $account,
+                'mailbox' => $this->adresse === null ? null : ($this->adresse)($account),
                 'thread' => $thread,
                 'only_availability' => $nurVerfuegbarkeit,
-            ]);
+            ], fn ($wert): bool => $wert !== null));
 
             // Die Nutzlast steckt in `data` — dieselbe Huelle wie bei den
             // Postfaechern. Sie zu uebersehen faellt nicht auf: Dann ist

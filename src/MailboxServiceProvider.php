@@ -108,6 +108,12 @@ class MailboxServiceProvider extends ServiceProvider
             },
             (int) config('mailbox.conversation_cache.available_ttl', 300),
             (int) config('mailbox.conversation_cache.entries_ttl', 60),
+            // Gefragt wird nach der Adresse: Dieselbe Mailbox hat in jedem
+            // System eine andere Nummer. Erst spaet aufgeloest — beim Binden
+            // steht der Kontenspeicher unter Umstaenden noch gar nicht.
+            fn (int $account): ?string => ($konto = app(AccountStore::class)->find($account))
+                ? (string) $konto->field('email')
+                : null,
         );
     }
 
