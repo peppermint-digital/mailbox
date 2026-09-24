@@ -146,3 +146,20 @@ it('erkennt die Wurzel an der normalisierten Kennung, nicht an den spitzen Klamm
         ->and($n->istWurzel())->toBeTrue()
         ->and(verlauf()->conversationAvailable(1, 'wurzel@example.test')->getData(true)['available'])->toBeTrue();
 });
+
+it('holt den Kettenschluessel aus der Abfrage, nicht aus dem Pfad', function () {
+    // Eine Message-ID darf Schraegstriche enthalten. Im Pfad waere sie damit
+    // nicht ein Parameter, sondern drei — und die Route griffe nicht mehr.
+    kette('a/b@example.test');
+
+    $anfrage = Illuminate\Http\Request::create('/mailbox/1/conversation', 'GET', ['thread' => 'a/b@example.test']);
+
+    expect(verlauf()->conversationAvailableFor($anfrage, 1)->getData(true)['available'])->toBeTrue()
+        ->and(verlauf()->conversationFor($anfrage, 1)->getStatusCode())->toBe(200);
+});
+
+it('nimmt eine fehlende Kette als „kein Verlauf", nicht als Ausnahme', function () {
+    $anfrage = Illuminate\Http\Request::create('/mailbox/1/conversation-available', 'GET');
+
+    expect(verlauf()->conversationAvailableFor($anfrage, 1)->getData(true)['available'])->toBeFalse();
+});

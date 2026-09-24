@@ -3,6 +3,7 @@
 namespace Peppermint\Mailbox\Http;
 
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Peppermint\Mailbox\Contracts\Verlaufsspeicher;
 
 /**
@@ -44,6 +45,25 @@ trait HandlesConversations
      * die in `mailboxFor()` sitzt.
      */
     protected function guardConversations(int $account): void {}
+
+    /**
+     * Dieselben zwei Wege, gebunden an eine Route.
+     *
+     * Der Kettenschluessel ist im Regelfall eine Message-ID und darf fast
+     * jedes Zeichen enthalten, Schraegstriche eingeschlossen. Im Pfad waere er
+     * damit nicht ein Parameter, sondern drei — deshalb steht er in der
+     * Abfrage, und deshalb nimmt das Paket den Produkten das Auspacken ab:
+     * Sonst schreibt es jedes fuer sich, und eines davon vergisst es.
+     */
+    public function conversationFor(Request $request, int $account): JsonResponse
+    {
+        return $this->conversation($account, (string) $request->query('thread', ''));
+    }
+
+    public function conversationAvailableFor(Request $request, int $account): JsonResponse
+    {
+        return $this->conversationAvailable($account, (string) $request->query('thread', ''));
+    }
 
     /**
      * Gibt es zu dieser Kette einen vollstaendigen Verlauf?
