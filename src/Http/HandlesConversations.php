@@ -3,7 +3,7 @@
 namespace Peppermint\Mailbox\Http;
 
 use Illuminate\Http\JsonResponse;
-use Peppermint\Mailbox\Models\MailMessage;
+use Peppermint\Mailbox\Contracts\Verlaufsspeicher;
 
 /**
  * Der Gespraechsverlauf: eine Kette, gelesen wie ein Chat.
@@ -77,42 +77,9 @@ trait HandlesConversations
             ], 409);
         }
 
-        $nachrichten = MailMessage::query()
-            ->where('email_account_id', $account)
-            ->where('thread_key', $thread)
-            ->with('body')
-            ->orderBy('sent_at')
-            ->get();
-
         return response()->json([
             'available' => true,
-            'entries' => $nachrichten->map(fn (MailMessage $n): array => [
-                'id' => $n->id,
-                'message_id' => $n->message_id,
-                'from' => ['email' => $n->from_email, 'name' => $n->from_name],
-                'sent_at' => $n->sent_at?->toIso8601String(),
-                'subject' => $n->subject,
-                // Die veredelte Fassung, wenn es eine gibt.
-                'content' => $n->body?->lesbar() ?? '',
-                // Und was wirklich dastand — damit sichtbar bleibt, was die
-                // Maschine daraus gemacht hat. Nur mitgeschickt, wenn sie
-                // ueberhaupt mitgeschrieben hat.
-                'original' => $n->body?->istVeredelt() ? $n->body->content : null,
-                'refined_by' => $n->body?->refined_by,
-                // Was die Aufbereitung beiseitegelegt hat, reist mit. Greift
-                // eine Regel daneben, sieht man es und klappt auf — statt sich
-                // zu fragen, wo der Satz geblieben ist.
-                'quote' => $n->body?->quote,
-                'signature' => $n->body?->signature,
-                'footer' => $n->body?->footer,
-                'has_attachments' => (bool) $n->has_attachments,
-                'attachment_count' => (int) $n->attachment_count,
-                // Der Weg zur echten Mail. Der Verlauf ist eine Lesehilfe,
-                // kein Ersatz fuer das Original.
-                'in_mailbox' => $n->imPostfach(),
-                'folder' => $n->aktuelleOrte->first()?->folder,
-                'uid' => $n->aktuelleOrte->first()?->uid,
-            ])->values(),
+            'entries' => $this->verlaufsspeicher()->verlauf($account, $thread),
         ]);
     }
 
@@ -130,14 +97,18 @@ trait HandlesConversations
      */
     protected function verfuegbar(int $account, string $thread): bool
     {
-        if ($thread === '') {
-            return false;
-        }
+        return $this->verlaufsspeicher()->verfuegbar($account, $thread);
+    }
 
-        return MailMessage::query()
-            ->where('email_account_id', $account)
-            ->where('thread_key', $thread)
-            ->where('is_root', true)
-            ->exists();
+    /**
+     * Woher der Verlauf kommt.
+     *
+     * Ueberschreibbar, aber im Regelfall reicht die Bindung: Wer archiviert,
+     * bekommt den lokalen Speicher; wer nicht, den ueber die Bridge. Dieselbe
+     * Aufteilung wie bei den Postfaechern.
+     */
+    protected function verlaufsspeicher(): Verlaufsspeicher
+    {
+        return app(Verlaufsspeicher::class);
     }
 }

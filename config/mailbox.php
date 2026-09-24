@@ -42,6 +42,24 @@ return [
     'chat_tool' => env('MAILBOX_CHAT_TOOL', 'mailbox-chat-tool'),
 
     /*
+    | Das Werkzeug, ueber das ein Produkt ohne eigene Ablage den
+    | Gespraechsverlauf aus der Mitte liest.
+    */
+    'conversation_tool' => env('MAILBOX_CONVERSATION_TOOL', 'mail-conversation-tool'),
+
+    /*
+    | Wie lange der Verlauf zwischengespeichert wird.
+    |
+    | Die Verfuegbarkeits-Frage stellt die Oberflaeche bei JEDER geoeffneten
+    | Nachricht — die darf laenger halten. Der Verlauf selbst waechst, wenn
+    | eine Antwort kommt, und soll nicht minutenlang alt aussehen.
+    */
+    'conversation_cache' => [
+        'available_ttl' => (int) env('MAILBOX_CONVERSATION_AVAILABLE_TTL', 300),
+        'entries_ttl' => (int) env('MAILBOX_CONVERSATION_TTL', 60),
+    ],
+
+    /*
     | How long a central state is kept locally. This is the answer to "what if
     | the central system is down": the lookup freezes on the last known good
     | state instead of failing. Only success is cached.

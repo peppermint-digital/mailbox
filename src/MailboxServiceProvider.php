@@ -2,12 +2,16 @@
 
 namespace Peppermint\Mailbox;
 
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 use Peppermint\Mailbox\Brain\MailboxChat;
 use Peppermint\Mailbox\Console\InstallCommand;
 use Peppermint\Mailbox\Contracts\AccountStore;
+use Peppermint\Mailbox\Contracts\Verlaufsspeicher;
 use Peppermint\Mailbox\Stores\BrainAccountStore;
+use Peppermint\Mailbox\Stores\BrainVerlaufsspeicher;
+use Peppermint\Mailbox\Stores\LokalerVerlaufsspeicher;
 use Peppermint\Mailbox\Stores\LocalAccountStore;
 use Peppermint\Mailbox\Stores\MergedAccountStore;
 
@@ -21,6 +25,7 @@ class MailboxServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__.'/../config/mailbox.php', 'mailbox');
 
         $this->app->singleton(AccountStore::class, fn (): AccountStore => $this->store());
+        $this->app->singleton(Verlaufsspeicher::class, fn (): Verlaufsspeicher => $this->verlaufsspeicher());
 
         $this->app->singleton(MailboxChat::class, fn (): MailboxChat => $this->chat());
     }
@@ -52,6 +57,60 @@ class MailboxServiceProvider extends ServiceProvider
      * check is `class_exists`, and installing the package alone yields the
      * local store with no trace of anything else.
      */
+    /**
+     * Where the conversation history comes from.
+     *
+     * The archive is ONE truth — it lives where mail is captured and nowhere
+     * else. Two archives would be two truths, and those drift apart.
+     *
+     * Seeing it is a different matter: every product should be able to. So the
+     * same split as for accounts — whoever keeps the archive reads locally,
+     * everyone else asks the centre.
+     *
+     * Recognised by the tables, not by a setting: a product that has the
+     * archive keeps it, a product that has not cannot. A switch beside that
+     * would be a second answer to a question the schema already answers — and
+     * the wrong one would look like „no conversations yet".
+     */
+    private function verlaufsspeicher(): Verlaufsspeicher
+    {
+        $eigene = config('mailbox.tables.messages', 'mail_messages');
+
+        if (Schema::hasTable($eigene)) {
+            return new LokalerVerlaufsspeicher;
+        }
+
+        if (! class_exists(self::BRIDGE)) {
+            // Keine Ablage und keine Bridge: Dann gibt es eben keinen Verlauf.
+            // Der lokale Speicher antwortet auf einer fehlenden Tabelle nicht
+            // mit „leer", sondern mit einem Fehler — und das waere der falsche
+            // Klang fuer „hier ist das Feature nicht eingerichtet".
+            return new class implements Verlaufsspeicher
+            {
+                public function verfuegbar(int $account, string $thread): bool
+                {
+                    return false;
+                }
+
+                public function verlauf(int $account, string $thread): array
+                {
+                    return [];
+                }
+            };
+        }
+
+        $bridge = self::BRIDGE;
+        $tool = (string) config('mailbox.conversation_tool', 'mail-conversation-tool');
+
+        return new BrainVerlaufsspeicher(
+            function (string $_capability, array $arguments) use ($bridge, $tool): ?array {
+                return $bridge::call($tool, $arguments);
+            },
+            (int) config('mailbox.conversation_cache.available_ttl', 300),
+            (int) config('mailbox.conversation_cache.entries_ttl', 60),
+        );
+    }
+
     private function store(): AccountStore
     {
         $art = config('mailbox.store', 'local');

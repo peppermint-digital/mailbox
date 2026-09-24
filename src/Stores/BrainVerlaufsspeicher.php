@@ -1,0 +1,96 @@
+<?php
+
+namespace Peppermint\Mailbox\Stores;
+
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use Peppermint\Mailbox\Contracts\Verlaufsspeicher;
+
+/**
+ * Der Verlauf aus der Mitte — fuer jedes System, das selbst nicht archiviert.
+ *
+ * ## Warum ueberhaupt ein Zwischenspeicher
+ *
+ * Aus demselben Grund wie bei den Postfaechern, aber mit anderer Frist. Die
+ * Verfuegbarkeits-Frage stellt die Oberflaeche bei JEDER geoeffneten
+ * Nachricht — ohne Zwischenspeicher waere das ein Rundruf in die Mitte pro
+ * Klick, nur um meist „nein" zu hoeren.
+ *
+ * Der Verlauf selbst wird kuerzer gehalten: Er waechst, wenn eine Antwort
+ * kommt, und eine Unterhaltung, die sich gerade entwickelt, soll nicht
+ * minutenlang alt aussehen.
+ *
+ * ## Eine unerreichbare Mitte ist kein Fehler
+ *
+ * Dann gibt es eben keinen Verlauf — der Knopf erscheint nicht, die normale
+ * Ansicht steht da. Wer hier wuerfe, naehme wegen einer Lesehilfe die ganze
+ * Nachrichtenansicht mit.
+ */
+class BrainVerlaufsspeicher implements Verlaufsspeicher
+{
+    /**
+     * @param  callable(string, array<string, mixed>): ?array  $fetch  Liefert die
+     *         dekodierte Antwort, oder null wenn die Mitte nicht erreichbar war.
+     */
+    public function __construct(
+        private $fetch,
+        private readonly int $verfuegbarkeitTtl = 300,
+        private readonly int $verlaufTtl = 60,
+    ) {}
+
+    public function verfuegbar(int $account, string $thread): bool
+    {
+        if ($thread === '') {
+            return false;
+        }
+
+        return (bool) Cache::remember(
+            $this->schluessel('verfuegbar', $account, $thread),
+            $this->verfuegbarkeitTtl,
+            fn (): bool => (bool) ($this->frage($account, $thread, nurVerfuegbarkeit: true)['available'] ?? false),
+        );
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function verlauf(int $account, string $thread): array
+    {
+        if ($thread === '') {
+            return [];
+        }
+
+        return Cache::remember(
+            $this->schluessel('verlauf', $account, $thread),
+            $this->verlaufTtl,
+            fn (): array => (array) ($this->frage($account, $thread)['entries'] ?? []),
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function frage(int $account, string $thread, bool $nurVerfuegbarkeit = false): array
+    {
+        try {
+            return ($this->fetch)('mail.conversation', [
+                'account_id' => $account,
+                'thread' => $thread,
+                'only_availability' => $nurVerfuegbarkeit,
+            ]) ?? [];
+        } catch (\Throwable $e) {
+            // Eine unerreichbare Mitte ist die Lage, fuer die es den Rueckfall
+            // gibt — keine Ausnahme, die jemand behandeln muesste.
+            Log::warning('Gespraechsverlauf konnte nicht aus AI Brain gelesen werden: '.$e->getMessage());
+
+            return [];
+        }
+    }
+
+    private function schluessel(string $was, int $account, string $thread): string
+    {
+        // Der Kettenschluessel darf fast jedes Zeichen enthalten — als Teil
+        // eines Cache-Schluessels waere das je nach Treiber ein Problem.
+        return "mailbox.verlauf.{$was}.{$account}.".sha1($thread);
+    }
+}
