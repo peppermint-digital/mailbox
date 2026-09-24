@@ -176,6 +176,53 @@ class MailAccount extends Model
      * from their presence would keep trying an authentication that cannot work
      * any more, instead of failing where someone can see it.
      */
+    /**
+     * Gehoert dieses Postfach einer Person — oder allen?
+     *
+     * Ein Gruppenpostfach (`info@`, `department@`) hat keinen Besitzer und ist
+     * fuer jeden da, der im System arbeitet. Ein persoenliches hat einen.
+     */
+    public function istPersoenlich(): bool
+    {
+        return $this->field('user_id') !== null;
+    }
+
+    /**
+     * Darf diese Person dieses Postfach sehen?
+     *
+     * ## Warum ueber die Adresse und nicht die Kennung
+     *
+     * Die Nutzerkennung des zentralen Systems sagt einem Produkt nichts: Dort
+     * ist dieselbe Person eine andere Nummer. Die Mailadresse ist die einzige
+     * Kennung, die ueber Systemgrenzen dieselbe Person meint.
+     *
+     * ## Warum das ueberhaupt hier steht
+     *
+     * Eine Freigabe gilt einem PRODUKT, nicht einer Person — das CRM bekommt
+     * ein Postfach oder nicht. Ohne diese zweite Ebene zeigt es jedes
+     * freigegebene Postfach jedem angemeldeten Benutzer, und ein
+     * persoenlicher Posteingang faellt damit der ganzen Belegschaft in die
+     * Haende. Am 24.09.2026 genau so aufgefallen.
+     *
+     * Ohne `owner_email` (aeltere Gegenstelle, eigene Tabelle) bleibt es beim
+     * bisherigen Verhalten: sichtbar. Ein Produkt, das die Angabe nicht
+     * bekommt, soll nicht stillschweigend alles ausblenden.
+     */
+    public function sichtbarFuer(?string $email): bool
+    {
+        if (! $this->istPersoenlich()) {
+            return true;
+        }
+
+        $besitzer = $this->field('owner_email');
+
+        if ($besitzer === null || $besitzer === '') {
+            return true;
+        }
+
+        return $email !== null && mb_strtolower($email) === mb_strtolower((string) $besitzer);
+    }
+
     public function usesOAuth(): bool
     {
         return $this->field('auth_type') === 'oauth';
