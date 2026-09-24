@@ -38,6 +38,7 @@ class MailMessage extends Model
         'missing_since' => 'datetime',
         'has_attachments' => 'boolean',
         'is_root' => 'boolean',
+        'raw_complete' => 'boolean',
     ];
 
     public function getTable(): string
@@ -113,6 +114,18 @@ class MailMessage extends Model
      * Gelesen und nicht gerechnet: Der Vergleich passiert beim Erfassen, wo
      * die normalisierte Form vorliegt.
      */
+    /**
+     * Taugt die abgelegte Fassung als Beleg?
+     *
+     * `false` heisst: Was auf der Platte liegt, ist nicht die ganze Nachricht.
+     * Eine DKIM-Signatur ist darauf wertlos — und wer sich darauf beruft,
+     * merkt es im schlechtesten Moment.
+     */
+    public function rohfassungVollstaendig(): bool
+    {
+        return (bool) $this->raw_complete;
+    }
+
     public function istWurzel(): bool
     {
         return (bool) $this->is_root;

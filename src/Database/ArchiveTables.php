@@ -161,6 +161,24 @@ class ArchiveTables
              */
             $t->string('raw_sha256', 64)->nullable()->index();
 
+            /*
+             * Ist die abgelegte Fassung wirklich die ganze Nachricht?
+             *
+             * Bis zum 24.09.2026 stand das nur im Laufprotokoll — eine Zeile,
+             * die niemand wieder liest. In der Ablage sah eine unvollstaendige
+             * Kopie danach aus wie jede andere.
+             *
+             * Aufgefallen an einer Nachricht, bei der der Server 41029 Bytes
+             * meldet und 1894 herausgibt. Die Kopie ist damit als Beleg
+             * wertlos — und genau das muss an ihr stehen, sonst beruft sich
+             * irgendwann jemand darauf.
+             *
+             * Vorgabe wahr: Alles, was vor dieser Spalte erfasst wurde, hat die
+             * Pruefung bestanden oder haette sie bestanden; die eine bekannte
+             * Ausnahme wird beim Wandern der Migration nachgetragen.
+             */
+            $t->boolean('raw_complete')->default(true)->index();
+
             // Woher sie kam: abgeholt, vom Server mitgeschnitten, importiert.
             $t->string('source', 16)->default('poll');
             $t->timestamp('captured_at')->nullable();

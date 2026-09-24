@@ -211,7 +211,8 @@ it('legt Rohfassung, Prüfsumme und Gesprächstext ab', function () {
 
     $n = MailMessage::first();
 
-    expect($n->raw_sha256)->toBe(hash('sha256', 'ROHE BYTES'))
+    expect($n->rohfassungVollstaendig())->toBeTrue()
+        ->and($n->raw_sha256)->toBe(hash('sha256', 'ROHE BYTES'))
         ->and($ablage->lesen($n->raw_path))->toBe('ROHE BYTES')
         // Der Verlauf zeigt das, was jemand geschrieben hat.
         ->and($n->body->content)->toBe('Die Freigabe ist da.')
@@ -267,7 +268,10 @@ it('meldet eine Kopie, die nicht vollständig ist', function () {
     ))->ordner('INBOX');
 
     expect($ergebnis->unvollstaendig)->toHaveCount(1)
-        ->and($ergebnis->sauber())->toBeFalse();
+        ->and($ergebnis->sauber())->toBeFalse()
+        // Und es steht AN DER NACHRICHT, nicht nur im Laufprotokoll — eine
+        // Zeile, die niemand wieder liest.
+        ->and(MailMessage::first()->rohfassungVollstaendig())->toBeFalse();
 });
 
 it('schließt den Ort einer verschwundenen Nachricht, ohne sie zu löschen', function () {

@@ -375,6 +375,9 @@ class Erfassung
                 'attachment_count' => $anhaenge,
                 'raw_path' => $pfad,
                 'raw_sha256' => hash('sha256', $roh['raw']),
+                // Steht an der Nachricht und nicht nur im Laufprotokoll: Eine
+                // unvollstaendige Kopie sieht sonst aus wie jede andere.
+                'raw_complete' => (bool) $roh['complete'],
                 'source' => 'poll',
                 'captured_at' => now(),
                 'last_seen_at' => now(),
