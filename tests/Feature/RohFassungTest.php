@@ -3,55 +3,73 @@
 use Peppermint\Mailbox\Content\RohFassung;
 
 /**
- * Ob eine gespeicherte Kopie wirklich die Nachricht ist.
+ * Ob eine gespeicherte Kopie wirklich die ganze Nachricht ist.
  *
- * Diese Rechnung stand zuerst mitten in der IMAP-Sitzung, wo sie ohne echten
- * Server nicht pruefbar war — und sie ist genau die Aussage, auf die sich im
- * Streitfall jemand beruft.
+ * Die erste Fassung verglich die Laenge mit `RFC822.SIZE`. Das klang zwingend
+ * und markierte am 24.09.2026 111 von 122 archivierten Nachrichten als
+ * unvollstaendig — genau die aus den Office-365-Postfaechern, waehrend die von
+ * Hetzner und Stalwart aufs Byte passten.
+ *
+ * 84 von 84 mehrteiligen Nachrichten endeten dabei mit ihrer schliessenden
+ * Grenze. Nicht die Daten waren kaputt, sondern die Pruefung.
  */
-it('bestätigt eine Kopie, deren Länge zur gemeldeten Größe passt', function () {
-    $kopf = "From: a@example.test\r\nSubject: Test\r\n\r\n";
-    $rumpf = "Hallo.\r\n";
+function mehrteilig(string $abschluss): string
+{
+    return "From: a@example.test\r\n"
+        ."Content-Type: multipart/mixed; boundary=\"GRENZE123\"\r\n\r\n"
+        ."--GRENZE123\r\nContent-Type: text/plain\r\n\r\nHallo.\r\n"
+        .$abschluss;
+}
 
-    $roh = RohFassung::ausTeilen($kopf, $rumpf, strlen($kopf.$rumpf));
+it('haelt eine mehrteilige Nachricht mit schliessender Grenze fuer vollstaendig', function () {
+    $roh = RohFassung::ausTeilen(mehrteilig("--GRENZE123--\r\n"), '', 99999);
 
+    // Die gemeldete Groesse weicht ab — und das entscheidet NICHTS mehr.
     expect($roh->vollstaendig)->toBeTrue()
-        ->and($roh->bytes)->toBe($kopf.$rumpf);
+        ->and($roh->groesseWeichtAb())->toBeTrue();
 });
 
-it('erkennt eine Kopie, der etwas fehlt', function () {
-    // Der Fall, den niemand bemerkt, wenn er nicht geprueft wird: Die Kopie
-    // sieht vollstaendig aus, die DKIM-Signatur ist trotzdem wertlos.
-    $roh = RohFassung::ausTeilen("From: a@example.test\r\n\r\n", 'Hallo.', 9999);
+it('erkennt eine mehrteilige Nachricht ohne schliessende Grenze als abgeschnitten', function () {
+    // Der Fall, den die Pruefung wirklich fangen soll.
+    $roh = RohFassung::ausTeilen(mehrteilig(''), '', null);
 
     expect($roh->vollstaendig)->toBeFalse();
 });
 
-it('behauptet ohne Größenangabe nichts', function () {
-    // „Unbestaetigt" ist die ehrliche Antwort — nicht „vollstaendig".
-    $roh = RohFassung::ausTeilen("From: a@example.test\r\n\r\n", 'Hallo.', null);
+it('laesst sich von der Grenze im Text nicht taeuschen', function () {
+    // Die Grenze steht auch in jedem Trenner mitten in der Nachricht. „Kommt
+    // irgendwo vor" waere deshalb keine Aussage ueber das Ende.
+    $abgeschnitten = mehrteilig("--GRENZE123--\r\n").str_repeat("FORTSETZUNG OHNE ENDE\r\n", 80);
 
-    expect($roh->vollstaendig)->toBeFalse()
-        ->and($roh->gemeldeteGroesse)->toBeNull();
+    expect(RohFassung::strukturellVollstaendig($abgeschnitten))->toBeFalse();
 });
 
-it('hält eine am Stück geholte Nachricht für vollständig', function () {
-    // Bei JMAP wurde nichts zusammengesetzt, also kann nichts danebengehen.
-    $roh = RohFassung::amStueck('ganze Nachricht');
+it('behauptet bei einer einteiligen Nachricht nichts', function () {
+    // IMAP kuendigt jedes Literal mit seiner Laenge an; ein kurz gelesenes
+    // Literal ist ein Protokollfehler, den die Bibliothek meldet.
+    $roh = RohFassung::ausTeilen("From: a@example.test\r\n\r\n", 'Hallo.', 9999);
 
-    expect($roh->vollstaendig)->toBeTrue()
-        ->and($roh->gemeldeteGroesse)->toBe(15);
+    expect($roh->vollstaendig)->toBeTrue();
 });
 
-it('bildet den Abdruck über die Bytes', function () {
-    $roh = RohFassung::amStueck('ganze Nachricht');
+it('merkt sich die gemeldete Groesse, auch wenn sie abweicht', function () {
+    $roh = RohFassung::ausTeilen("From: a@example.test\r\n\r\n", 'Hallo.', 120311);
 
-    expect($roh->hash())->toBe(hash('sha256', 'ganze Nachricht'))
-        ->and($roh->hash())->toHaveLength(64);
+    expect($roh->gemeldeteGroesse)->toBe(120311)
+        ->and($roh->groesseWeichtAb())->toBeTrue();
+});
+
+it('meldet keine Abweichung, wenn die Groesse passt', function () {
+    $kopf = "From: a@example.test\r\n\r\n";
+    $rumpf = 'Hallo.';
+
+    expect(RohFassung::ausTeilen($kopf, $rumpf, strlen($kopf.$rumpf))->groesseWeichtAb())->toBeFalse();
+});
+
+it('bildet den Abdruck ueber die Bytes', function () {
+    expect(RohFassung::amStueck('ganze Nachricht')->hash())->toBe(hash('sha256', 'ganze Nachricht'));
 });
 
 it('liefert die Form, die die Schnittstelle zusagt', function () {
-    $roh = RohFassung::ausTeilen('a', 'b', 2);
-
-    expect($roh->toArray())->toBe(['raw' => 'ab', 'size' => 2, 'complete' => true]);
+    expect(RohFassung::ausTeilen('a', 'b', 2)->toArray())->toBe(['raw' => 'ab', 'size' => 2, 'complete' => true]);
 });
