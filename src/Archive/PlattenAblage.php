@@ -18,11 +18,30 @@ class PlattenAblage implements Ablage
 
     public function ablegen(string $pfad, string $bytes): void
     {
-        // Nicht ueberschreiben. Dieselbe Nachricht ein zweites Mal zu holen ist
-        // normal; sie neu zu schreiben waere eine Aenderung an etwas, das
-        // unveraendert bleiben soll.
+        /*
+         * Verglichen wird der INHALT, nicht die Anwesenheit.
+         *
+         * Hier stand zuerst „liegt schon etwas da, dann nichts tun" — mit der
+         * richtigen Begruendung, dass dieselbe Nachricht ein zweites Mal zu
+         * holen normal ist und ein Archiv nichts umschreiben soll.
+         *
+         * Am 24.09.2026 zeigte die Pruefsummenprobe, was diese Regel anrichtet:
+         * Eine Nachricht lag mit 1894 Bytes auf der Platte, waehrend die Zeile
+         * 41029 nannte. Ein frueherer, unvollstaendiger Abruf hatte die Datei
+         * geschrieben; der spaetere vollstaendige fand sie vor und verwarf sich
+         * selbst. Die Regel bewahrte damit ausgerechnet die kaputte Fassung.
+         *
+         * Gleiche Bytes → nichts zu tun (und kein Schreibvorgang auf einem
+         * Archiv, das sich nicht aendern soll). ANDERE Bytes → die Datei stimmt
+         * nicht mit dem ueberein, was die Datenbank ueber sie behauptet, und
+         * das ist kein Zustand, den man konservieren will.
+         */
         if ($this->platte()->exists($pfad)) {
-            return;
+            $vorhanden = (string) $this->platte()->get($pfad);
+
+            if (hash('sha256', $vorhanden) === hash('sha256', $bytes)) {
+                return;
+            }
         }
 
         $this->platte()->put($pfad, $bytes);

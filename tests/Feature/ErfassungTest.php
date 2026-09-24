@@ -27,8 +27,8 @@ function testAblage(): Ablage
 
         public function ablegen(string $pfad, string $bytes): void
         {
-            // Wie die echte: nicht ueberschreiben.
-            $this->dateien[$pfad] ??= $bytes;
+            // Wie die echte: gleiche Bytes nichts tun, andere ersetzen.
+            $this->dateien[$pfad] = $bytes;
         }
 
         public function vorhanden(string $pfad): bool
@@ -510,4 +510,28 @@ it('erfasst mehrere Ordner über eine einzige Verbindung', function () {
     expect($GLOBALS['mailbox_batch_zaehler'])->toBe(1)
         ->and($ergebnisse)->toHaveCount(3)
         ->and($ergebnisse[0]->stichtag)->toBeTrue();
+});
+
+it('ersetzt eine abgelegte Datei, deren Inhalt nicht mehr stimmt', function () {
+    // Die Regel „liegt schon da, also nichts tun" bewahrte am 24.09.2026
+    // ausgerechnet die kaputte Fassung: 1894 Bytes auf der Platte, 41029 in
+    // der Zeile. Ein frueherer, unvollstaendiger Abruf hatte gewonnen.
+    $ablage = testAblage();
+    stichtagSetzen($ablage);
+
+    (new Erfassung(testPostfach([9 => ['message_id' => '<a@example.test>', 'raw' => 'HALB']]), 1, $ablage))->ordner('INBOX');
+
+    $n = MailMessage::first();
+    expect($ablage->lesen($n->raw_path))->toBe('HALB');
+
+    // Zweiter Anlauf, diesmal vollstaendig — ueber den Weg rueckwaerts, der
+    // eine vorhandene Nachricht bewusst noch einmal holt.
+    MailLocation::query()->delete();
+    (new Erfassung(testPostfach([9 => ['message_id' => '<a@example.test>', 'raw' => 'GANZE NACHRICHT']]), 1, $ablage))
+        ->einzelne('INBOX', 9);
+
+    $frisch = MailMessage::first();
+
+    expect($ablage->lesen($frisch->raw_path))->toBe('GANZE NACHRICHT')
+        ->and($frisch->raw_sha256)->toBe(hash('sha256', 'GANZE NACHRICHT'));
 });
