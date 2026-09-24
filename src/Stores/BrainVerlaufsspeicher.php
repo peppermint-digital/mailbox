@@ -30,7 +30,9 @@ class BrainVerlaufsspeicher implements Verlaufsspeicher
 {
     /**
      * @param  callable(string, array<string, mixed>): ?array  $fetch  Liefert die
-     *         dekodierte Antwort, oder null wenn die Mitte nicht erreichbar war.
+     *         dekodierte Antwort des Werkzeugs — die Huelle `{ok, data}`, wie
+     *         sie drueben ueber die Leitung geht —, oder null, wenn die Mitte
+     *         nicht erreichbar war.
      */
     public function __construct(
         private $fetch,
@@ -73,11 +75,17 @@ class BrainVerlaufsspeicher implements Verlaufsspeicher
     private function frage(int $account, string $thread, bool $nurVerfuegbarkeit = false): array
     {
         try {
-            return ($this->fetch)('mail.conversation', [
+            $antwort = ($this->fetch)('mail.conversation', [
                 'account_id' => $account,
                 'thread' => $thread,
                 'only_availability' => $nurVerfuegbarkeit,
-            ]) ?? [];
+            ]);
+
+            // Die Nutzlast steckt in `data` — dieselbe Huelle wie bei den
+            // Postfaechern. Sie zu uebersehen faellt nicht auf: Dann ist
+            // `available` eben nie gesetzt, der Knopf erscheint nirgends, und
+            // das sieht aus wie „es gibt noch keine Verlaeufe".
+            return is_array($antwort) ? (array) ($antwort['data'] ?? []) : [];
         } catch (\Throwable $e) {
             // Eine unerreichbare Mitte ist die Lage, fuer die es den Rueckfall
             // gibt — keine Ausnahme, die jemand behandeln muesste.

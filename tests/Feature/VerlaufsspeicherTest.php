@@ -72,7 +72,9 @@ it('holt den Verlauf über die Bridge, wenn es keine eigene Ablage gibt', functi
     $s = new BrainVerlaufsspeicher(function (string $f, array $a) use (&$gefragt): array {
         $gefragt[] = $a;
 
-        return ['available' => true, 'entries' => [['id' => 1, 'content' => 'Aus der Mitte.']]];
+        // Genau die Huelle, die das Werkzeug drueben schickt. Ein Fake, der
+        // sie weglaesst, prueft die eigene Annahme statt der Leitung.
+        return ['ok' => true, 'data' => ['available' => true, 'entries' => [['id' => 1, 'content' => 'Aus der Mitte.']]]];
     });
 
     expect($s->verlauf(7, 'kette@example.test')[0]['content'])->toBe('Aus der Mitte.')
@@ -88,7 +90,7 @@ it('fragt die Mitte nicht zweimal für dieselbe Frage', function () {
     $s = new BrainVerlaufsspeicher(function () use (&$rufe): array {
         $rufe++;
 
-        return ['available' => true];
+        return ['ok' => true, 'data' => ['available' => true]];
     });
 
     $s->verfuegbar(1, 'kette@example.test');
@@ -113,4 +115,13 @@ it('bindet den lokalen Speicher, wenn die Ablage existiert', function () {
     ArchiveTables::create();
 
     expect(app(Verlaufsspeicher::class))->toBeInstanceOf(LokalerVerlaufsspeicher::class);
+});
+
+it('erkennt einen Verlauf auch dann, wenn die Antwort in ihrer Huelle steckt', function () {
+    // Der Fehler, der hier haengt: `available` unter `data` zu uebersehen.
+    // Nichts wirft, nichts loggt — der Umschalter erscheint nur nie, und das
+    // sieht aus wie „es gibt noch keine Verlaeufe".
+    $s = new BrainVerlaufsspeicher(fn (): array => ['ok' => true, 'data' => ['available' => true]]);
+
+    expect($s->verfuegbar(1, 'kette@example.test'))->toBeTrue();
 });
