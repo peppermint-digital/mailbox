@@ -539,3 +539,96 @@ it('ersetzt eine abgelegte Datei, deren Inhalt nicht mehr stimmt', function () {
     expect($ablage->lesen($frisch->raw_path))->toBe('GANZE NACHRICHT')
         ->and($frisch->raw_sha256)->toBe(hash('sha256', 'GANZE NACHRICHT'));
 });
+
+/**
+ * Ein Modell, das tut, als koennte es lesen.
+ */
+function testVeredler(?string $antwort, bool $wirft = false): Peppermint\Mailbox\Contracts\Gespraechsveredler
+{
+    return new class($antwort, $wirft) implements Peppermint\Mailbox\Contracts\Gespraechsveredler
+    {
+        public function __construct(private ?string $antwort, private bool $wirft) {}
+
+        public function veredeln(string $bereinigt, array $kopf): ?string
+        {
+            if ($this->wirft) {
+                throw new RuntimeException('Modell nicht erreichbar');
+            }
+
+            return $this->antwort;
+        }
+
+        public function kennzeichen(): string
+        {
+            return 'testmodell-1';
+        }
+    };
+}
+
+it('legt die veredelte Fassung NEBEN das Original', function () {
+    // Eine Nachricht, die ein Modell umgeschrieben hat, darf die
+    // urspruengliche nie stillschweigend ersetzen.
+    $ablage = testAblage();
+    stichtagSetzen($ablage);
+
+    (new Erfassung(
+        testPostfach([9 => ['message_id' => '<a@example.test>']]),
+        1,
+        $ablage,
+        testVeredler('Die Freigabe liegt vor.'),
+    ))->ordner('INBOX');
+
+    $body = MailMessage::first()->body;
+
+    expect($body->refined)->toBe('Die Freigabe liegt vor.')
+        ->and($body->content)->toBe('Die Freigabe ist da.')
+        ->and($body->refined_by)->toBe('testmodell-1')
+        ->and($body->lesbar())->toBe('Die Freigabe liegt vor.')
+        ->and($body->istVeredelt())->toBeTrue();
+});
+
+it('kommt ohne Modell aus', function () {
+    // Das Paket laeuft ohne Modell, ohne Schluessel, ohne fremden Dienst.
+    $ablage = testAblage();
+    stichtagSetzen($ablage);
+
+    (new Erfassung(testPostfach([9 => ['message_id' => '<a@example.test>']]), 1, $ablage))->ordner('INBOX');
+
+    $body = MailMessage::first()->body;
+
+    expect($body->istVeredelt())->toBeFalse()
+        ->and($body->lesbar())->toBe('Die Freigabe ist da.');
+});
+
+it('archiviert weiter, wenn das Modell nicht antwortet', function () {
+    // Ein Modell, das gerade nicht erreichbar ist, kostet hoechstens die
+    // schoenere Fassung — nie die Nachricht.
+    $ablage = testAblage();
+    stichtagSetzen($ablage);
+
+    $ergebnis = (new Erfassung(
+        testPostfach([9 => ['message_id' => '<a@example.test>']]),
+        1,
+        $ablage,
+        testVeredler(null, wirft: true),
+    ))->ordner('INBOX');
+
+    expect($ergebnis->aufgenommen)->toBe(1)
+        ->and(MailMessage::first()->body->lesbar())->toBe('Die Freigabe ist da.');
+});
+
+it('nimmt eine leere Antwort des Modells nicht', function () {
+    // „Ich kann nicht" ist eine gueltige Antwort — und darf keinen leeren
+    // Verlauf erzeugen.
+    $ablage = testAblage();
+    stichtagSetzen($ablage);
+
+    (new Erfassung(
+        testPostfach([9 => ['message_id' => '<a@example.test>']]),
+        1,
+        $ablage,
+        testVeredler('   '),
+    ))->ordner('INBOX');
+
+    expect(MailMessage::first()->body->istVeredelt())->toBeFalse();
+});

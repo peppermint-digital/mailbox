@@ -269,6 +269,22 @@ class ArchiveTables
              * Fassung gesehen hat.
              */
             $t->string('parser_version', 16)->nullable()->index();
+
+            /*
+             * Der von einem Sprachmodell lesbar gemachte Kern — und womit.
+             *
+             * NEBEN `content`, nicht darin. Eine Nachricht, die ein Modell
+             * umgeschrieben hat, darf die urspruengliche nie stillschweigend
+             * ersetzen: Wer den Verlauf liest, muss sehen koennen, was die
+             * Maschine daraus gemacht hat und was wirklich dastand.
+             *
+             * Dieselbe Begruendung wie beim abgetrennten Zitat. Der
+             * Unterschied ist nur, dass hier nicht weggelassen, sondern
+             * umformuliert wurde — und das ist der eingreifendere Schritt.
+             */
+            $t->longText('refined')->nullable();
+            $t->string('refined_by', 64)->nullable()->index();
+            $t->timestamp('refined_at')->nullable();
             $t->timestamp('parsed_at')->nullable();
             $t->timestamps();
         });

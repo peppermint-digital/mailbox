@@ -34,6 +34,7 @@ class MailBody extends Model
 
     protected $casts = [
         'parsed_at' => 'datetime',
+        'refined_at' => 'datetime',
     ];
 
     public function getTable(): string
@@ -56,6 +57,25 @@ class MailBody extends Model
             'parser_version' => self::FASSUNG,
             'parsed_at' => now(),
         ];
+    }
+
+    /**
+     * Was der Verlauf zeigen soll.
+     *
+     * Die veredelte Fassung, wenn es eine gibt — sonst das, was die Regeln
+     * uebrig gelassen haben. Nie leer, solange irgendetwas dastand.
+     */
+    public function lesbar(): string
+    {
+        $veredelt = trim((string) $this->refined);
+
+        return $veredelt !== '' ? $veredelt : (string) $this->content;
+    }
+
+    /** Hat ein Modell hier mitgeschrieben? */
+    public function istVeredelt(): bool
+    {
+        return trim((string) $this->refined) !== '';
     }
 
     /**

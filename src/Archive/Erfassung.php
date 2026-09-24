@@ -3,6 +3,7 @@
 namespace Peppermint\Mailbox\Archive;
 
 use Peppermint\Mailbox\Content\Gespraechstext;
+use Peppermint\Mailbox\Contracts\Gespraechsveredler;
 use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Models\MailBody;
 use Peppermint\Mailbox\Models\MailFolderState;
@@ -51,6 +52,12 @@ class Erfassung
         private readonly Mailbox $postfach,
         private readonly int $accountId,
         private readonly Ablage $ablage,
+        /**
+         * Optional: Ein Modell, das aus dem bereinigten Text den lesbaren Kern
+         * macht. Ohne eins bleibt es bei dem, was die Regeln hergeben — das
+         * Paket laeuft ohne Modell, ohne Schluessel, ohne fremden Dienst.
+         */
+        private readonly ?Gespraechsveredler $veredler = null,
     ) {}
 
     /**
@@ -402,9 +409,33 @@ class Erfassung
             ? Gespraechstext::aus((string) $kopf['body_text'])
             : Gespraechstext::ausHtml((string) ($kopf['body_html'] ?? ''));
 
+        $felder = MailBody::felder($text);
+
+        /*
+         * Die Veredelung darf die Erfassung nie aufhalten.
+         *
+         * Ein Modell, das gerade nicht antwortet, langsam ist oder etwas
+         * Unbrauchbares liefert, kostet hier hoechstens die schoenere Fassung.
+         * Die Nachricht ist dann trotzdem archiviert, und der Verlauf zeigt,
+         * was die Regeln hergaben.
+         */
+        if ($this->veredler !== null) {
+            try {
+                $kern = $this->veredler->veredeln($text->inhalt(), (array) $kopf);
+
+                if ($kern !== null && trim($kern) !== '') {
+                    $felder['refined'] = $kern;
+                    $felder['refined_by'] = $this->veredler->kennzeichen();
+                    $felder['refined_at'] = now();
+                }
+            } catch (Throwable $e) {
+                report($e);
+            }
+        }
+
         MailBody::updateOrCreate(
             ['mail_message_id' => $nachricht->id],
-            MailBody::felder($text),
+            $felder,
         );
     }
 

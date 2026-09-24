@@ -92,7 +92,13 @@ trait HandlesConversations
                 'from' => ['email' => $n->from_email, 'name' => $n->from_name],
                 'sent_at' => $n->sent_at?->toIso8601String(),
                 'subject' => $n->subject,
-                'content' => $n->body?->content ?? '',
+                // Die veredelte Fassung, wenn es eine gibt.
+                'content' => $n->body?->lesbar() ?? '',
+                // Und was wirklich dastand — damit sichtbar bleibt, was die
+                // Maschine daraus gemacht hat. Nur mitgeschickt, wenn sie
+                // ueberhaupt mitgeschrieben hat.
+                'original' => $n->body?->istVeredelt() ? $n->body->content : null,
+                'refined_by' => $n->body?->refined_by,
                 // Was die Aufbereitung beiseitegelegt hat, reist mit. Greift
                 // eine Regel daneben, sieht man es und klappt auf — statt sich
                 // zu fragen, wo der Satz geblieben ist.
