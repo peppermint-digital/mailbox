@@ -7,7 +7,9 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 use Peppermint\Mailbox\Brain\MailboxChat;
 use Peppermint\Mailbox\Console\InstallCommand;
+use Illuminate\Support\Facades\Event;
 use Peppermint\Mailbox\Contracts\AccountStore;
+use Peppermint\Mailbox\Events\VerlaufVergessen;
 use Peppermint\Mailbox\Contracts\Verlaufsspeicher;
 use Peppermint\Mailbox\Stores\BrainAccountStore;
 use Peppermint\Mailbox\Stores\BrainVerlaufsspeicher;
@@ -19,6 +21,9 @@ class MailboxServiceProvider extends ServiceProvider
 {
     /** This class only exists when a usable central store is installed. */
     private const BRIDGE = 'Peppermint\\AiBrainBridge\\Facades\\AiBrain';
+
+    /** Das Ereignis, das die Bridge im Produkt wirft. */
+    private const BRIDGE_EVENT = 'Peppermint\\AiBrainBridge\\Events\\AiBrainEventReceived';
 
     public function register(): void
     {
@@ -32,6 +37,26 @@ class MailboxServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        /*
+         * Sagt die Mitte, dass ein Verlauf entfernt wurde, wird er hier
+         * sofort vergessen (#6284).
+         *
+         * Nur wenn die Bridge ueberhaupt da ist — ohne sie gibt es kein
+         * Ereignis, und ein Lauscher auf eine Klasse, die es nicht gibt,
+         * waere beim Booten ein Fehler statt einer fehlenden Funktion.
+         */
+        if (class_exists(self::BRIDGE_EVENT)) {
+            Event::listen(self::BRIDGE_EVENT, function (object $ereignis): void {
+                $inhalt = $ereignis->event ?? null;
+
+                if ($inhalt === null || ($inhalt->type ?? null) !== VerlaufVergessen::TYP) {
+                    return;
+                }
+
+                VerlaufVergessen::ausEreignis((array) ($inhalt->payload ?? []));
+            });
+        }
+
         $this->publishes([
             __DIR__.'/../config/mailbox.php' => config_path('mailbox.php'),
         ], 'mailbox-config');

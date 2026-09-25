@@ -64,7 +64,7 @@ class BrainVerlaufsspeicher implements Verlaufsspeicher
         }
 
         return (bool) Cache::remember(
-            $this->schluessel('verfuegbar', $account, $thread),
+            self::schluessel('verfuegbar', $account, $thread),
             $this->verfuegbarkeitTtl,
             fn (): bool => (bool) ($this->frage($account, $thread, nurVerfuegbarkeit: true)['available'] ?? false),
         );
@@ -80,7 +80,7 @@ class BrainVerlaufsspeicher implements Verlaufsspeicher
         }
 
         return Cache::remember(
-            $this->schluessel('verlauf', $account, $thread),
+            self::schluessel('verlauf', $account, $thread),
             $this->verlaufTtl,
             fn (): array => (array) ($this->frage($account, $thread)['entries'] ?? []),
         );
@@ -113,7 +113,17 @@ class BrainVerlaufsspeicher implements Verlaufsspeicher
         }
     }
 
-    private function schluessel(string $was, int $account, string $thread): string
+    /**
+     * Der Schluessel im Zwischenspeicher.
+     *
+     * Oeffentlich und statisch, weil ihn zwei Seiten brauchen: dieser
+     * Speicher zum Merken und {@see \Peppermint\Mailbox\Events\VerlaufVergessen}
+     * zum Vergessen. Zwei Stellen, die denselben Schluessel selbst
+     * zusammensetzen, laufen frueher oder spaeter auseinander — und dann
+     * loescht man Schluessel, die es nicht gibt, waehrend die echten
+     * stehenbleiben.
+     */
+    public static function schluessel(string $was, int $account, string $thread): string
     {
         // Der Kettenschluessel darf fast jedes Zeichen enthalten — als Teil
         // eines Cache-Schluessels waere das je nach Treiber ein Problem.
