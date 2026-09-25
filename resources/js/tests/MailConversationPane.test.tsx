@@ -23,6 +23,7 @@ const texte: MailConversationPaneLabels = {
     notInMailbox: 'Nicht mehr im Postfach',
     attachments: (n) => `${n} Anhang`,
     nothingWritten: 'Kein Text — nur ein Anhang.',
+    purged: (wann, wer) => `Aus der Ablage entfernt am ${wann} durch ${wer}.`,
     showConversation: 'Gesprächsverlauf',
     showFullMessage: 'Ganze Nachricht',
 };
@@ -66,9 +67,12 @@ function Huelle({
     });
 
     return (
-        <MailConversationPane state={verlauf} labels={texte} onOpenOriginal={onOpenOriginal as never}>
-            <p>Die ganze Nachricht mit allem Drum und Dran.</p>
-        </MailConversationPane>
+        <>
+            <button onClick={() => verlauf.refresh()}>Nochmal fragen</button>
+            <MailConversationPane state={verlauf} labels={texte} onOpenOriginal={onOpenOriginal as never}>
+                <p>Die ganze Nachricht mit allem Drum und Dran.</p>
+            </MailConversationPane>
+        </>
     );
 }
 
@@ -163,5 +167,77 @@ describe('MailConversationPane', () => {
 
         expect(knopf(container, 'Gesprächsverlauf')).toBeUndefined();
         expect(textOf(container)).toContain('Die ganze Nachricht');
+    });
+});
+
+describe('MailConversationPane — nach einem Entfernen', () => {
+    it('holt den offenen Verlauf neu, ohne ihn zuzuklappen', async () => {
+        // Wer eine Nachricht aus der Mitte entfernt, sieht dabei den Verlauf an.
+        // Der Ladehaken hängt an der geöffneten Nachricht — die ist dieselbe
+        // geblieben, also fragt er nicht neu: Es sähe aus, als hätte das
+        // Entfernen nicht gewirkt.
+        let runde = 0;
+        const holen = ((url: string) => {
+            if (url.includes('conversation-available')) {
+                return antwort({ available: true });
+            }
+
+            runde++;
+
+            return antwort({
+                entries: [
+                    runde === 1
+                        ? EINTRAG
+                        : { ...EINTRAG, content: '', purged_at: '2026-09-25T09:00:00+02:00', purged_by: 'bastian' },
+                ],
+            });
+        }) as unknown as typeof globalThis.fetch;
+
+        const { container } = render(<Huelle fetch={holen} />);
+        await ruhe();
+        await act(async () => {
+            knopf(container, 'Gesprächsverlauf')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        await ruhe();
+        expect(textOf(container)).toContain('Die Freigabe ist da.');
+
+        await act(async () => {
+            knopf(container, 'Nochmal fragen')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        await ruhe();
+
+        // Der Verlauf steht weiter — und zeigt jetzt den Merker.
+        expect(textOf(container)).toContain('Aus der Ablage entfernt');
+        expect(textOf(container)).not.toContain('Die ganze Nachricht mit allem');
+    });
+
+    it('klappt zu, wenn die ganze Kette entfernt wurde', async () => {
+        // Der andere Fall: Ist nichts mehr da, gibt es nichts zu zeigen — und
+        // auch keinen Umschalter mehr.
+        let gefragt = 0;
+        const holen = ((url: string) => {
+            if (url.includes('conversation-available')) {
+                gefragt++;
+
+                return antwort({ available: gefragt === 1 });
+            }
+
+            return antwort({ entries: [EINTRAG] });
+        }) as unknown as typeof globalThis.fetch;
+
+        const { container } = render(<Huelle fetch={holen} />);
+        await ruhe();
+        await act(async () => {
+            knopf(container, 'Gesprächsverlauf')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        await ruhe();
+
+        await act(async () => {
+            knopf(container, 'Nochmal fragen')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        await ruhe();
+
+        expect(knopf(container, 'Gesprächsverlauf')).toBeUndefined();
+        expect(textOf(container)).toContain('Die ganze Nachricht mit allem');
     });
 });

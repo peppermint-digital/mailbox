@@ -14,6 +14,7 @@ const texte: MailConversationLabels = {
     notInMailbox: 'Nicht mehr im Postfach',
     attachments: (n) => `${n} Anhang`,
     nothingWritten: 'Kein Text — nur ein Anhang.',
+    purged: (wann, wer) => `Aus der Ablage entfernt am ${wann} durch ${wer}.`,
 };
 
 function eintrag(werte: Partial<ConversationEntry> = {}): ConversationEntry {
@@ -143,5 +144,58 @@ describe('MailConversation', () => {
 
         expect(container.querySelector('[data-slot="mail-conversation-loading"]')).not.toBeNull();
         expect(textOf(container)).not.toContain('Noch nichts hier.');
+    });
+});
+
+describe('MailConversation — entfernte Nachrichten', () => {
+    it('zeigt an der Stelle einer entfernten Nachricht einen Merker', () => {
+        // Bis v0.120.0 stand hier eine leere Blase mit „Kein Text — nur ein
+        // Anhang": eine stille Falschaussage über eine Nachricht, die es sehr
+        // wohl gab. Eine sichtbare Lücke ist besser als eine unsichtbare.
+        const { container } = render(
+            <MailConversation
+                entries={[
+                    eintrag(),
+                    eintrag({
+                        id: 2,
+                        content: '',
+                        subject: null,
+                        from: { email: null, name: null },
+                        purged_at: '2026-09-25T09:00:00+02:00',
+                        purged_by: 'bastian',
+                    }),
+                ]}
+                labels={texte}
+            />,
+        );
+
+        expect(container.querySelectorAll('[data-slot="mail-conversation-purged"]')).toHaveLength(1);
+        expect(textOf(container)).toContain('Aus der Ablage entfernt');
+        expect(textOf(container)).toContain('bastian');
+        // Und ausdrücklich NICHT die alte Behauptung.
+        expect(textOf(container)).not.toContain('Kein Text');
+        // Die gebliebene Nachricht steht weiter da.
+        expect(textOf(container)).toContain('Die Freigabe ist da.');
+    });
+
+    it('bietet beim Merker keinen Weg zum Original an', () => {
+        // Es gibt keines mehr. Ein Knopf, der das verspricht, wäre der Grund,
+        // aus dem man Löschungen nicht glaubt.
+        const { container } = render(
+            <MailConversation
+                entries={[eintrag({ content: '', purged_at: '2026-09-25T09:00:00+02:00', purged_by: 'bastian' })]}
+                labels={texte}
+                onOpenOriginal={vi.fn()}
+            />,
+        );
+
+        expect(knopf(container, 'Original öffnen')).toBeUndefined();
+        expect(knopf(container, 'Weggelassenes zeigen')).toBeUndefined();
+    });
+
+    it('lässt gebliebene Nachrichten unberührt', () => {
+        const { container } = render(<MailConversation entries={[eintrag()]} labels={texte} />);
+
+        expect(container.querySelectorAll('[data-slot="mail-conversation-purged"]')).toHaveLength(0);
     });
 });

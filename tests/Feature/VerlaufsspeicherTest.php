@@ -170,3 +170,99 @@ it('laesst die Adresse weg, wenn es zur Nummer keine gibt', function () {
 
     expect($gefragt[0])->not->toHaveKey('mailbox');
 });
+
+/**
+ * Eine zweite Nachricht in dieselbe Kette — fuer die Faelle, in denen es auf
+ * die Reihenfolge ankommt.
+ */
+function verlaufAntwort(string $wurzel, string $id, string $text, ?string $entferntVon = null): MailMessage
+{
+    $n = MailMessage::create([
+        'email_account_id' => 1,
+        'message_id' => "<{$id}>",
+        'thread_key' => $wurzel,
+        'is_root' => false,
+        'subject' => 'Re: Angebot',
+        'from_email' => 'wir@example.test',
+        'sent_at' => now()->subHours(2),
+    ]);
+
+    MailBody::create(['mail_message_id' => $n->id, 'content' => $text]);
+
+    if ($entferntVon !== null) {
+        // Genau der Zustand, den die Entfernung hinterlaesst: Rumpf weg,
+        // Kopfzeilen leer, Kettenschluessel und Zeitpunkt bleiben.
+        MailBody::where('mail_message_id', $n->id)->delete();
+        $n->update([
+            'message_id' => '',
+            'subject' => null,
+            'from_email' => null,
+            'from_name' => null,
+            'purged_at' => now()->subHour(),
+            'purged_by' => $entferntVon,
+        ]);
+    }
+
+    return $n->refresh();
+}
+
+it('haelt die Stelle einer entfernten Nachricht in der Kette', function () {
+    // Der Punkt der ganzen Uebung: Wer nur eine Nachricht loescht, loescht
+    // nicht die Unterhaltung. Faellt der Eintrag weg, beziehen sich die
+    // folgenden Antworten auf etwas, das es nie gegeben zu haben scheint.
+    verlaufKette();
+    verlaufAntwort('anfang@example.test', 'mitte@example.test', 'Geheim.', 'bastian');
+    $letzte = verlaufAntwort('anfang@example.test', 'ende@example.test', 'Danke!');
+    $letzte->update(['sent_at' => now()->subMinutes(10)]);
+
+    $verlauf = (new LokalerVerlaufsspeicher)->verlauf(1, 'anfang@example.test');
+
+    expect($verlauf)->toHaveCount(3)
+        ->and($verlauf[0]['content'])->toBe('Bitte um ein Angebot.')
+        ->and($verlauf[1]['purged_at'])->not->toBeNull()
+        ->and($verlauf[1]['purged_by'])->toBe('bastian')
+        ->and($verlauf[1]['sent_at'])->not->toBeNull()
+        ->and($verlauf[2]['content'])->toBe('Danke!');
+});
+
+it('verraet im Grabstein nichts ueber die entfernte Nachricht', function () {
+    // Sonst waere die Entfernung eine Verschiebung: Betreff und Absender
+    // stuenden weiter fuer jeden da, der das Postfach oeffnen darf.
+    verlaufKette();
+    verlaufAntwort('anfang@example.test', 'mitte@example.test', 'Geheim.', 'bastian');
+
+    $grabstein = (new LokalerVerlaufsspeicher)->verlauf(1, 'anfang@example.test')[1];
+
+    expect($grabstein['subject'])->toBeNull()
+        ->and($grabstein['from']['email'])->toBeNull()
+        ->and($grabstein['content'])->toBe('')
+        ->and($grabstein['quote'])->toBeNull()
+        ->and($grabstein['original'])->toBeNull()
+        ->and($grabstein['in_mailbox'])->toBeFalse()
+        ->and($grabstein['attachment_count'])->toBe(0);
+});
+
+it('setzt purged_at bei gebliebenen Nachrichten nicht', function () {
+    // Sonst zeigte die Oberflaeche jede Blase als Grabstein — und der Test
+    // oben waere trotzdem gruen.
+    verlaufKette();
+
+    expect((new LokalerVerlaufsspeicher)->verlauf(1, 'anfang@example.test')[0]['purged_at'])->toBeNull();
+});
+
+it('bietet keinen Verlauf mehr an, wenn die ganze Kette entfernt ist', function () {
+    // Der zweite Fall: Wird alles entfernt, gibt es nichts mehr zu erzaehlen.
+    // Ein Verlauf aus lauter Grabsteinen ist kein Verlauf.
+    verlaufKette();
+    MailBody::query()->delete();
+    MailMessage::query()->update(['purged_at' => now(), 'purged_by' => 'bastian', 'message_id' => '']);
+
+    expect((new LokalerVerlaufsspeicher)->verfuegbar(1, 'anfang@example.test'))->toBeFalse();
+});
+
+it('bietet den Verlauf weiter an, solange eine Nachricht geblieben ist', function () {
+    verlaufKette();
+    verlaufAntwort('anfang@example.test', 'mitte@example.test', 'Geheim.', 'bastian');
+
+    expect((new LokalerVerlaufsspeicher)->verfuegbar(1, 'anfang@example.test'))->toBeTrue();
+});

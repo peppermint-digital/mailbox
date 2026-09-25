@@ -62,6 +62,8 @@ export interface MailConversationState {
     loading: boolean;
     show(): void;
     hide(): void;
+    /** Noch einmal fragen, ohne die Nachricht zu wechseln — siehe unten. */
+    refresh(): void;
 }
 
 const KOPFZEILEN = { Accept: 'application/json' };
@@ -114,6 +116,30 @@ export function useMailConversation({
         // eslint-disable-next-line react-hooks/exhaustive-deps -- haengt an der geoeffneten Nachricht
     }, [accountId, thread]);
 
+    /** Die Eintraege holen — von `show()` und von `refresh()` gebraucht. */
+    const eintraegeHolen = async (): Promise<void> => {
+        if (accountId === null || thread === '') {
+            return;
+        }
+
+        setLoading(true);
+
+        try {
+            const antwort = await doFetch(routes.conversation(accountId, thread), {
+                headers: KOPFZEILEN,
+                credentials: 'same-origin',
+            });
+            const daten = await antwort.json();
+            setEntries(daten.entries ?? []);
+        } catch {
+            // Dasselbe wie oben: lieber ein leerer Verlauf mit dem Weg
+            // zurueck als eine Fehlermeldung ueber eine Lesehilfe.
+            setEntries([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return {
         available,
         on,
@@ -126,22 +152,57 @@ export function useMailConversation({
             }
 
             setOn(true);
-            setLoading(true);
+            void eintraegeHolen();
+        },
+        /**
+         * Noch einmal fragen, ohne die Nachricht zu wechseln.
+         *
+         * ## Wofuer
+         *
+         * Wer etwas aus der Ablage entfernt, aendert den Verlauf, waehrend er
+         * ihn ansieht. Der Ladehaken oben haengt an der geoeffneten Nachricht
+         * — die ist dieselbe geblieben, also fragt er nicht neu, und der
+         * Verlauf zeigt weiter den Stand von vorher. Das sieht aus, als haette
+         * das Entfernen nicht gewirkt.
+         *
+         * ## Warum nicht einfach den Ladehaken neu ausloesen
+         *
+         * Der setzt die Ansicht zurueck auf die gewohnte Nachricht. Nach dem
+         * Entfernen EINER Nachricht aus der Mitte soll der Verlauf aber offen
+         * bleiben — dort steht jetzt der Merker, und genau den will man sehen.
+         *
+         * Verschwindet der Verlauf ganz (die ganze Kette entfernt), wird
+         * zugeklappt: Dann gibt es nichts mehr zu zeigen.
+         */
+        refresh: () => {
+            if (accountId === null || thread === '') {
+                return;
+            }
 
             void (async () => {
+                let daIst = false;
+
                 try {
-                    const antwort = await doFetch(routes.conversation(accountId, thread), {
+                    const antwort = await doFetch(routes.available(accountId, thread), {
                         headers: KOPFZEILEN,
                         credentials: 'same-origin',
                     });
-                    const daten = await antwort.json();
-                    setEntries(daten.entries ?? []);
+                    daIst = Boolean((await antwort.json()).available);
                 } catch {
-                    // Dasselbe wie oben: lieber ein leerer Verlauf mit dem Weg
-                    // zurueck als eine Fehlermeldung ueber eine Lesehilfe.
+                    daIst = false;
+                }
+
+                setAvailable(daIst);
+
+                if (! daIst) {
+                    setOn(false);
                     setEntries([]);
-                } finally {
-                    setLoading(false);
+
+                    return;
+                }
+
+                if (on) {
+                    await eintraegeHolen();
                 }
             })();
         },

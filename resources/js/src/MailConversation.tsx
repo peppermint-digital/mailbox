@@ -46,6 +46,12 @@ export interface ConversationEntry {
     in_mailbox: boolean;
     folder: string | null;
     uid: number | string | null;
+    /**
+     * Gesetzt, wenn diese Nachricht aus der Ablage entfernt wurde. Dann ist
+     * alles andere leer — der Eintrag haelt nur noch die Stelle in der Kette.
+     */
+    purged_at?: string | null;
+    purged_by?: string | null;
 }
 
 export interface MailConversationLabels {
@@ -61,6 +67,13 @@ export interface MailConversationLabels {
     attachments: (count: number) => string;
     /** Wenn die Aufbereitung nichts uebrig liess — siehe unten. */
     nothingWritten: string;
+    /**
+     * Steht an der Stelle einer entfernten Nachricht.
+     *
+     * Zeitpunkt und Urheber, kein Grund: Den liest, wer das Protokoll lesen
+     * darf — nicht jeder, der das Postfach oeffnen kann.
+     */
+    purged: (when: string, who: string) => string;
 }
 
 export interface MailConversationProps {
@@ -132,6 +145,10 @@ function Blase({
     formatDateTime: (iso: string) => string;
 }) {
     const [offen, setOffen] = useState(false);
+
+    if (eintrag.purged_at) {
+        return <Grabstein eintrag={eintrag} labels={labels} formatDateTime={formatDateTime} />;
+    }
 
     const weggelassen = [
         eintrag.quote ? { titel: labels.quote, text: eintrag.quote } : null,
@@ -207,6 +224,33 @@ function Blase({
                     </div>
                 )}
             </div>
+        </div>
+    );
+}
+
+/**
+ * Die Stelle, an der eine entfernte Nachricht stand.
+ *
+ * Mittig und ohne Seite, weil es keinen Absender mehr gibt — und ohne Knoepfe,
+ * weil es nichts zu oeffnen und nichts aufzuklappen gibt. Der gestrichelte
+ * Rand sagt auf einen Blick, dass hier etwas fehlt; das ist der ganze Zweck.
+ */
+function Grabstein({
+    eintrag,
+    labels,
+    formatDateTime,
+}: {
+    eintrag: ConversationEntry;
+    labels: MailConversationLabels;
+    formatDateTime: (iso: string) => string;
+}) {
+    const wann = eintrag.purged_at ? formatDateTime(eintrag.purged_at) : '—';
+
+    return (
+        <div className="flex justify-center" data-slot="mail-conversation-purged">
+            <p className="max-w-[85%] rounded-lg border border-dashed px-3 py-2 text-center text-xs italic text-muted-foreground">
+                {labels.purged(wann, eintrag.purged_by || '—')}
+            </p>
         </div>
     );
 }
