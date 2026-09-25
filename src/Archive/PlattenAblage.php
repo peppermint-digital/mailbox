@@ -57,6 +57,15 @@ class PlattenAblage implements Ablage
         return $this->platte()->exists($pfad) ? $this->platte()->get($pfad) : null;
     }
 
+    public function entfernen(string $pfad): bool
+    {
+        if (! $this->platte()->exists($pfad)) {
+            return false;
+        }
+
+        return $this->platte()->delete($pfad);
+    }
+
     private function platte(): Filesystem
     {
         return $this->platte ?? Storage::disk((string) config('mailbox.archive.disk', 'local'));

@@ -298,16 +298,13 @@ class Erfassung
      */
     private function aufnehmen(string $ordner, string $uid, ?int $uidvalidity, Ergebnis $ergebnis): void
     {
-        $roh = $this->postfach->raw($ordner, $uid);
-
-        if ($roh === null) {
-            // Zwischen dem Auflisten und dem Holen verschwunden. Kein Fehler,
-            // nur ein geteiltes Postfach.
-            $ergebnis->entwischt();
-
-            return;
-        }
-
+        // Zuerst der Kopf, dann erst der Rumpf.
+        //
+        // Nicht aus Sparsamkeit, sondern weil die Entscheidung „nehmen wir
+        // die ueberhaupt?" an der Message-ID haengt — und eine endgueltig
+        // entfernte Nachricht darf gar nicht erst geholt werden. Wer den
+        // Rumpf vorher zieht, hat die Bytes schon in der Hand, die niemand
+        // mehr haben sollte.
         $kopf = $this->postfach->message($ordner, $uid);
         $messageId = (string) ($kopf['message_id'] ?? '');
 
@@ -319,10 +316,62 @@ class Erfassung
             return;
         }
 
+        $grabstein = $this->grabstein($messageId);
+
+        if ($grabstein !== null) {
+            /*
+             * Endgueltig entfernt — und sie liegt trotzdem noch im Postfach.
+             *
+             * Genau dafuer bleibt der Grabstein stehen: Ohne ihn saehe dieser
+             * Lauf eine unbekannte Nachricht und legte sie wieder an. Die
+             * Loeschung haette bis zur naechsten vollen Stunde gehalten.
+             *
+             * Der ORT wird trotzdem vermerkt. Er sagt „hier liegt sie", nicht
+             * was drinsteht — und ohne ihn liefe derselbe Griff bei jedem
+             * Lauf erneut ins Leere.
+             */
+            $this->ortVermerken($grabstein, $ordner, $uid, $uidvalidity);
+            $ergebnis->nichtWiederAufnehmen();
+
+            return;
+        }
+
+        $roh = $this->postfach->raw($ordner, $uid);
+
+        if ($roh === null) {
+            // Zwischen dem Auflisten und dem Holen verschwunden. Kein Fehler,
+            // nur ein geteiltes Postfach.
+            $ergebnis->entwischt();
+
+            return;
+        }
+
         $nachricht = $this->nachrichtAnlegen($messageId, $kopf, $roh, $ergebnis);
 
+        $this->ortVermerken($nachricht->id, $ordner, $uid, $uidvalidity);
+
+        $ergebnis->aufgenommen();
+    }
+
+    /**
+     * Die Pruefsumme einer endgueltig entfernten Nachricht — oder null.
+     *
+     * Gefragt wird ueber den Hash und nicht ueber die Message-ID: Im
+     * Grabstein steht der Klartext nicht mehr.
+     */
+    private function grabstein(string $messageId): ?int
+    {
+        return MailMessage::query()
+            ->where('email_account_id', $this->accountId)
+            ->where('message_id_hash', MailMessage::hash($messageId))
+            ->whereNotNull('purged_at')
+            ->value('id');
+    }
+
+    private function ortVermerken(int $nachricht, string $ordner, string $uid, ?int $uidvalidity): void
+    {
         MailLocation::updateOrCreate(
-            ['mail_message_id' => $nachricht->id, 'folder' => $ordner, 'uid' => $uid],
+            ['mail_message_id' => $nachricht, 'folder' => $ordner, 'uid' => $uid],
             [
                 'email_account_id' => $this->accountId,
                 'uidvalidity' => $uidvalidity,
@@ -330,8 +379,6 @@ class Erfassung
                 'gone_at' => null,
             ],
         );
-
-        $ergebnis->aufgenommen();
     }
 
     /**

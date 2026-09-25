@@ -40,6 +40,17 @@ function testAblage(): Ablage
         {
             return $this->dateien[$pfad] ?? null;
         }
+
+        public function entfernen(string $pfad): bool
+        {
+            if (! isset($this->dateien[$pfad])) {
+                return false;
+            }
+
+            unset($this->dateien[$pfad]);
+
+            return true;
+        }
     };
 }
 
@@ -631,4 +642,78 @@ it('nimmt eine leere Antwort des Modells nicht', function () {
     ))->ordner('INBOX');
 
     expect(MailMessage::first()->body->istVeredelt())->toBeFalse();
+});
+
+it('nimmt eine endgültig entfernte Nachricht NICHT wieder auf', function () {
+    // Sie liegt weiter im Postfach. Ohne den Grabstein saehe dieser Lauf eine
+    // unbekannte Nachricht und legte sie wieder an — die Loeschung haette bis
+    // zur naechsten vollen Stunde gehalten.
+    $ablage = testAblage();
+    stichtagSetzen($ablage);
+
+    MailMessage::create([
+        'email_account_id' => 1,
+        'message_id' => '<a@example.test>',
+        'purged_at' => now(),
+        'purged_by' => 'jemand',
+    ]);
+
+    // Der Klartext faellt weg (leer, nicht NULL — die Spalte ist NOT NULL und
+    // soll es bleiben), die Pruefsumme bleibt. Wie beim echten Entfernen.
+    MailMessage::query()->update(['message_id' => '']);
+
+    $ergebnis = (new Erfassung(
+        testPostfach([5 => ['message_id' => '<a@example.test>']]),
+        accountId: 1,
+        ablage: $ablage,
+    ))->ordner('INBOX');
+
+    expect($ergebnis->aufgenommen)->toBe(0)
+        ->and($ergebnis->entfernt)->toBe(1)
+        ->and(MailMessage::count())->toBe(1)
+        ->and(MailMessage::first()->subject)->toBeNull()
+        // Und die Rohfassung wurde gar nicht erst geholt.
+        ->and($ablage->dateien)->toHaveCount(0);
+});
+
+it('merkt sich trotzdem, WO die entfernte Nachricht liegt', function () {
+    // Ohne den Ort liefe derselbe Griff bei jedem Lauf erneut ins Leere.
+    $ablage = testAblage();
+    stichtagSetzen($ablage);
+
+    MailMessage::create(['email_account_id' => 1, 'message_id' => '<a@example.test>', 'purged_at' => now()]);
+    MailMessage::query()->update(['message_id' => '']);
+
+    (new Erfassung(
+        testPostfach([5 => ['message_id' => '<a@example.test>']]),
+        accountId: 1,
+        ablage: $ablage,
+    ))->ordner('INBOX');
+
+    expect(MailLocation::where('uid', '5')->exists())->toBeTrue();
+});
+
+it('behält die Prüfsumme, wenn die Message-ID beim Entfernen wegfällt', function () {
+    // Wuerde sie aus der leeren Zeichenkette neu gebildet, haetten ALLE
+    // entfernten Nachrichten dieselbe — und die zweite liefe in den
+    // eindeutigen Index.
+    $eine = MailMessage::create(['email_account_id' => 1, 'message_id' => '<a@example.test>']);
+    $andere = MailMessage::create(['email_account_id' => 1, 'message_id' => '<b@example.test>']);
+
+    $eine->update(['message_id' => '', 'purged_at' => now()]);
+    $andere->update(['message_id' => '', 'purged_at' => now()]);
+
+    expect($eine->fresh()->message_id_hash)->toBe(MailMessage::hash('<a@example.test>'))
+        ->and($andere->fresh()->message_id_hash)->toBe(MailMessage::hash('<b@example.test>'))
+        ->and($eine->fresh()->message_id_hash)->not->toBe($andere->fresh()->message_id_hash);
+});
+
+it('nimmt die Rohfassung wieder aus der Ablage', function () {
+    $ablage = testAblage();
+    $ablage->ablegen('mail/1/x.eml', 'ROH');
+
+    expect($ablage->entfernen('mail/1/x.eml'))->toBeTrue()
+        ->and($ablage->lesen('mail/1/x.eml'))->toBeNull()
+        // Zweimal entfernen kommt vor und ist kein Fehler.
+        ->and($ablage->entfernen('mail/1/x.eml'))->toBeFalse();
 });

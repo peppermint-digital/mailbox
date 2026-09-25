@@ -44,4 +44,22 @@ interface Ablage
      * Die Bytes zurueck — oder null, wenn dort nichts liegt.
      */
     public function lesen(string $pfad): ?string;
+
+    /**
+     * Die Rohfassung endgueltig entfernen.
+     *
+     * Die einzige Stelle im Paket, die etwas aus der Ablage NIMMT — und sie
+     * gibt es nur, weil es sie geben muss: Wer archiviert, braucht einen Weg
+     * zurueck, sonst ist die Ablage eine Einbahnstrasse, aus der auch das
+     * nicht mehr herauskommt, was nie hineingehoert haette.
+     *
+     * Sie ist bewusst ohne Umweg ueber einen Papierkorb gebaut. Ein
+     * Zwischenlager waere dieselbe Kopie an einem anderen Ort — und damit
+     * genau das, was jemand loswerden wollte.
+     *
+     * @return bool true, wenn dort etwas lag. Ein bereits leerer Pfad ist
+     *              kein Fehler: Zweimal entfernen kommt vor, und beim zweiten
+     *              Mal ist nichts mehr zu tun.
+     */
+    public function entfernen(string $pfad): bool;
 }

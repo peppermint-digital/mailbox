@@ -126,6 +126,11 @@ it('erkennt die Wurzel an der normalisierten Kennung, nicht an den spitzen Klamm
         {
             return null;
         }
+
+        public function entfernen(string $pfad): bool
+        {
+            return false;
+        }
     };
 
     $postfach = Mockery::mock(Peppermint\Mailbox\Contracts\Mailbox::class);

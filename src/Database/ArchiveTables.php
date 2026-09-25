@@ -190,6 +190,23 @@ class ArchiveTables
             $t->timestamp('last_seen_at')->nullable();
             $t->timestamp('missing_since')->nullable()->index();
 
+            /*
+             * Endgueltig entfernt — der Grabstein.
+             *
+             * Was bleibt, ist die Pruefsumme der Message-ID und dieser
+             * Zeitpunkt. Kein Betreff, kein Absender, kein Rumpf, keine
+             * Rohfassung. Aus einer Pruefsumme laesst sich nichts
+             * zurueckrechnen: Wer die Nachricht nicht ohnehin hat, erfaehrt
+             * daraus nichts.
+             *
+             * Warum ueberhaupt etwas bleibt: Die Nachricht liegt weiter im
+             * Postfach. Ohne diesen Merker sammelt der naechste Lauf sie
+             * wieder ein, und die Loeschung haelt bis zur naechsten vollen
+             * Stunde — das waere keine Loeschung, sondern eine Verzoegerung.
+             */
+            $t->timestamp('purged_at')->nullable()->index();
+            $t->string('purged_by', 64)->nullable();
+
             $t->timestamps();
 
             /*

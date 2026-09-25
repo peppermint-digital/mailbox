@@ -25,6 +25,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * es `missing_since` — eine Feststellung ueber das Postfach, keine ueber die
  * Ablage. Ein `SoftDeletes` daneben waere die Einladung, das eine fuer das
  * andere zu halten.
+ *
+ * Fuer das andere — das endgueltige Entfernen AUS der Ablage — gibt es
+ * `purged_at`. Was dann bleibt, ist die Pruefsumme, damit der naechste
+ * Erfassungslauf die Nachricht nicht wieder einsammelt; siehe
+ * {@see \Peppermint\Mailbox\Database\ArchiveTables}.
  */
 class MailMessage extends Model
 {
@@ -36,6 +41,7 @@ class MailMessage extends Model
         'captured_at' => 'datetime',
         'last_seen_at' => 'datetime',
         'missing_since' => 'datetime',
+        'purged_at' => 'datetime',
         'has_attachments' => 'boolean',
         'is_root' => 'boolean',
         'raw_complete' => 'boolean',
@@ -49,7 +55,18 @@ class MailMessage extends Model
     protected static function booted(): void
     {
         static::saving(function (self $nachricht): void {
-            $nachricht->message_id_hash = self::hash((string) $nachricht->message_id);
+            // Ohne Message-ID — leer oder NULL — bleibt die vorhandene
+            // Pruefsumme stehen.
+            //
+            // Das ist die Bedingung dafuer, dass ein Grabstein ueberhaupt
+            // funktioniert: Beim endgueltigen Entfernen faellt die Message-ID
+            // im Klartext weg, die Pruefsumme bleibt als Merker. Wuerde sie
+            // hier aus einer leeren Zeichenkette neu gebildet, haetten ALLE
+            // entfernten Nachrichten dieselbe — und die zweite liefe in den
+            // eindeutigen Index.
+            if (filled($nachricht->message_id)) {
+                $nachricht->message_id_hash = self::hash((string) $nachricht->message_id);
+            }
         });
     }
 

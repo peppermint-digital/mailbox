@@ -26,6 +26,16 @@ class Ergebnis
 
     public int $entwischt = 0;
 
+    /**
+     * Endgueltig entfernt und deshalb NICHT wieder aufgenommen.
+     *
+     * Eine eigene Zahl und kein „uebersprungen": Dass eine Nachricht aus der
+     * Ablage entfernt wurde und trotzdem noch im Postfach liegt, ist ein
+     * Zustand, den man sehen koennen muss — sonst sieht der Lauf aus, als
+     * haette er sie schlicht nicht gefunden.
+     */
+    public int $entfernt = 0;
+
     public int $offen = 0;
 
     /** @var list<array{uid: string, grund: string}> */
@@ -56,6 +66,12 @@ class Ergebnis
         $e->ordnerFehlt = true;
 
         return $e;
+    }
+
+    /** Sie ist endgueltig entfernt — der Ort wird vermerkt, der Inhalt nicht geholt. */
+    public function nichtWiederAufnehmen(): void
+    {
+        $this->entfernt++;
     }
 
     /** Der Ordner sah aus wie beim letzten Mal — nicht geoeffnet. */
@@ -137,6 +153,7 @@ class Ergebnis
             'vanished' => $this->verschwunden,
             'left_mailbox' => $this->ausDemPostfach,
             'slipped_away' => $this->entwischt,
+            'purged_skipped' => $this->entfernt,
             'pending' => $this->offen,
             'errors' => $this->fehler,
             'incomplete' => $this->unvollstaendig,
