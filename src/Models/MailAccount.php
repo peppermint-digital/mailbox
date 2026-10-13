@@ -211,7 +211,17 @@ class MailAccount extends Model
     public function sichtbarFuer(?string $email): bool
     {
         if (! $this->istPersoenlich()) {
-            return true;
+            $leseliste = $this->leseliste();
+
+            // Keine Leseliste heisst „fuer alle" — das war das Verhalten, bevor
+            // es Leselisten gab, und eine aeltere Gegenstelle schickt das Feld
+            // gar nicht. Die umgekehrte Lesart haette mit dem Einspielen jedes
+            // Gruppenpostfach verschwinden lassen.
+            if ($leseliste === []) {
+                return true;
+            }
+
+            return $email !== null && in_array(mb_strtolower($email), $leseliste, true);
         }
 
         $besitzer = $this->field('owner_email');
@@ -221,6 +231,28 @@ class MailAccount extends Model
         }
 
         return $email !== null && mb_strtolower($email) === mb_strtolower((string) $besitzer);
+    }
+
+    /**
+     * Die Adressen, die in dieses Gruppenpostfach hineinsehen duerfen.
+     *
+     * Kleingeschrieben, damit der Vergleich nicht an der Schreibweise haengt.
+     * Leer heisst „fuer alle" — siehe {@see sichtbarFuer()}.
+     *
+     * @return list<string>
+     */
+    private function leseliste(): array
+    {
+        $rohe = $this->field('reader_emails');
+
+        if (! is_array($rohe)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(
+            fn ($adresse): string => mb_strtolower(trim((string) $adresse)),
+            $rohe
+        ), fn (string $adresse): bool => $adresse !== ''));
     }
 
     public function usesOAuth(): bool
