@@ -83,6 +83,8 @@ trait HandlesSending
             // Empfaenger einen neuen Strang.
             'in_reply_to' => ['nullable', 'string', 'max:998'],
             'references' => ['nullable', 'string'],
+            'attachments' => ['nullable', 'array'],
+            'attachments.*' => ['file'],
         ]);
 
         $konto = $this->accountFor($account);
@@ -99,6 +101,7 @@ trait HandlesSending
             cc: array_values($daten['cc'] ?? []),
             bcc: array_values($daten['bcc'] ?? []),
             text: $daten['body_text'] ?? null,
+            attachments: $this->hochgeladene($request),
             headers: $kopfzeilen,
         );
 
@@ -232,7 +235,19 @@ trait HandlesSending
      *
      * @param  array<string, mixed>  $daten
      */
-    private function versenden(MailAccount $konto, Outgoing $nachricht, array $daten): JsonResponse
+    /**
+     * Der gemeinsame Schluss von `send()` und `forward()`.
+     *
+     * Bauen, hinausgeben, Kopie in „Gesendet", dann das Produkt benachrichtigen
+     * — in dieser Reihenfolge, und ab dem Hinausgeben darf nichts mehr als
+     * Fehlschlag beim Absender ankommen.
+     *
+     * Ueberschreibbar, weil hier die eine Stelle ist, an der eine Nachricht
+     * dieses Pakets wirklich hinausgeht: Wer jede ausgehende Mail mitschreiben
+     * oder um eine Blindkopie ins Archiv ergaenzen will, setzt hier an statt an
+     * zwei Endpunkten.
+     */
+    protected function versenden(MailAccount $konto, Outgoing $nachricht, array $daten): JsonResponse
     {
         $mailer = new Mailer;
         $mime = $mailer->build($konto, $nachricht);

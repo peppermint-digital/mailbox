@@ -203,3 +203,101 @@ it('lässt ein Produkt mit eigener Ablage seine Dateien selbst beisteuern', func
     expect($antwort->getStatusCode())->toBe(502)
         ->and($controller->geholt)->toBe([]);
 });
+
+/**
+ * Anhänge dürfen nicht still verloren gehen.
+ *
+ * Bis zum 14.10.2026 nahm `send()` keine Dateien an. Das Antwortfeld des
+ * Pakets bietet sie aber an: Wer eine Datei anhängte und auf „Senden" drückte,
+ * bekam „gesendet" zu sehen — und der Empfänger eine Mail ohne Datei.
+ *
+ * Dieser Controller schaut auf die fertige Nachricht, statt auf die Antwort:
+ * Der Versand scheitert hier ohnehin, geprüft wird, was VORHER gebaut wurde.
+ */
+class TestControllerDerMitliest
+{
+    use HandlesSending;
+
+    public ?Outgoing $nachricht = null;
+
+    public function __construct(private readonly MailAccount $konto) {}
+
+    protected function accountFor(int $account): MailAccount
+    {
+        return $this->konto;
+    }
+
+    protected function originalAttachments(MailAccount $konto, array $daten): array
+    {
+        return [['contents' => 'PDF', 'filename' => 'original.pdf', 'mime' => 'application/pdf']];
+    }
+
+    protected function versenden(MailAccount $konto, Outgoing $nachricht, array $daten): \Illuminate\Http\JsonResponse
+    {
+        $this->nachricht = $nachricht;
+
+        return response()->json(['success' => true]);
+    }
+}
+
+function mitDatei(array $daten): Request
+{
+    $pfad = tempnam(sys_get_temp_dir(), 'anhang').'.txt';
+    file_put_contents($pfad, 'Inhalt');
+
+    $r = Request::create('/', 'POST', $daten, [], [
+        'attachments' => [new \Illuminate\Http\UploadedFile($pfad, 'angebot.txt', 'text/plain', null, true)],
+    ]);
+    $r->headers->set('Accept', 'application/json');
+
+    return $r;
+}
+
+it('nimmt beim Senden eine angehängte Datei mit', function () {
+    $controller = new TestControllerDerMitliest(versandKonto());
+
+    $controller->send(mitDatei([
+        'to' => [['email' => 'kunde@example.test']],
+        'subject' => 'Angebot',
+        'body_html' => '<p>Anbei</p>',
+    ]), 1);
+
+    expect($controller->nachricht?->attachments)->toHaveCount(1)
+        ->and($controller->nachricht->attachments[0]['filename'])->toBe('angebot.txt');
+});
+
+it('nimmt beim Weiterleiten BEIDES mit: die alten Dateien und die neu angehängte', function () {
+    // Der Fall, der in der Praxis vorkommt: „hier die Rechnung, dazu meine
+    // Notiz". Fällt eine der beiden Listen weg, merkt es niemand.
+    $controller = new TestControllerDerMitliest(versandKonto());
+
+    $controller->forward(mitDatei([
+        'to' => [['email' => 'kollege@example.test']],
+        'subject' => 'Fwd: Rechnung',
+        'body_html' => '<p>Zur Kenntnis</p>',
+        'source_type' => 'imap',
+        'source_folder' => 'INBOX',
+        'source_uid' => '42',
+    ]), 1);
+
+    expect($controller->nachricht?->attachments)->toHaveCount(1)
+        ->and($controller->nachricht->attachments[0]['filename'])->toBe('angebot.txt')
+        ->and($controller->nachricht->rawAttachments)->toHaveCount(1)
+        ->and($controller->nachricht->rawAttachments[0]['filename'])->toBe('original.pdf');
+});
+
+it('hängt das Zitat an den Rumpf, statt es zu verlieren', function () {
+    $controller = new TestControllerDerMitliest(versandKonto());
+
+    $controller->forward(versandAnfrage([
+        'to' => [['email' => 'kollege@example.test']],
+        'subject' => 'Fwd: Rechnung',
+        'body_html' => '<p>Zur Kenntnis</p>',
+        'quoted_html' => '<blockquote>Original</blockquote>',
+        'source_type' => 'imap',
+        'source_folder' => 'INBOX',
+        'source_uid' => '42',
+    ]), 1);
+
+    expect($controller->nachricht?->html)->toBe('<p>Zur Kenntnis</p><blockquote>Original</blockquote>');
+});
