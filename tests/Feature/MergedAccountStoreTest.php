@@ -271,3 +271,55 @@ it('laesst die Gueltigkeit stehen, wenn die Mitte das Token gar nicht kennt', fu
     expect($konto->getAttribute('oauth_access_token'))->toBe('eigenes-token')
         ->and((string) $konto->getAttribute('oauth_token_expires_at'))->toContain('2030');
 });
+
+it('nimmt die Leseliste aus der Mitte — sonst gilt sie fuer dieses Produkt nicht', function () {
+    // Ein Produkt mit eigener Tabelle soll die zentrale Entscheidung „wer darf
+    // hineinsehen" anwenden koennen. Ohne sie saehe `sichtbarFuer()` weder
+    // Besitzer noch Leser und liesse jedes Gruppenpostfach fuer jeden offen —
+    // genau die Luecke, die Leselisten schliessen sollen.
+    $speicher = new MergedAccountStore(
+        speicher([lokalesKonto(['user_id' => null])]),
+        speicher([MailAccount::fromRemote([
+            'email' => 'department@example.test',
+            'owner_email' => null,
+            'reader_emails' => ['chris@example.test', 'volker@example.test'],
+        ])]),
+    );
+
+    $konto = $speicher->all()->first();
+
+    expect($konto->sichtbarFuer('chris@example.test'))->toBeTrue()
+        ->and($konto->sichtbarFuer('volker@example.test'))->toBeTrue()
+        ->and($konto->sichtbarFuer('jemand.anderes@example.test'))->toBeFalse();
+});
+
+it('nimmt den Besitzer aus der Mitte', function () {
+    $speicher = new MergedAccountStore(
+        speicher([lokalesKonto(['user_id' => 42])]),
+        speicher([MailAccount::fromRemote([
+            'email' => 'department@example.test',
+            'owner_email' => 'niklas@example.test',
+        ])]),
+    );
+
+    $konto = $speicher->all()->first();
+
+    expect($konto->sichtbarFuer('niklas@example.test'))->toBeTrue()
+        ->and($konto->sichtbarFuer('fremd@example.test'))->toBeFalse();
+});
+
+it('nimmt einem Produkt seine eigene Zuordnung nicht weg, wenn die Mitte keine fuehrt', function () {
+    // Dieselbe Luecken-Regel wie beim Kern: Eine Mitte ohne Leseliste sagt
+    // nichts — sie widerspricht nicht.
+    $speicher = new MergedAccountStore(
+        speicher([lokalesKonto(['user_id' => null, 'reader_emails' => ['chris@example.test']])]),
+        speicher([MailAccount::fromRemote([
+            'email' => 'department@example.test',
+        ])]),
+    );
+
+    $konto = $speicher->all()->first();
+
+    expect($konto->sichtbarFuer('chris@example.test'))->toBeTrue()
+        ->and($konto->sichtbarFuer('fremd@example.test'))->toBeFalse();
+});

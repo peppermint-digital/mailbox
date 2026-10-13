@@ -67,6 +67,28 @@ class MergedAccountStore implements AccountStore
     ];
 
     /**
+     * Wer das Postfach sehen darf — und das ist KEINE Verbindungsangabe.
+     *
+     * Bewusst neben {@see CORE} und nicht darin: Dort steht, was ein Client
+     * zum Verbinden braucht, und die Begruendung dieser Liste ist gerade, dass
+     * nichts ueber das VERHALTEN eines Produkts mitreist. Sichtbarkeit ist
+     * aber auch kein Produktverhalten — sie ist eine Entscheidung ueber
+     * Menschen, und die faellt an einer Stelle fuer alle Systeme.
+     *
+     * Ohne das hier haette ein Produkt mit eigener Tabelle die Leseliste der
+     * Mitte nicht anwenden koennen: `sichtbarFuer()` saehe weder Besitzer noch
+     * Leser und liesse jedes Gruppenpostfach fuer jeden offen — genau die
+     * Luecke, die die Leselisten schliessen sollen.
+     *
+     * Dieselbe Luecken-Regel wie bei CORE: Ein zentral leeres Feld ist keine
+     * Aussage. Eine Mitte ohne Leseliste nimmt einem Produkt also nicht die
+     * eigene Zuordnung weg.
+     *
+     * @var list<string>
+     */
+    public const SICHTBARKEIT = ['owner_email', 'reader_emails'];
+
+    /**
      * Fields that are one value in two columns — they travel together or not at all.
      *
      * A token and the moment it stops working are not two facts. Under the
@@ -160,7 +182,7 @@ class MergedAccountStore implements AccountStore
         $werte = [];
         $gepaart = $this->pairedFields($quelle);
 
-        foreach (self::CORE as $feld) {
+        foreach ([...self::CORE, ...self::SICHTBARKEIT] as $feld) {
             $wert = $quelle->field($feld);
 
             if ($wert === null && ! in_array($feld, $gepaart, true)) {
