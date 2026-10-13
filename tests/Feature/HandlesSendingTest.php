@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Peppermint\Mailbox\Http\HandlesSending;
 use Peppermint\Mailbox\Models\MailAccount;
+use Peppermint\Mailbox\Sending\Outgoing;
 
 /**
  * Der Endpunkt zum Senden (22.09.2026).
@@ -88,4 +89,117 @@ it('weist eine unbrauchbare Adresse ab, bevor irgendetwas hinausgeht', function 
         'subject' => 'x',
         'body_html' => '<p>x</p>',
     ]), 1))->toThrow(Illuminate\Validation\ValidationException::class);
+});
+
+/**
+ * Weiterleiten (#7585).
+ *
+ * Der Unterschied zum Senden ist genau einer: Die Anhänge der
+ * Ursprungsnachricht müssen mit. Fehlt dieser Schritt, geht trotzdem eine Mail
+ * hinaus — nur ohne die Rechnung, von der sie handelt. Niemand sieht das, bis
+ * der Empfänger nachfragt.
+ */
+class TestControllerFuerWeiterleitung
+{
+    use HandlesSending;
+
+    /** @var list<array{contents: string, filename: string, mime?: string|null}> */
+    public array $geholt = [];
+
+    public ?Outgoing $gebaut = null;
+
+    public function __construct(
+        private readonly MailAccount $konto,
+        private readonly array $ausDemPostfach = [],
+        private readonly bool $postfachKaputt = false,
+    ) {}
+
+    protected function accountFor(int $account): MailAccount
+    {
+        return $this->konto;
+    }
+
+    protected function originalAttachments(MailAccount $konto, array $daten): array
+    {
+        if ($this->postfachKaputt) {
+            throw new RuntimeException('Postfach antwortet nicht');
+        }
+
+        $this->geholt = $this->ausDemPostfach;
+
+        return $this->ausDemPostfach;
+    }
+}
+
+function weiterleitAnfrage(array $daten): Request
+{
+    $r = Request::create('/', 'POST', $daten);
+    $r->headers->set('Accept', 'application/json');
+
+    return $r;
+}
+
+it('holt die Anhänge der Ursprungsnachricht und schickt sie mit', function () {
+    $controller = new TestControllerFuerWeiterleitung(versandKonto(), [
+        ['contents' => '%PDF-1.4 …', 'filename' => 'rechnung.pdf', 'mime' => 'application/pdf'],
+    ]);
+
+    // Der Versand scheitert (Ziel gibt es nicht) — gemessen wird, was VORHER
+    // zusammengebaut wurde.
+    $antwort = $controller->forward(weiterleitAnfrage([
+        'to' => [['email' => 'kollege@example.test']],
+        'subject' => 'Fwd: Rechnung',
+        'body_html' => '<p>Zur Kenntnis</p>',
+        'quoted_html' => '<blockquote>Original</blockquote>',
+        'source_type' => 'imap',
+        'source_folder' => 'INBOX',
+        'source_uid' => '42',
+    ]), 1);
+
+    expect($controller->geholt)->toHaveCount(1)
+        ->and($controller->geholt[0]['filename'])->toBe('rechnung.pdf')
+        ->and($antwort->getStatusCode())->toBe(502);
+});
+
+it('scheitert hörbar, wenn die Anhänge nicht zu holen sind', function () {
+    // Die gefährliche Alternative wäre, ohne sie zu senden: Der Absender hält
+    // die Datei dann für zugestellt.
+    $antwort = (new TestControllerFuerWeiterleitung(versandKonto(), [], true))->forward(weiterleitAnfrage([
+        'to' => [['email' => 'kollege@example.test']],
+        'subject' => 'Fwd: Rechnung',
+        'body_html' => '<p>x</p>',
+        'source_type' => 'imap',
+        'source_folder' => 'INBOX',
+        'source_uid' => '42',
+    ]), 1);
+
+    expect($antwort->getStatusCode())->toBe(502)
+        ->and($antwort->getData(true)['success'])->toBeFalse()
+        ->and($antwort->getData(true)['message'])->toContain('Anhänge');
+});
+
+it('verlangt Ordner und Kennung, wenn die Quelle ein Postfach ist', function () {
+    expect(fn () => (new TestControllerFuerWeiterleitung(versandKonto()))->forward(weiterleitAnfrage([
+        'to' => [['email' => 'kollege@example.test']],
+        'subject' => 'Fwd: x',
+        'source_type' => 'imap',
+    ]), 1))->toThrow(Illuminate\Validation\ValidationException::class);
+});
+
+it('lässt ein Produkt mit eigener Ablage seine Dateien selbst beisteuern', function () {
+    // `source_type` ist nicht `imap` — das Paket holt dann nichts und
+    // überlässt es dem Produkt. Ohne diese Tür müsste ein Produkt mit Archiv
+    // den ganzen Endpunkt nachbauen.
+    $controller = new TestControllerFuerWeiterleitung(versandKonto(), []);
+
+    $antwort = $controller->forward(weiterleitAnfrage([
+        'to' => [['email' => 'kollege@example.test']],
+        'subject' => 'Fwd: aus der Ablage',
+        'body_html' => '<p>x</p>',
+        'source_type' => 'stored',
+        'source_email_id' => '7',
+    ]), 1);
+
+    expect($antwort->getStatusCode())->toBe(502)
+        ->and($controller->geholt)->toBe([]);
 });

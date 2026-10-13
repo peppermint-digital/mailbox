@@ -96,7 +96,7 @@ list; no list means everyone.
 ```php
 class MailboxController extends Controller
 {
-    use HandlesSending;          // POST {account}/send
+    use HandlesSending;          // POST {account}/send + {account}/forward
     use HandlesConversations;    // the thread behind a message
     use HandlesMailboxActions;   // seen · flagged · move · delete · bulk
     use HandlesAssignments;      // who is working on this message
@@ -108,6 +108,19 @@ class MailboxController extends Controller
 
 Route them under `mailbox/{account}/…`. The three existing products use the same
 names; copying them means a reader recognises the system.
+
+**Forwarding** comes with `HandlesSending` as a second route, and it is the one
+place where a product may need to say something. The payload carries
+`source_type`:
+
+| `source_type` | Who fetches the original attachments |
+|---|---|
+| `imap` | the package, via `Mailboxes::for($account)` — and that covers JMAP accounts too; the word means "from the mail server", not "over IMAP" |
+| anything else | the product, by overriding `originalAttachments()` — a product with its own archive knows where the bytes are, the package does not |
+
+If the attachments cannot be fetched, the endpoint answers **502 and sends
+nothing**. The alternative — forwarding the text without the invoice it is
+about — looks like success to the sender and is noticed by the recipient.
 
 ### 5. Mount the browser
 
@@ -148,10 +161,6 @@ labels and the composer. All four products do it that way; see
 
 - **The editor** (rich text vs. plain).
 - **The toolbar** next to a message — each product's own verbs.
-- **Forwarding**: still product-side, because it needs an endpoint that re-sends
-  the original attachments. That belongs in this package and is the next piece
-  of work; until then a product either has its own or sends forwards through its
-  compose page.
 - **Assignments**: three products use `MailAssignmentPicker` from the package,
   the Manager still has its own. Same feature, two implementations — being
   retired.

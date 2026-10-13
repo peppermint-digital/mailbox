@@ -4,6 +4,7 @@ namespace Peppermint\Mailbox\Http;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Peppermint\Mailbox\Mailboxes;
 use Peppermint\Mailbox\Models\MailAccount;
 use Peppermint\Mailbox\Sending\Mailer;
 use Peppermint\Mailbox\Sending\Outgoing;
@@ -21,6 +22,18 @@ use Peppermint\Mailbox\Sending\Outgoing;
  * Optional `afterSending()` — die Buchfuehrung. Wer die gesendete Nachricht
  * in eigenen Tabellen ablegen will, tut es dort. Das Paket legt nichts an,
  * was es nicht selbst liest.
+ *
+ * ## Weiterleiten ist Senden mit fremden Anhaengen
+ *
+ * {@see forward()} unterscheidet sich vom Senden an genau einer Stelle: Die
+ * Anhaenge der Ursprungsnachricht muessen erneut aus dem Postfach geholt und
+ * mitgeschickt werden. Ohne sie kommt beim Empfaenger ein Text an, in dem von
+ * einer Rechnung die Rede ist, die nicht dabei ist — und das faellt erst dem
+ * Empfaenger auf.
+ *
+ * Der Vertrag hat die Methode dafuer laengst: `Mailbox::attachments()` holt
+ * alle Dateien einer Nachricht in einem Zug und laesst Inline-Bilder weg, weil
+ * die im Rumpf stecken.
  *
  * ## Die Kopie in den Gesendet-Ordner darf nie den Versand kippen
  *
@@ -89,6 +102,138 @@ trait HandlesSending
             headers: $kopfzeilen,
         );
 
+        return $this->versenden($konto, $nachricht, $daten);
+    }
+
+    /**
+     * Eine Nachricht weiterleiten — mit ihren urspruenglichen Anhaengen.
+     *
+     * Die Nutzlast kommt als `multipart/form-data`, weil der Absender eigene
+     * Dateien dazulegen kann. `quoted_html` ist die zitierte Ursprungsnachricht,
+     * die der Verfasser nur als Vorschau sieht: Ohne sie bekaeme der Empfaenger
+     * den Kommentar ohne das, was kommentiert wird.
+     */
+    public function forward(Request $request, int $account): JsonResponse
+    {
+        $daten = $request->validate([
+            'to' => ['required', 'array', 'min:1'],
+            'to.*.email' => ['required', 'email'],
+            'to.*.name' => ['nullable', 'string', 'max:255'],
+            'cc' => ['nullable', 'array'],
+            'cc.*.email' => ['required', 'email'],
+            'cc.*.name' => ['nullable', 'string', 'max:255'],
+            'bcc' => ['nullable', 'array'],
+            'bcc.*.email' => ['required', 'email'],
+            'bcc.*.name' => ['nullable', 'string', 'max:255'],
+            'subject' => ['required', 'string', 'max:500'],
+            'body_html' => ['nullable', 'string'],
+            'quoted_html' => ['nullable', 'string'],
+            'attachments' => ['nullable', 'array'],
+            'attachments.*' => ['file'],
+            // Woher die Ursprungsnachricht stammt. `imap` heisst hier „vom
+            // Mailserver" und gilt auch fuer JMAP-Konten: `Mailboxes::for()`
+            // waehlt den Weg, der Aufrufer muss ihn nicht kennen. Alles andere
+            // ist die Ablage eines Produkts, und die kennt nur das Produkt
+            // (siehe originalAttachments()).
+            'source_type' => ['required', 'string'],
+            'source_folder' => ['required_if:source_type,imap', 'nullable', 'string'],
+            'source_uid' => ['required_if:source_type,imap', 'nullable'],
+        ]);
+
+        $konto = $this->accountFor($account);
+
+        try {
+            $mitgeschickt = $this->originalAttachments($konto, $daten);
+        } catch (\Throwable $e) {
+            report($e);
+
+            // Lieber hoerbar scheitern als eine Weiterleitung OHNE die Dateien,
+            // um die es geht: Der Absender haelt sie sonst fuer zugestellt, und
+            // auffallen wuerde es erst dem Empfaenger.
+            return response()->json([
+                'success' => false,
+                'message' => 'Die Anhänge der Ursprungsnachricht waren nicht zu holen: '.$e->getMessage(),
+            ], 502);
+        }
+
+        $nachricht = new Outgoing(
+            subject: $daten['subject'],
+            html: ($daten['body_html'] ?? '').($daten['quoted_html'] ?? ''),
+            to: array_values($daten['to']),
+            cc: array_values($daten['cc'] ?? []),
+            bcc: array_values($daten['bcc'] ?? []),
+            attachments: $this->hochgeladene($request),
+            rawAttachments: $mitgeschickt,
+        );
+
+        return $this->versenden($konto, $nachricht, $daten);
+    }
+
+    /**
+     * Die Anhaenge der Ursprungsnachricht, mit Bytes.
+     *
+     * Fuer `source_type = imap` holt sie das Paket selbst — `attachments()`
+     * des Vertrags ist genau dafuer gebaut und laesst Inline-Bilder weg. Ein
+     * Produkt mit eigener Ablage ueberschreibt das und liefert sie von dort;
+     * die Form bleibt dieselbe.
+     *
+     * @param  array<string, mixed>  $daten
+     * @return list<array{contents: string, filename: string, mime?: string|null}>
+     */
+    protected function originalAttachments(MailAccount $konto, array $daten): array
+    {
+        if (($daten['source_type'] ?? null) !== 'imap') {
+            return [];
+        }
+
+        $dateien = Mailboxes::for($konto)->attachments(
+            (string) $daten['source_folder'],
+            $daten['source_uid'],
+        );
+
+        return array_map(static fn (array $datei): array => [
+            'contents' => $datei['contents'],
+            'filename' => $datei['filename'],
+            'mime' => $datei['mime_type'] ?? null,
+        ], $dateien);
+    }
+
+    /**
+     * Was der Absender selbst dazugelegt hat.
+     *
+     * @return list<array{path: string, filename: string, mime?: string|null}>
+     */
+    private function hochgeladene(Request $request): array
+    {
+        $dateien = [];
+
+        foreach ($request->file('attachments', []) ?? [] as $datei) {
+            if (! $datei) {
+                continue;
+            }
+
+            $dateien[] = [
+                'path' => $datei->getRealPath(),
+                'filename' => $datei->getClientOriginalName(),
+                'mime' => $datei->getMimeType(),
+            ];
+        }
+
+        return $dateien;
+    }
+
+    /**
+     * Der gemeinsame Teil von Senden und Weiterleiten.
+     *
+     * Zusammengelegt, weil sich die beiden nur in dem unterscheiden, was VOR
+     * dem Versand passiert. Zwei Abschriften hiessen zwei Stellen, an denen
+     * die Regel „nichts nach dem Versand darf den Versand kippen" vergessen
+     * werden kann.
+     *
+     * @param  array<string, mixed>  $daten
+     */
+    private function versenden(MailAccount $konto, Outgoing $nachricht, array $daten): JsonResponse
+    {
         $mailer = new Mailer;
         $mime = $mailer->build($konto, $nachricht);
 
