@@ -38,9 +38,18 @@ exists.
 
 ```php
 // config/mailbox.php
-'store' => 'local',   // own table (default)
-'store' => 'brain',   // read centrally from AI Brain, cached locally
+'store' => 'brain',   // read centrally from AI Brain, cached locally — the norm
+'store' => 'local',   // own table, for an installation WITHOUT an AI Brain
 ```
+
+Decided on 2026-10-13, after the fourth product moved over: where there is an AI
+Brain, every product reads from it. `local` is for standing alone — open source,
+or an installation that has no centre. A third mode existed for a product that
+had carried its own mailbox table for years (`merged`); it is a transitional
+state, not a target, and no product is on it any more.
+
+**Attaching a new system?** See [docs/INTEGRATION.md](docs/INTEGRATION.md) — it
+has the picture and the six steps.
 
 `brain` requires `peppermint/ai-brain-bridge`. When it is missing, the package
 falls back to the local store **and logs a warning** — silently falling back
