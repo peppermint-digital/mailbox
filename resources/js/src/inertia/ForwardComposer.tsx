@@ -43,7 +43,12 @@ export interface ForwardComposerLabels {
 
 export interface ForwardEndpoints {
     forward: string;
-    draft: string;
+    /**
+     * Where a draft goes. Optional, because not every product keeps drafts —
+     * and a "save draft" button that can only answer 404 is worse than no
+     * button: somebody closes the window trusting it.
+     */
+    draft?: string;
 }
 
 export interface ForwardComposerProps {
@@ -179,6 +184,10 @@ export function ForwardComposer({
     };
 
     const saveDraft = async () => {
+        if (!endpoints.draft) {
+            return;
+        }
+
         setDraftSaving(true);
         setErrorMessage(null);
 
@@ -219,7 +228,7 @@ export function ForwardComposer({
             signatureAccountId={account.id}
             allowBcc
             allowAttachments
-            allowDraft
+            allowDraft={Boolean(endpoints.draft)}
             draftSaving={draftSaving}
             sending={sending}
             errorMessage={errorMessage}
