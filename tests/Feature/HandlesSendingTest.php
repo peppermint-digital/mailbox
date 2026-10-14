@@ -301,3 +301,31 @@ it('hängt das Zitat an den Rumpf, statt es zu verlieren', function () {
 
     expect($controller->nachricht?->html)->toBe('<p>Zur Kenntnis</p><blockquote>Original</blockquote>');
 });
+
+it('haengt das Zitat auch beim Senden an, nicht nur beim Weiterleiten', function () {
+    // Sonst baut jedes Produkt dieselbe Verkettung nach — und vier Nachbauten
+    // sind vier Gelegenheiten, Text und Zitat zu vertauschen.
+    $controller = new TestControllerDerMitliest(versandKonto());
+
+    $controller->send(versandAnfrage([
+        'to' => [['email' => 'kunde@example.test']],
+        'subject' => 'Re: Angebot',
+        'body_html' => '<p>Gern</p>',
+        'quoted_html' => '<blockquote>Ihre Frage</blockquote>',
+    ]), 1);
+
+    expect($controller->nachricht?->html)->toBe('<p>Gern</p><blockquote>Ihre Frage</blockquote>');
+});
+
+it('laesst den Rumpf unveraendert, wenn kein Zitat mitkommt', function () {
+    // Die Gegenprobe: Wer schon selbst verkettet hat, bekommt nichts doppelt.
+    $controller = new TestControllerDerMitliest(versandKonto());
+
+    $controller->send(versandAnfrage([
+        'to' => [['email' => 'kunde@example.test']],
+        'subject' => 'Re: Angebot',
+        'body_html' => '<p>Gern</p><blockquote>Ihre Frage</blockquote>',
+    ]), 1);
+
+    expect($controller->nachricht?->html)->toBe('<p>Gern</p><blockquote>Ihre Frage</blockquote>');
+});

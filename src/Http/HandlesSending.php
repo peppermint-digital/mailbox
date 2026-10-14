@@ -79,6 +79,16 @@ trait HandlesSending
             'subject' => ['required', 'string', 'max:500'],
             'body_html' => ['required', 'string'],
             'body_text' => ['nullable', 'string'],
+
+            /*
+             * Das Zitat der Ursprungsnachricht, getrennt vom eigenen Text.
+             * Optional — wer es schon selbst angehaengt hat, schickt es nicht
+             * mit. Es steht hier, weil {@see forward()} es auch nimmt: Ohne
+             * das Feld baut jedes Produkt dieselbe Verkettung nach, und vier
+             * Nachbauten derselben Zeile sind vier Gelegenheiten, die
+             * Reihenfolge zu vertauschen.
+             */
+            'quoted_html' => ['nullable', 'string'],
             // Antworten: Ohne diese beiden beginnt die Nachricht beim
             // Empfaenger einen neuen Strang.
             'in_reply_to' => ['nullable', 'string', 'max:998'],
@@ -96,7 +106,7 @@ trait HandlesSending
 
         $nachricht = new Outgoing(
             subject: $daten['subject'],
-            html: $daten['body_html'],
+            html: $daten['body_html'].($daten['quoted_html'] ?? ''),
             to: array_values($daten['to']),
             cc: array_values($daten['cc'] ?? []),
             bcc: array_values($daten['bcc'] ?? []),
