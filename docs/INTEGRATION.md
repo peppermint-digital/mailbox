@@ -129,8 +129,19 @@ The product supplies three things the package deliberately does not have:
 | The product brings | Why not in the package |
 |---|---|
 | **Words** (German here) | A package that ships sentences ships a language. Code is English, the interface is the product's. |
-| **An editor** | One product wants rich text, another a plain field. |
 | **Its own toolbar** | "Create a ticket", "take over as a receipt", "assign a task" — that is the product, not the mailbox. |
+
+The **editor** used to be on that list. It is not any more (14.10.2026): bold is
+bold in all four products, and a reply that looked different depending on which
+window you opened was a defect, not a liberty. Pass `RichTextEditor`; where a
+product can do something extra *with* the text — an assistant that rephrases,
+dictation — hang it in `extraActions` and its feedback in `statusBar`.
+
+Tiptap is a **peer** dependency. A product that already uses Tiptap would
+otherwise end up with two copies, and TypeScript rejects one copy's extensions
+for the other copy's editor even though the types are identical. Keep the whole
+`@tiptap/*` family on one version — they pin their siblings exactly, so a mixed
+set fails to install at all.
 
 ```tsx
 <MailboxBrowser
@@ -159,7 +170,6 @@ labels and the composer. All four products do it that way; see
 
 ## What is deliberately NOT uniform
 
-- **The editor** (rich text vs. plain).
 - **The toolbar** next to a message — each product's own verbs.
 - **How assignments are *picked***: three products use `MailAssignmentPicker`
   from the package — a badge with a dropdown. The Manager assigns by
