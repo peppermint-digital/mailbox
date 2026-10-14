@@ -161,9 +161,12 @@ labels and the composer. All four products do it that way; see
 
 - **The editor** (rich text vs. plain).
 - **The toolbar** next to a message — each product's own verbs.
-- **Assignments**: three products use `MailAssignmentPicker` from the package,
-  the Manager still has its own. Same feature, two implementations — being
-  retired.
+- **How assignments are *picked***: three products use `MailAssignmentPicker`
+  from the package — a badge with a dropdown. The Manager assigns by
+  right-clicking a row. The *backend* is shared (`HandlesAssignments`, same
+  columns, the Manager just points `mailbox.tables.assignments` at its existing
+  table), so this is a difference in interaction, not in data. Changing it
+  changes a daily habit; that is a decision, not a cleanup.
 
 ## The traps that cost us time
 
