@@ -128,6 +128,13 @@ export interface RichTextEditorProps {
      * Receives the editor so a button can act on the selection.
      */
     extraActions?: (editor: Editor) => React.ReactNode;
+    /**
+     * A strip between toolbar and text, for what the product's own buttons
+     * have to say: "recording…", "transcribing…", an error from the
+     * assistant. Inside the border on purpose — a banner floating above the
+     * box reads as belonging to the page, not to the field being typed in.
+     */
+    statusBar?: React.ReactNode;
 }
 
 interface ToolbarButtonProps {
@@ -379,6 +386,7 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
             autofocus = false,
             onImageUpload,
             extraActions,
+            statusBar,
         },
         ref,
     ) => {
@@ -588,6 +596,7 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
                         extraActions={extraActions}
                     />
                 )}
+                {statusBar}
                 <EditorContent
                     editor={editor}
                     className="overflow-y-auto px-4 py-3"
