@@ -55,7 +55,8 @@ Three sentences that the picture is trying to say:
    id**.
 3. **Nobody re-implements the browser.** List, folders, message view, reply,
    conversation, address book, bulk actions and the assistant come from this
-   package. The product supplies words, an editor, and its own toolbar.
+   package — the editor included. The product supplies words and its own
+   toolbar.
 
 ## What a new system wires
 
