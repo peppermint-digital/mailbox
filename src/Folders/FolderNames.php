@@ -78,6 +78,54 @@ class FolderNames
     }
 
     /**
+     * Der beste Namenstreffer unter mehreren — unabhaengig von der Reihenfolge.
+     *
+     * ## Warum es diese Methode gibt
+     *
+     * Beide Uebertragungswege hatten dieselbe Zeile: `if ($treffer === null &&
+     * looksLike(...)) { $treffer = $pfad; }` — der ZUERST gelieferte Treffer
+     * gewann. Da `looksLike` per Teilzeichenkette vergleicht, passt auf
+     * „Archive" auch `Archives/2024`. Welcher Ordner gewinnt, haengt damit
+     * allein an der Reihenfolge, in der der Server seine Ordner nennt — und
+     * die ist nicht zugesichert.
+     *
+     * Am 14.10.2026 an info@crewtex.de gemessen: Vor dem Zusammenlegen zweier
+     * Archiv-Ordner kam `Archives` zuerst, danach `Archives/2024`. Dieselbe
+     * Anfrage, dieselbe Fassung, anderes Ziel — ohne dass jemand etwas am Code
+     * geaendert haette.
+     *
+     * ## Die Regel
+     *
+     * Der KUERZESTE Pfad gewinnt, bei Gleichstand alphabetisch. Ein
+     * Elternordner ist immer ein echtes Praefix seiner Kinder und damit
+     * kuerzer — `Archives` schlaegt `Archives/2024`, ohne dass diese Methode
+     * das Trennzeichen des Servers kennen muss. Und das Ergebnis ist
+     * reproduzierbar.
+     *
+     * @param  iterable<string>  $paths
+     */
+    public static function bestMatch(iterable $paths, string $kind): ?string
+    {
+        $treffer = [];
+
+        foreach ($paths as $pfad) {
+            if (self::looksLike($pfad, $kind)) {
+                $treffer[] = $pfad;
+            }
+        }
+
+        if ($treffer === []) {
+            return null;
+        }
+
+        usort($treffer, function (string $a, string $b): int {
+            return [mb_strlen($a), $a] <=> [mb_strlen($b), $b];
+        });
+
+        return $treffer[0];
+    }
+
+    /**
      * Which standard folder this path looks like, or null.
      */
     public static function classify(string $path): ?string

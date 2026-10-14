@@ -660,7 +660,7 @@ class MailboxClient implements Mailbox
     {
         return $this->session(function ($mailbox) use ($kind): ?string {
             $kennzeichen = '\\'.$kind;
-            $ueberName = null;
+            $pfade = [];
 
             foreach ($mailbox->folders()->get() as $ordner) {
                 foreach ((array) ($ordner->flags() ?? []) as $flag) {
@@ -669,14 +669,15 @@ class MailboxClient implements Mailbox
                     }
                 }
 
-                // Gemerkt, nicht genommen: Ein markierter Ordner weiter unten
+                // Gesammelt, nicht genommen: Ein markierter Ordner weiter unten
                 // in der Liste ist die bessere Antwort als ein passender Name.
-                if ($ueberName === null && FolderNames::looksLike((string) $ordner->path(), $kind)) {
-                    $ueberName = $ordner->path();
-                }
+                $pfade[] = (string) $ordner->path();
             }
 
-            return $ueberName;
+            // Und unter den Namenstreffern entscheidet nicht die Reihenfolge
+            // des Servers, sondern der kuerzeste Pfad — sonst schlaegt ein
+            // Jahres-Unterordner seinen Elternordner.
+            return FolderNames::bestMatch($pfade, $kind);
         });
     }
 

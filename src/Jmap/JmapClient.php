@@ -638,19 +638,19 @@ class JmapClient implements Mailbox
     public function specialFolder(string $kind): ?string
     {
         $rolle = mb_strtolower($kind) === 'archive' ? 'archive' : mb_strtolower($kind);
-        $ueberName = null;
+        $pfade = [];
 
         foreach ($this->folders() as $ordner) {
             if ($ordner['role'] === $rolle) {
                 return $ordner['path'];
             }
 
-            if ($ueberName === null && FolderNames::looksLike($ordner['path'], $kind)) {
-                $ueberName = $ordner['path'];
-            }
+            $pfade[] = $ordner['path'];
         }
 
-        return $ueberName;
+        // Nicht der erste Namenstreffer, sondern der beste: Sonst entscheidet
+        // die Reihenfolge des Servers, und `Archives/2024` schlaegt `Archives`.
+        return FolderNames::bestMatch($pfade, $kind);
     }
 
     /**
