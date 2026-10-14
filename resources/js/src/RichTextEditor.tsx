@@ -1,7 +1,14 @@
+import { Color } from '@tiptap/extension-color';
+import { Highlight } from '@tiptap/extension-highlight';
 import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
+import { Table } from '@tiptap/extension-table';
+import { TableCell } from '@tiptap/extension-table-cell';
+import { TableHeader } from '@tiptap/extension-table-header';
+import { TableRow } from '@tiptap/extension-table-row';
 import TextAlign from '@tiptap/extension-text-align';
+import { TextStyle } from '@tiptap/extension-text-style';
 import Underline from '@tiptap/extension-underline';
 import { Editor, EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -9,11 +16,13 @@ import {
     AlignCenter,
     AlignLeft,
     AlignRight,
+    Baseline,
     Bold,
     Code,
     Heading1,
     Heading2,
     Heading3,
+    Highlighter,
     ImagePlus,
     Italic,
     Link as LinkIcon,
@@ -24,6 +33,7 @@ import {
     Quote,
     Redo2,
     Strikethrough,
+    Table as TableIcon,
     Underline as UnderlineIcon,
     Undo2,
     Unlink,
@@ -82,6 +92,9 @@ export interface RichTextEditorLabels {
     linkPrompt: string;
     insertImage: string;
     dropImage: string;
+    textColor: string;
+    highlight: string;
+    insertTable: string;
     undo: string;
     redo: string;
 }
@@ -103,6 +116,18 @@ export interface RichTextEditorProps {
      * URL. Omitted means no image features at all — not a broken button.
      */
     onImageUpload?: (file: File) => Promise<string>;
+    /**
+     * The product's own buttons at the end of the toolbar.
+     *
+     * Formatting is the same everywhere — bold is bold. What is NOT the same
+     * is what a product can additionally do with the text: the Manager has an
+     * assistant that rephrases and corrects, and dictation. Those hang here
+     * instead of forcing a choice between "every product gets them" and "the
+     * Manager keeps its own editor".
+     *
+     * Receives the editor so a button can act on the selection.
+     */
+    extraActions?: (editor: Editor) => React.ReactNode;
 }
 
 interface ToolbarButtonProps {
@@ -132,9 +157,10 @@ interface EditorToolbarProps {
     labels: RichTextEditorLabels;
     onInsertImage?: () => void;
     uploading?: boolean;
+    extraActions?: (editor: Editor) => React.ReactNode;
 }
 
-const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, labels, onInsertImage, uploading = false }) => {
+const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, labels, onInsertImage, uploading = false, extraActions }) => {
     const setLink = useCallback(() => {
         if (!editor) return;
 
@@ -288,6 +314,38 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, labels, onInsertI
 
             <Separator orientation="vertical" className="mx-1 h-6" />
 
+            {/* Eine Farbe ist kein Umschalter — deshalb hier ein Feld statt eines Toggles. */}
+            <label
+                className="relative inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md hover:bg-muted"
+                title={labels.textColor}
+            >
+                <Baseline className="h-4 w-4" style={{ color: (editor.getAttributes('textStyle').color as string) ?? undefined }} />
+                <input
+                    type="color"
+                    aria-label={labels.textColor}
+                    className="absolute inset-0 cursor-pointer opacity-0"
+                    value={(editor.getAttributes('textStyle').color as string) ?? '#000000'}
+                    onChange={(event) => editor.chain().focus().setColor(event.target.value).run()}
+                />
+            </label>
+
+            <ToolbarButton
+                onClick={() => editor.chain().focus().toggleHighlight().run()}
+                isActive={editor.isActive('highlight')}
+                title={labels.highlight}
+            >
+                <Highlighter className="h-4 w-4" />
+            </ToolbarButton>
+
+            <ToolbarButton
+                onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+                title={labels.insertTable}
+            >
+                <TableIcon className="h-4 w-4" />
+            </ToolbarButton>
+
+            <Separator orientation="vertical" className="mx-1 h-6" />
+
             <ToolbarButton onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title={labels.undo}>
                 <Undo2 className="h-4 w-4" />
             </ToolbarButton>
@@ -295,6 +353,13 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, labels, onInsertI
             <ToolbarButton onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title={labels.redo}>
                 <Redo2 className="h-4 w-4" />
             </ToolbarButton>
+
+            {extraActions && (
+                <>
+                    <Separator orientation="vertical" className="mx-1 h-6" />
+                    {extraActions(editor)}
+                </>
+            )}
         </div>
     );
 };
@@ -313,6 +378,7 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
             showToolbar = true,
             autofocus = false,
             onImageUpload,
+            extraActions,
         },
         ref,
     ) => {
@@ -369,6 +435,16 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
                     },
                 }),
                 Underline,
+                // Colour and highlight need TextStyle as their carrier mark.
+                TextStyle,
+                Color,
+                Highlight.configure({ multicolor: false }),
+                // Tables travel badly through mail clients unless the borders
+                // are inline styles — a class would be stripped on arrival.
+                Table.configure({ resizable: false, HTMLAttributes: { style: 'border-collapse: collapse; width: 100%;' } }),
+                TableRow,
+                TableHeader.configure({ HTMLAttributes: { style: 'border: 1px solid #d4d4d8; padding: 6px; background: #f4f4f5;' } }),
+                TableCell.configure({ HTMLAttributes: { style: 'border: 1px solid #d4d4d8; padding: 6px;' } }),
                 // Inline styles (not classes) so images stay responsive inside
                 // the sent email, where Tailwind is not available.
                 Image.configure({
@@ -509,6 +585,7 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
                         labels={labels}
                         onInsertImage={imageEnabled ? openImagePicker : undefined}
                         uploading={isUploading}
+                        extraActions={extraActions}
                     />
                 )}
                 <EditorContent
