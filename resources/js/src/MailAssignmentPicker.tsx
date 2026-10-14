@@ -44,23 +44,38 @@ export interface MailAssignmentPickerProps {
 export function MailAssignmentPicker({ labels, users, assignment, onAssign, onUnassign, busy = false }: MailAssignmentPickerProps) {
     return (
         <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-                {assignment ? (
-                    <Tooltip>
-                        <TooltipTrigger asChild>
+            {assignment ? (
+                /*
+                 * Die Reihenfolge ist hier NICHT beliebig: `TooltipTrigger`
+                 * aussen, `DropdownMenuTrigger` innen.
+                 *
+                 * Andersherum — wie es bis zum 14.10.2026 stand — reicht
+                 * `DropdownMenuTrigger asChild` seine Eigenschaften an
+                 * `<Tooltip>` weiter, und das ist ein reiner Kontext-Anbieter
+                 * ohne eigenes Element. Sie landen also nirgends: Ein
+                 * zugewiesenes Abzeichen liess sich anklicken und oeffnete
+                 * nichts — man kam weder an eine andere Person noch an
+                 * „Zuweisung aufheben". Zuweisen ging, Umweisen nicht.
+                 */
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <DropdownMenuTrigger asChild>
                             <button
                                 type="button"
                                 disabled={busy}
+                                aria-label={labels.assignedTo(assignment.name)}
                                 className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary"
                                 data-slot="mail-assignment-badge"
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 {assignment.initials}
                             </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">{labels.assignedTo(assignment.name)}</TooltipContent>
-                    </Tooltip>
-                ) : (
+                        </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">{labels.assignedTo(assignment.name)}</TooltipContent>
+                </Tooltip>
+            ) : (
+                <DropdownMenuTrigger asChild>
                     <button
                         type="button"
                         disabled={busy}
@@ -72,8 +87,8 @@ export function MailAssignmentPicker({ labels, users, assignment, onAssign, onUn
                     >
                         <UserPlus className="h-3.5 w-3.5" />
                     </button>
-                )}
-            </DropdownMenuTrigger>
+                </DropdownMenuTrigger>
+            )}
 
             <DropdownMenuContent align="end" className="max-h-80 overflow-auto" onClick={(e) => e.stopPropagation()}>
                 {users.length === 0 ? (
