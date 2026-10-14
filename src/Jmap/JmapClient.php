@@ -1319,6 +1319,27 @@ class JmapClient implements Mailbox
      * A GET that is not JSON — a blob — comes back under `__raw`, so that the
      * one sender can serve both without the callers having to know which.
      */
+    /**
+     * Der Teil der Fehlerantwort, der einem Menschen weiterhilft.
+     *
+     * Gekuerzt, weil manche Server eine ganze HTML-Seite schicken, und ohne
+     * Zeilenumbrueche, damit die Meldung in eine Log-Zeile passt.
+     */
+    private function fehlerDetail(string $rumpf): string
+    {
+        $rumpf = trim(preg_replace('/\s+/', ' ', $rumpf) ?? '');
+
+        if ($rumpf === '') {
+            return ' Der Server hat keinen Grund mitgeschickt.';
+        }
+
+        if (mb_strlen($rumpf) > 500) {
+            $rumpf = mb_substr($rumpf, 0, 500).' …';
+        }
+
+        return ' Antwort: '.$rumpf;
+    }
+
     private function defaultSender(): Closure
     {
         return function (string $method, string $url, array $payload, array $headers): array {
@@ -1338,8 +1359,16 @@ class JmapClient implements Mailbox
             };
 
             if ($ergebnis->failed()) {
+                // Der Rumpf gehoert in die Meldung. JMAP-Server antworten auf
+                // einen Fehler mit einem Problem-Objekt (`type`, `status`,
+                // `detail`) — darin steht, WAS falsch war. Wurde er hier
+                // verworfen, blieb nur „failed with HTTP 400", und genau daran
+                // ist Bug #996 einen Monat lang unauffindbar geblieben: Die
+                // Meldung erreichte den Bildschirm, sagte aber nichts, und im
+                // Log stand sie gar nicht erst.
                 throw new RuntimeException(
                     "JMAP request to {$url} failed with HTTP {$ergebnis->status()}."
+                    .$this->fehlerDetail($ergebnis->body())
                 );
             }
 

@@ -483,3 +483,68 @@ describe('Ordner aendern', function () {
             ->toThrow(RuntimeException::class, 'mailboxHasEmail');
     });
 });
+
+describe('wenn der Server einen Fehler schickt', function () {
+    /**
+     * Bug #996: Archivieren scheiterte mit „failed with HTTP 400" — und mehr
+     * stand nirgends. Die Antwort des Servers, in der der GRUND steht, wurde
+     * weggeworfen. Die Meldung erreichte den Bildschirm, sagte nichts, und im
+     * Log stand sie gar nicht erst.
+     *
+     * Hier laeuft bewusst der ECHTE Sender (kein injizierter), denn genau er
+     * baut die Meldung.
+     */
+    beforeEach(function () {
+        // Kein Aufruf darf hinaus. Ohne diesen Riegel geht eine nicht
+        // gematchte Anfrage WIRKLICH ins Netz — gegen den Produktionsserver.
+        Illuminate\Support\Facades\Http::preventStrayRequests();
+    });
+
+    function jmapEchterKlient(): JmapClient
+    {
+        return new JmapClient(account: MailAccount::fromRemote([
+            'id' => 1, 'email' => 'info@example.test', 'username' => null, 'password' => 'geheim',
+            'protocol' => 'jmap', 'imap_host' => 'mail.example.test', 'auth_type' => 'password',
+            'oauth_access_token' => null, 'oauth_token_expires_at' => null,
+        ]));
+    }
+
+    it('nennt den Grund, den der Server mitgeschickt hat', function () {
+        Illuminate\Support\Facades\Http::fake([
+            '*' => Illuminate\Support\Facades\Http::response(
+                '{"type":"urn:ietf:params:jmap:error:unknownCapability","status":400,"detail":"Das Postfach kennt die Faehigkeit nicht."}',
+                400,
+            ),
+        ]);
+
+        expect(fn () => jmapEchterKlient()->folders())
+            ->toThrow(RuntimeException::class, 'unknownCapability');
+    });
+
+    it('sagt es ausdruecklich, wenn der Server GAR keinen Grund mitschickt', function () {
+        // Sonst steht da „Antwort:" und nichts dahinter, und man sucht an der
+        // falschen Stelle weiter.
+        Illuminate\Support\Facades\Http::fake([
+            '*' => Illuminate\Support\Facades\Http::response('', 400),
+        ]);
+
+        expect(fn () => jmapEchterKlient()->folders())
+            ->toThrow(RuntimeException::class, 'keinen Grund mitgeschickt');
+    });
+
+    it('kuerzt eine ausufernde Antwort, statt die Meldung zu sprengen', function () {
+        Illuminate\Support\Facades\Http::fake([
+            '*' => Illuminate\Support\Facades\Http::response(str_repeat('x', 5000), 400),
+        ]);
+
+        try {
+            jmapEchterKlient()->folders();
+            $meldung = '';
+        } catch (RuntimeException $e) {
+            $meldung = $e->getMessage();
+        }
+
+        expect(mb_strlen($meldung))->toBeLessThan(700)
+            ->and($meldung)->toContain('…');
+    });
+});
