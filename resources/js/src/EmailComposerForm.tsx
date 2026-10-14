@@ -23,16 +23,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
  *
  * ## Everything that talks to a product comes in as a prop
  *
- * Three things a mail form needs are decisions the product has already made,
- * and none of them belong here:
+ * Two things a mail form needs are decisions the product has already made,
+ * and neither belongs here:
  *
- * - the **rich-text editor** (`editor`) — one product uses Tiptap, the next may
- *   not, and dragging an editor into a shared package makes it everyone's
- *   editor
  * - the **recipient suggestions** (`recipients`) — they come from endpoints
  *   that only exist in the product
  * - the **signatures** (`signatures`) — a table of the product, behind its own
  *   endpoint
+ *
+ * The **editor** (`editor`) used to be on that list, with the reasoning that
+ * "dragging an editor into a shared package makes it everyone's editor". That
+ * is true, and since 14.10.2026 it is the point: bold is bold in all four
+ * products, and a reply that looks different depending on which window you
+ * opened is a defect, not a liberty. Pass {@see RichTextEditor} — or
+ * {@see PlainTextEditor} where rich text is unwanted. The prop stays, because
+ * a fifth product may bring its own, but there is now one answer that all
+ * four give.
  *
  * What stays here is the form itself and the behaviour that is the same
  * everywhere: chips for addresses, the debounced directory lookup with its

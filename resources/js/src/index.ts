@@ -23,6 +23,8 @@ export * from './useAutoOpen';
 export * from './useMailAssignments';
 export * from './MailAssignmentPicker';
 export * from './PlainTextEditor';
+export * from './RichTextEditor';
+export { default as RichTextEditor } from './RichTextEditor';
 export * from './useMailboxPreference';
 export * from './MailListToolbar';
 export * from './MailMessageList';

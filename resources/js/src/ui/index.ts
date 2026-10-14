@@ -36,3 +36,5 @@ export * from './skeleton';
 export * from './dialog';
 export * from './tooltip';
 export * from './textarea';
+export * from './separator';
+export * from './toggle';
