@@ -53,6 +53,14 @@ class JmapMessageFormatter
     {
         $from = $email['from'][0] ?? null;
 
+        /*
+         * Beide Zahlen aus DERSELBEN Quelle — nicht die Klammer vom Server und
+         * die Zahl von hier. `hasAttachment` des Servers ist schon wahr, wenn
+         * eine Mail nur ein eingebettetes Logo traegt: Die Liste zeigte dann
+         * eine Klammer, und die geoeffnete Nachricht hatte keinen Anhang.
+         */
+        $anzahl = count($this->visibleAttachments($email));
+
         return [
             'uid' => $email['id'] ?? null,
             'message_id' => $this->firstMessageId($email['messageId'] ?? null),
@@ -60,8 +68,8 @@ class JmapMessageFormatter
             'from_address' => $from['email'] ?? '',
             'from_name' => $from['name'] ?? '',
             'date' => $this->date($email),
-            'has_attachments' => (bool) ($email['hasAttachment'] ?? false),
-            'attachment_count' => count($this->visibleAttachments($email)),
+            'has_attachments' => $anzahl > 0,
+            'attachment_count' => $anzahl,
             'is_read' => $this->hasKeyword($email, '$seen'),
             'is_flagged' => $this->hasKeyword($email, '$flagged'),
             // JMAP delivers a preview the server already cut. Cutting it again

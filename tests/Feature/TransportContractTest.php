@@ -1,6 +1,10 @@
 <?php
 
 use Carbon\Carbon;
+use DirectoryTree\ImapEngine\BodyStructureCollection;
+use DirectoryTree\ImapEngine\BodyStructurePart;
+use DirectoryTree\ImapEngine\ContentDisposition;
+use DirectoryTree\ImapEngine\Enums\ContentDispositionType;
 use Peppermint\Mailbox\Imap\MessageFormatter;
 use Peppermint\Mailbox\Jmap\JmapMessageFormatter;
 
@@ -58,7 +62,7 @@ it('fuellt die Felder, die ein Leser vergleicht, auch gleich', function () {
     $imap = (new MessageFormatter)->summary(nachricht());
     $jmap = (new JmapMessageFormatter)->summary(gleicheMailAlsJmap());
 
-    foreach (['subject', 'from_address', 'from_name', 'message_id', 'is_read', 'is_flagged', 'preview'] as $feld) {
+    foreach (['subject', 'from_address', 'from_name', 'message_id', 'is_read', 'is_flagged', 'preview', 'has_attachments', 'attachment_count'] as $feld) {
         expect($jmap[$feld])->toBe($imap[$feld], "Feld {$feld} weicht ab");
     }
 
@@ -254,4 +258,73 @@ describe('Bug #1023 — eine Regel fuer Liste und Download, auf beiden Wegen', f
         'Bild inline ohne Content-ID reist mit' => [['name' => 'foto.jpg', 'type' => 'image/jpeg', 'disposition' => 'inline'], false],
         'Inline-PDF reist mit' => [['name' => 'Angebot.pdf', 'type' => 'application/pdf', 'cid' => 'pdf@x', 'disposition' => 'inline'], false],
     ]);
+});
+
+/** Ein Strukturteil fuer die IMAP-Seite, wie ihn BODYSTRUCTURE liefert. */
+function vertragsTeil(string $typ, string $untertyp, ?string $cid = null, ?string $disposition = null, ?string $dateiname = null): BodyStructurePart
+{
+    return new BodyStructurePart(
+        partNumber: '1',
+        type: $typ,
+        subtype: $untertyp,
+        id: $cid,
+        disposition: $disposition === null
+            ? null
+            : new ContentDisposition(
+                ContentDispositionType::from($disposition),
+                $dateiname === null ? [] : ['filename' => $dateiname],
+            ),
+    );
+}
+
+it('zaehlt die Anhaenge einer Listenzeile auf beiden Wegen gleich', function () {
+    // Dieselbe Mail: ein Logo im Rumpf, eine Rechnung als Datei. Sichtbar ist
+    // genau EINE — und das muss in beiden Listen dieselbe Zahl und dieselbe
+    // Klammer ergeben.
+    //
+    // Genau dieser Vergleich fehlte: attachment_count und has_attachments
+    // standen in keinem Wertevergleich, und so blieb jahrelang unbemerkt, dass
+    // der IMAP-Weg die Zahl aus einem Rumpf las, den er gar nicht laedt — er
+    // meldete IMMER 0 (Bug #1025).
+    $imap = (new MessageFormatter)->summary(nachricht([
+        'bodyStructure' => new BodyStructureCollection(parts: [
+            vertragsTeil('text', 'html'),
+            vertragsTeil('image', 'png', 'logo@x', 'inline', 'logo.png'),
+            vertragsTeil('application', 'pdf', null, 'attachment', 'Rechnung.pdf'),
+        ]),
+    ]));
+
+    $mail = gleicheMailAlsJmap();
+    $mail['hasAttachment'] = true;
+    $mail['attachments'] = [
+        ['blobId' => 'b1', 'name' => 'logo.png', 'type' => 'image/png', 'cid' => 'logo@x', 'disposition' => 'inline'],
+        ['blobId' => 'b2', 'name' => 'Rechnung.pdf', 'type' => 'application/pdf', 'disposition' => 'attachment'],
+    ];
+    $jmap = (new JmapMessageFormatter)->summary($mail);
+
+    expect($imap['attachment_count'])->toBe(1)
+        ->and($jmap['attachment_count'])->toBe(1)
+        ->and($imap['has_attachments'])->toBeTrue()
+        ->and($jmap['has_attachments'])->toBeTrue();
+});
+
+it('setzt die Klammer auf keinem Weg, wenn nur ein Logo im Rumpf steckt', function () {
+    // Der Server meldet fuer so eine Mail `hasAttachment: true` — die Liste
+    // zeigte eine Klammer, und die geoeffnete Nachricht hatte nichts.
+    $imap = (new MessageFormatter)->summary(nachricht([
+        'bodyStructure' => new BodyStructureCollection(parts: [
+            vertragsTeil('text', 'html'),
+            vertragsTeil('image', 'png', 'logo@x', 'inline', 'logo.png'),
+        ]),
+    ]));
+
+    $mail = gleicheMailAlsJmap();
+    $mail['hasAttachment'] = true;
+    $mail['attachments'] = [['blobId' => 'b1', 'name' => 'logo.png', 'type' => 'image/png', 'cid' => 'logo@x', 'disposition' => 'inline']];
+    $jmap = (new JmapMessageFormatter)->summary($mail);
+
+    expect($imap['has_attachments'])->toBeFalse()
+        ->and($jmap['has_attachments'])->toBeFalse()
+        ->and($imap['attachment_count'])->toBe(0)
+        ->and($jmap['attachment_count'])->toBe(0);
 });

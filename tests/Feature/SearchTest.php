@@ -124,6 +124,13 @@ function suchOrdner(string $pfad, array $flags = [], array $nachrichten = [], bo
                     return $this;
                 }
 
+                public function withBodyStructure(): static
+                {
+                    // Die Liste zaehlt Anhaenge aus der BODYSTRUCTURE statt aus
+                    // dem Rumpf, den sie gar nicht laedt (Bug #1025).
+                    return $this;
+                }
+
                 public function withoutHeaders(): static
                 {
                     $this->ordner->gesucht['ohne'][] = 'headers';

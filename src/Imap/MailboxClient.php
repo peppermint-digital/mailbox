@@ -248,7 +248,7 @@ class MailboxClient implements Mailbox
 
             $zeilen = [];
 
-            foreach ($abfrage->withHeaders()->withFlags()->limit($limit)->get() as $nachricht) {
+            foreach ($abfrage->withHeaders()->withFlags()->withBodyStructure()->limit($limit)->get() as $nachricht) {
                 $zeilen[] = $this->formatter->summary($nachricht);
             }
 
@@ -282,7 +282,7 @@ class MailboxClient implements Mailbox
             $gesamt = $abfrage->count();
 
             $zeilen = MessagePage::sortByDateDesc($this->cheapRows(
-                $abfrage->withHeaders()->withFlags()->limit(MessagePage::FETCH_LIMIT)->get()
+                $abfrage->withHeaders()->withFlags()->withBodyStructure()->limit(MessagePage::FETCH_LIMIT)->get()
             ));
 
             if (MessagePage::isSentFolder($ordner->path())) {
@@ -335,7 +335,7 @@ class MailboxClient implements Mailbox
             }
 
             $zeilen = $this->cheapRows(
-                $ordner->messages()->newest()->withHeaders()->withFlags()->limit(MessagePage::FETCH_LIMIT)->get()
+                $ordner->messages()->newest()->withHeaders()->withFlags()->withBodyStructure()->limit(MessagePage::FETCH_LIMIT)->get()
             );
 
             return ThreadPage::of(
@@ -607,7 +607,7 @@ class MailboxClient implements Mailbox
 
         $zeilen = [];
 
-        foreach ($abfrage->withHeaders()->withFlags()->limit($limit)->get() as $nachricht) {
+        foreach ($abfrage->withHeaders()->withFlags()->withBodyStructure()->limit($limit)->get() as $nachricht) {
             $zeilen[] = $this->formatter->summary($nachricht);
         }
 

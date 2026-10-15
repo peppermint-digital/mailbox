@@ -7,6 +7,7 @@ use Peppermint\Mailbox\Support\Betreff;
 
 use DirectoryTree\ImapEngine\Message;
 use Illuminate\Support\Str;
+use DirectoryTree\ImapEngine\BodyStructurePart;
 use Peppermint\Mailbox\Content\CidReplacer;
 
 /**
@@ -47,6 +48,7 @@ class MessageFormatter
     public function summary(Message $message): array
     {
         $from = $message->from();
+        $anzahl = $this->anhangZahl($message);
 
         return [
             'uid' => $message->uid(),
@@ -55,8 +57,8 @@ class MessageFormatter
             'from_address' => $from?->email() ?? '',
             'from_name' => $from?->name() ?? '',
             'date' => $message->date()?->toIso8601String(),
-            'has_attachments' => $message->hasAttachments(),
-            'attachment_count' => $message->attachmentCount(),
+            'has_attachments' => $anzahl > 0,
+            'attachment_count' => $anzahl,
             'is_read' => $message->isSeen(),
             'is_flagged' => $message->isFlagged(),
             'preview' => Str::limit($message->text() ?? strip_tags($message->html() ?? ''), 100),
@@ -138,6 +140,64 @@ class MessageFormatter
                 $this->header($message, 'references'),
             ),
         ];
+    }
+
+    /**
+     * How many attachments the LIST should show.
+     *
+     * ## Why not the library's own number
+     *
+     * `Message::attachmentCount()` parses the body — and when listing, the
+     * body is deliberately not loaded. The answer is then not "imprecise", it
+     * is **0**: a mail carrying an invoice showed no paperclip and no count,
+     * in every IMAP mailbox, always. Measured against a real IMAP server on
+     * 15.10.2026 (Bug #1025) — the code reading that preceded it guessed the
+     * opposite, that the number was too HIGH.
+     *
+     * BODYSTRUCTURE answers the same question without fetching a single
+     * attachment byte: it is metadata, not content. It has to be asked for
+     * (`withBodyStructure()`), and where it was not asked for, the library's
+     * number is still the best that exists.
+     *
+     * Counted with {@see isEmbeddedImage()}, so that the number in the list
+     * matches what the opened message lists — and what JMAP reports for the
+     * same mailbox.
+     */
+    private function anhangZahl(Message $message): int
+    {
+        $struktur = $message->bodyStructure();
+
+        if ($struktur === null) {
+            return $message->attachmentCount();
+        }
+
+        $anzahl = 0;
+
+        foreach ($struktur->flatten() as $teil) {
+            if (! self::istRumpfteil($teil)) {
+                $anzahl++;
+            }
+        }
+
+        return $anzahl;
+    }
+
+    /**
+     * Is this structure part part of the DISPLAY rather than a file?
+     *
+     * Two cases. The body itself — text or HTML that carries no filename and
+     * is not explicitly an attachment; a `.txt` someone attached has one and
+     * is counted. And an embedded image, by the same rule as everywhere else.
+     */
+    private static function istRumpfteil(BodyStructurePart $teil): bool
+    {
+        $disposition = $teil->disposition()?->type()->value;
+
+        if (($teil->isText() || $teil->isHtml()) && $teil->filename() === null && $disposition !== 'attachment') {
+            return true;
+        }
+
+        return self::isEmbeddedImage($teil->id(), $disposition, $teil->contentType());
     }
 
     /**

@@ -3,6 +3,10 @@
 use Carbon\Carbon;
 use DirectoryTree\ImapEngine\Address;
 use DirectoryTree\ImapEngine\Message;
+use DirectoryTree\ImapEngine\BodyStructureCollection;
+use DirectoryTree\ImapEngine\BodyStructurePart;
+use DirectoryTree\ImapEngine\ContentDisposition;
+use DirectoryTree\ImapEngine\Enums\ContentDispositionType;
 use Peppermint\Mailbox\Imap\MessageFormatter;
 use ZBateson\MailMimeParser\Header\IHeader;
 
@@ -21,6 +25,9 @@ function nachricht(array $werte = []): Message
         'date' => Carbon::parse('2026-09-01T10:00:00+00:00'),
         'hasAttachments' => false,
         'attachmentCount' => 0,
+        // Ohne withBodyStructure() gibt es keine Struktur — der Weg, den
+        // summary() dann nimmt (Bug #1025).
+        'bodyStructure' => null,
         'isSeen' => true,
         'isFlagged' => false,
         'text' => 'Guten Tag, anbei das Angebot.',
@@ -363,4 +370,74 @@ describe('isEmbeddedImage — die EINE Regel', function () {
         'PDF mit cid und inline' => ['pdf@x', 'inline', 'application/pdf', false],
         'Teil ohne Typ' => ['x@x', 'inline', null, false],
     ]);
+});
+
+describe('Anhangzahl der Listenzeile (Bug #1025)', function () {
+    /** Ein Strukturteil, wie ihn BODYSTRUCTURE liefert. */
+    function strukturteil(string $typ, string $untertyp, ?string $cid = null, ?string $disposition = null, ?string $dateiname = null): BodyStructurePart
+    {
+        return new BodyStructurePart(
+            partNumber: '1',
+            type: $typ,
+            subtype: $untertyp,
+            parameters: [],
+            id: $cid,
+            disposition: $disposition === null && $dateiname === null
+                ? null
+                : new ContentDisposition(
+                    ContentDispositionType::from($disposition ?? 'attachment'),
+                    $dateiname === null ? [] : ['filename' => $dateiname],
+                ),
+        );
+    }
+
+    it('zaehlt, was die geoeffnete Nachricht auch auflistet', function () {
+        $zeile = (new MessageFormatter)->summary(nachricht([
+            'bodyStructure' => new BodyStructureCollection(parts: [
+                strukturteil('text', 'html'),                                           // der Rumpf
+                strukturteil('image', 'png', 'logo@x', 'inline', 'logo.png'),           // im Rumpf
+                strukturteil('image', 'jpeg', null, 'inline', 'foto.jpg'),              // Datei
+                strukturteil('application', 'pdf', 'angebot@x', null, 'Angebot.pdf'),   // Datei
+                strukturteil('application', 'pdf', null, 'attachment', 'Rechnung.pdf'), // Datei
+            ]),
+        ]));
+
+        expect($zeile['attachment_count'])->toBe(3)
+            ->and($zeile['has_attachments'])->toBeTrue();
+    });
+
+    it('zaehlt eine Mail ohne Anhang als null', function () {
+        $zeile = (new MessageFormatter)->summary(nachricht([
+            'bodyStructure' => new BodyStructureCollection(parts: [
+                strukturteil('text', 'plain'),
+                strukturteil('text', 'html'),
+            ]),
+        ]));
+
+        expect($zeile['attachment_count'])->toBe(0)
+            ->and($zeile['has_attachments'])->toBeFalse();
+    });
+
+    it('zaehlt einen angehaengten Text MIT, trotz text/plain', function () {
+        // Der Rumpf wird uebersprungen, weil er keinen Dateinamen traegt —
+        // nicht, weil er Text ist. Sonst verschwindet eine angehaengte .txt.
+        $zeile = (new MessageFormatter)->summary(nachricht([
+            'bodyStructure' => new BodyStructureCollection(parts: [
+                strukturteil('text', 'html'),
+                strukturteil('text', 'plain', null, 'attachment', 'notiz.txt'),
+            ]),
+        ]));
+
+        expect($zeile['attachment_count'])->toBe(1);
+    });
+
+    it('nimmt die Zahl der Bibliothek, wenn keine Struktur geholt wurde', function () {
+        // Ohne withBodyStructure() gibt es nichts zu zaehlen. Dann ist die
+        // Auskunft der Bibliothek das Beste, was da ist — auch wenn sie ohne
+        // geladenen Rumpf 0 lautet. Was NICHT passieren darf: ein Fehler.
+        $zeile = (new MessageFormatter)->summary(nachricht(['attachmentCount' => 7]));
+
+        expect($zeile['attachment_count'])->toBe(7)
+            ->and($zeile['has_attachments'])->toBeTrue();
+    });
 });
