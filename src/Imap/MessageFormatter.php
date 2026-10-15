@@ -85,11 +85,8 @@ class MessageFormatter
 
         foreach ($message->attachments() as $index => $attachment) {
             $contentId = $attachment->contentId();
-            $disposition = $attachment->contentDisposition();
 
-            $isInline = self::isInline($contentId, $disposition);
-
-            if ($isInline && $contentId && Str::startsWith($attachment->contentType() ?? '', 'image/')) {
+            if (self::isEmbeddedImage($contentId, $attachment->contentDisposition(), $attachment->contentType())) {
                 $inline[$contentId] = 'data:'.$attachment->contentType().';base64,'.base64_encode($attachment->contents());
 
                 continue;
@@ -144,28 +141,49 @@ class MessageFormatter
     }
 
     /**
-     * Does this part belong in the body rather than in the attachment list?
+     * Does this part belong IN the body instead of in the attachment list?
      *
-     * An image with a Content-ID belongs in the body unless it is explicitly
-     * marked as an attachment — some clients set neither disposition, and
-     * treating those as attachments leaves a hole in the text where the picture
-     * should be.
+     * THE rule, and the only one anyone may ask. Three conditions, each of
+     * them necessary:
      *
-     * Spelled once because {@see full()} and {@see attachmentAt()} MUST agree:
-     * What is attachment number two on screen has to be attachment number two
-     * when someone files it, or they file the wrong thing.
+     * - **An image.** An inline PDF is a file someone attached, whatever the
+     *   disposition says: it belongs in the list, and it travels on a forward.
+     * - **With a Content-ID.** The body points at a part by its cid and by
+     *   nothing else. A part without one cannot be referenced, so it cannot be
+     *   in the body — however it is marked.
+     * - **Not explicitly an attachment.** Some clients set no disposition at
+     *   all, and treating those as attachments leaves a hole in the text where
+     *   the picture should be.
+     *
+     * ## Why it is spelled exactly once
+     *
+     * Every caller asks this same question and has to get the same answer:
+     * {@see full()} decides what the screen lists, {@see attachmentAt()} what
+     * a download hands out, `MailboxClient::attachments()` what a forward
+     * carries, {@see verbatim()} what the archive flags — and the JMAP side
+     * calls in here for all four.
+     *
+     * Three slightly different answers was Bug #1023: a part too inline for
+     * the list and not inline enough for the body existed NOWHERE. No broken
+     * image, no empty row, no log line. Measured on 15.10.2026, on both
+     * transports, with an image marked `inline` without a Content-ID — the
+     * shape Outlook and a few ERP mailers produce.
      */
-    /**
-     * Is this part an image that belongs IN the body?
-     *
-     * The narrower rule, and the one that decides what a forward carries: an
-     * inline image is already embedded in `body_html`, so attaching it again
-     * would duplicate it. An inline PDF is a file someone attached, whatever
-     * the disposition says — it travels.
-     */
-    public static function isEmbeddedImage(?string $contentId, ?string $disposition, string $contentType): bool
+    public static function isEmbeddedImage(?string $contentId, ?string $disposition, ?string $contentType): bool
     {
-        return self::isInline($contentId, $disposition) && Str::startsWith($contentType, 'image/');
+        // Ueber CidReplacer gefragt und nicht selbst getrimmt: Was hier als
+        // Kennung gilt, MUSS im Rumpf auch ersetzbar sein. `<>` ist nicht
+        // leer und normalisiert zu nichts — das auseinanderlaufen zu lassen
+        // war Bug #1023 ein zweites Mal.
+        //
+        // Die Angabe wird klein geschrieben verglichen, weil RFC 2183 sie
+        // ohne Ruecksicht auf Gross- und Kleinschreibung definiert. Ein
+        // Absender, der `Content-Disposition: Attachment` schreibt, verlor
+        // seinen Anhang sonst genauso lautlos — nur eben an der Schreibweise
+        // einer Kopfzeile statt an einer fehlenden Kennung.
+        return CidReplacer::bareId($contentId) !== ''
+            && strtolower(trim((string) $disposition)) !== 'attachment'
+            && Str::startsWith((string) $contentType, 'image/');
     }
 
     /**
@@ -193,7 +211,7 @@ class MessageFormatter
                 'contents' => $contents,
                 'size' => Str::length($contents),
                 'content_id' => $contentId,
-                'inline' => self::isInline($contentId, $attachment->contentDisposition()),
+                'inline' => self::isEmbeddedImage($contentId, $attachment->contentDisposition(), $attachment->contentType()),
             ];
         }
 
@@ -217,11 +235,6 @@ class MessageFormatter
         ];
     }
 
-    private static function isInline(?string $contentId, ?string $disposition): bool
-    {
-        return $disposition === 'inline' || ($contentId && $disposition !== 'attachment');
-    }
-
     /**
      * One attachment with its bytes, addressed by the same index {@see full()}
      * hands out.
@@ -240,10 +253,15 @@ class MessageFormatter
                 continue;
             }
 
-            if (self::isInline($attachment->contentId(), $attachment->contentDisposition())) {
+            if (self::isEmbeddedImage($attachment->contentId(), $attachment->contentDisposition(), $attachment->contentType())) {
                 // Die Stelle gibt es, sie gehoert aber in den Rumpf. Wer sie
                 // anfordert, meint etwas anderes — nichts zurueckgeben ist
                 // ehrlicher als ein Logo auszuliefern.
+                //
+                // Dieselbe Regel wie in full(): Was dort in der Liste steht,
+                // MUSS hier herauskommen. Vorher stand hier die breite
+                // Inline-Frage, und ein Inline-PDF war damit sichtbar, aber
+                // nicht herunterladbar (Bug #1023).
                 return null;
             }
 

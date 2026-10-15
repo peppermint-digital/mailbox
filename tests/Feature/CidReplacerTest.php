@@ -1,6 +1,7 @@
 <?php
 
 use Peppermint\Mailbox\Content\CidReplacer;
+use Peppermint\Mailbox\Imap\MessageFormatter;
 
 /**
  * Inline images in a mail body.
@@ -76,3 +77,27 @@ it('ignores an empty content id instead of mangling the body', function () {
 
     expect((new CidReplacer)->replace($html, ['' => 'A', '  ' => 'B']))->toBe($html);
 });
+
+it('ignoriert eine Kennung, die nur aus Klammern besteht', function () {
+    $html = '<img src="cid:<>">';
+
+    expect((new CidReplacer)->replace($html, ['<>' => 'A']))->toBe($html);
+});
+
+it('nennt nur Kennungen einen Rumpfteil, die im Rumpf auch ersetzbar sind', function (string $cid) {
+    // DIE Kopplung, und der Grund, dass bareId() public ist: Die Regel nimmt
+    // einen Teil aus der Anhangliste, weil er „schon im Rumpf steht" — wenn
+    // dann nichts ersetzt wird, ist er nirgends. Genau so ist Bug #1023 ein
+    // zweites Mal entstanden, mit der Kennung `<>`.
+    $html = '<img src="cid:'.trim($cid).'">';
+
+    $istRumpfteil = MessageFormatter::isEmbeddedImage($cid, 'inline', 'image/png');
+    $wurdeErsetzt = (new CidReplacer)->replace($html, [$cid => 'data:image/png;base64,AA']) !== $html;
+
+    expect($istRumpfteil)->toBe(
+        $wurdeErsetzt,
+        $istRumpfteil
+            ? "Kennung \"{$cid}\" gilt als Rumpfteil, wird im Rumpf aber nicht ersetzt — der Teil ist nirgends."
+            : "Kennung \"{$cid}\" wird im Rumpf ersetzt, gilt aber nicht als Rumpfteil — der Teil erscheint doppelt."
+    );
+})->with(['logo@x', '<logo@x>', '<>', ' <> ', '   ', 'a@x.test']);

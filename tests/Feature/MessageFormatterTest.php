@@ -339,3 +339,28 @@ it('gibt der geöffneten Nachricht ihre Kette mit', function () {
 
     expect($voll['thread_id'])->toBe('wurzel@example.test');
 });
+
+describe('isEmbeddedImage — die EINE Regel', function () {
+    // Vorher gab es drei Fassungen dieser Frage, und ein Teil, der durch alle
+    // drei fiel, existierte nirgends (Bug #1023). Die Regel steht jetzt hier,
+    // einmal, und wird von beiden Transporten gefragt.
+    it('nennt nur ein Bild mit Content-ID einen Rumpfteil', function (?string $cid, ?string $disposition, ?string $typ, bool $erwartet) {
+        expect(MessageFormatter::isEmbeddedImage($cid, $disposition, $typ))->toBe($erwartet);
+    })->with([
+        'Bild mit cid und inline' => ['logo@x', 'inline', 'image/png', true],
+        'Bild mit cid, ohne disposition' => ['logo@x', null, 'image/png', true],
+        'Bild mit cid, ausdruecklich Anhang' => ['logo@x', 'attachment', 'image/png', false],
+        // RFC 2183 kennt keine Gross-/Kleinschreibung bei der Angabe.
+        'Bild mit cid, Anhang gross geschrieben' => ['logo@x', 'Attachment', 'image/png', false],
+        'Bild mit cid, Anhang mit Leerraum' => ['logo@x', ' attachment ', 'image/png', false],
+        // Ohne Content-ID kann kein cid: darauf zeigen — also ist es eine Datei.
+        'Bild inline ohne cid' => [null, 'inline', 'image/jpeg', false],
+        'Bild inline mit leerer cid' => ['   ', 'inline', 'image/jpeg', false],
+        // `<>` ist nicht leer und normalisiert zu nichts — Bug #1023, zweite Runde.
+        'Bild inline mit Klammer-cid ohne Inhalt' => ['<>', 'inline', 'image/png', false],
+        'Bild inline mit Klammer-cid und Leerraum' => [' <> ', 'inline', 'image/png', false],
+        // Ein Anhang bleibt ein Anhang, wie auch immer er markiert ist.
+        'PDF mit cid und inline' => ['pdf@x', 'inline', 'application/pdf', false],
+        'Teil ohne Typ' => ['x@x', 'inline', null, false],
+    ]);
+});

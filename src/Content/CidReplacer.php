@@ -42,6 +42,28 @@ class CidReplacer
     }
 
     /**
+     * The id without its brackets and its whitespace, or an empty string when
+     * nothing is left of it.
+     *
+     * ## Why this is public, and why it lives here
+     *
+     * Two places decide something by it, and they have to agree: this class
+     * decides what gets REPLACED in the body, and
+     * `MessageFormatter::isEmbeddedImage()` decides whether a part belongs in
+     * the body at all.
+     *
+     * A Content-ID of `<>` is not empty, and it normalises to nothing. It
+     * therefore passed the second test and failed the first: the part was
+     * taken out of the attachment list as „already in the body", and no
+     * reference was ever rewritten. Gone — Bug #1023 again, one spelling
+     * further along, found by reading the first fix rather than by a report.
+     */
+    public static function bareId(?string $contentId): string
+    {
+        return trim(trim((string) $contentId), '<>');
+    }
+
+    /**
      * Every way this Content-ID can appear in a `src` attribute, longest first.
      *
      * Longest first matters: replacing the bare id inside `cid:<logo@x>` would
@@ -51,7 +73,7 @@ class CidReplacer
      */
     private function spellings(string $contentId): array
     {
-        $bare = trim(trim($contentId), '<>');
+        $bare = self::bareId($contentId);
 
         if ($bare === '') {
             return [];

@@ -8,6 +8,7 @@ use Peppermint\Mailbox\Support\Betreff;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Peppermint\Mailbox\Content\CidReplacer;
+use Peppermint\Mailbox\Imap\MessageFormatter;
 
 /**
  * A JMAP message, in the rows the rest of the package already speaks.
@@ -26,10 +27,15 @@ use Peppermint\Mailbox\Content\CidReplacer;
  *
  * ## Inline images
  *
- * Same rule as IMAP: an image with a Content-ID belongs in the body, not in
- * the attachment list — and it keeps its position in that list anyway, so that
- * attachment number two on screen is attachment number two when someone files
- * it.
+ * Not „the same rule as IMAP" — literally the same rule:
+ * {@see MessageFormatter::isEmbeddedImage()} is asked here too. A second
+ * spelling of the same sentence is what made Bug #1023 a JMAP-only fault for
+ * weeks. A part keeps its position in the list either way, so that attachment
+ * number two on screen is attachment number two when someone files it.
+ *
+ * What JMAP adds is a way to fail that IMAP does not have: the bytes of an
+ * inline image arrive in a separate blob request, which can come back empty.
+ * {@see full()} spells out what happens then.
  */
 class JmapMessageFormatter
 {
@@ -83,16 +89,25 @@ class JmapMessageFormatter
             $contentId = $part['cid'] ?? null;
             $type = (string) ($part['type'] ?? '');
 
-            if (self::isInline($contentId, $part['disposition'] ?? null)) {
-                if ($contentId && Str::startsWith($type, 'image/')) {
-                    $bytes = $blob((string) ($part['blobId'] ?? ''), (string) ($part['name'] ?? 'inline'), $type);
+            if (MessageFormatter::isEmbeddedImage($contentId, $part['disposition'] ?? null, $type)) {
+                $bytes = $blob((string) ($part['blobId'] ?? ''), (string) ($part['name'] ?? 'inline'), $type);
 
-                    if ($bytes !== null) {
-                        $inline[$contentId] = 'data:'.$type.';base64,'.base64_encode($bytes);
-                    }
+                if ($bytes !== null) {
+                    $inline[$contentId] = 'data:'.$type.';base64,'.base64_encode($bytes);
+
+                    continue;
                 }
 
-                continue;
+                /*
+                 * Keine Bytes — und damit faellt der Teil NICHT aus der Liste.
+                 *
+                 * Uebersprungen wird nur, was wirklich im Rumpf steht. Das
+                 * `cid:` bleibt hier unersetzt, und die Anzeige laesst per CSP
+                 * ausschliesslich `data:` als Bildquelle zu: Das Bild ist also
+                 * kaputt, egal was wir tun. Dann ist eine Zeile, deren
+                 * Download scheitert, ehrlicher als eine Datei, die es
+                 * scheinbar nie gegeben hat (Bug #1023).
+                 */
             }
 
             $attachments[] = [
@@ -163,7 +178,7 @@ class JmapMessageFormatter
                 continue;
             }
 
-            if (self::isInline($part['cid'] ?? null, $part['disposition'] ?? null)) {
+            if (MessageFormatter::isEmbeddedImage($part['cid'] ?? null, $part['disposition'] ?? null, $part['type'] ?? null)) {
                 return null;
             }
 
@@ -171,14 +186,6 @@ class JmapMessageFormatter
         }
 
         return null;
-    }
-
-    /**
-     * Same rule as the IMAP side, spelled the same way on purpose.
-     */
-    private static function isInline(?string $contentId, ?string $disposition): bool
-    {
-        return $disposition === 'inline' || ($contentId && $disposition !== 'attachment');
     }
 
     /**
@@ -226,7 +233,7 @@ class JmapMessageFormatter
                 'contents' => $inhalt,
                 'size' => strlen($inhalt),
                 'content_id' => $cid,
-                'inline' => self::isInline($cid, $part['disposition'] ?? null),
+                'inline' => MessageFormatter::isEmbeddedImage($cid, $part['disposition'] ?? null, $part['type'] ?? null),
             ];
         }
 
@@ -263,7 +270,7 @@ class JmapMessageFormatter
     {
         return array_filter(
             $this->parts($email),
-            fn (array $part): bool => ! self::isInline($part['cid'] ?? null, $part['disposition'] ?? null),
+            fn (array $part): bool => ! MessageFormatter::isEmbeddedImage($part['cid'] ?? null, $part['disposition'] ?? null, $part['type'] ?? null),
         );
     }
 

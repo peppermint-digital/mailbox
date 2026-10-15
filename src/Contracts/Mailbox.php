@@ -334,6 +334,15 @@ interface Mailbox
     /**
      * One attachment, with its bytes. Identified by position, not by name.
      *
+     * The position counts EVERY part the message has, embedded images
+     * included — the same arithmetic {@see message()} hands out, so that
+     * attachment number two on screen is attachment number two here.
+     *
+     * Null for a part that belongs in the body: who asks for an attachment
+     * does not mean the signature logo. What belongs in the body is decided
+     * in one place, `MessageFormatter::isEmbeddedImage()`, and `null` here
+     * MUST mean the row was not offered on screen either.
+     *
      * @return array{filename: string, mime_type: string, contents: string}|null
      */
     public function attachment(string $folder, int|string $uid, int $index): ?array;
@@ -402,8 +411,13 @@ interface Mailbox
      * Inline IMAGES stay out — they are part of the body and already embedded
      * in `body_html`. An inline PDF does not: it is a file someone attached,
      * whatever the disposition says, and a forward without it is incomplete.
-     * That is a different rule than {@see attachment()} uses, which answers
-     * the view's numbering; here nobody is counting, they are collecting.
+     *
+     * The SAME rule as {@see attachment()} and {@see message()}, down to the
+     * one method that spells it: `MessageFormatter::isEmbeddedImage()`. This
+     * place used to claim the rules were allowed to differ here, because one
+     * is counting and the other collecting. They are not: a part the screen
+     * listed but no download would hand out, or the other way round, is a
+     * file someone can see and not take — or take and not see. Bug #1023.
      *
      * @return list<array{filename: string, mime_type: string|null, contents: string}>
      */

@@ -146,3 +146,112 @@ it('legt einen Teil ohne Bytes NICHT als leere Datei ab', function () {
 
     expect($archiv['files'])->toBe([]);
 });
+
+/**
+ * Dieselbe Teilform, einmal fuer jeden Transport gebaut.
+ *
+ * Aus EINER Beschreibung, damit die beiden Seiten nicht auseinanderlaufen,
+ * waehrend der Test behauptet, sie zu vergleichen.
+ */
+function teilformAufBeidenWegen(array $form): array
+{
+    $imap = nachricht([
+        'html' => '<p>Text</p><img src="cid:logo@x">',
+        'attachments' => [anhang([
+            'contentId' => $form['cid'] ?? null,
+            'disposition' => $form['disposition'] ?? null,
+            'type' => $form['type'],
+            'filename' => $form['name'],
+            'contents' => 'BYTES',
+        ])],
+    ]);
+
+    $jmap = gleicheMailAlsJmap();
+    $jmap['htmlBody'] = [['partId' => '2']];
+    $jmap['bodyValues']['2'] = ['value' => '<p>Text</p><img src="cid:logo@x">'];
+    $jmap['attachments'] = [array_filter([
+        'blobId' => 'b1',
+        'name' => $form['name'],
+        'type' => $form['type'],
+        'cid' => $form['cid'] ?? null,
+        'disposition' => $form['disposition'] ?? null,
+    ], fn ($wert) => $wert !== null)];
+
+    return [$imap, $jmap];
+}
+
+describe('Bug #1023 — eine Regel fuer Liste und Download, auf beiden Wegen', function () {
+    it('haelt eine Datei in der Liste UND herunterladbar', function (array $form, string $name) {
+        [$imapNachricht, $jmapMail] = teilformAufBeidenWegen($form);
+
+        $imap = (new MessageFormatter)->full($imapNachricht);
+        $jmap = (new JmapMessageFormatter)->full($jmapMail, fn () => 'BYTES');
+
+        // In der Liste, auf beiden Wegen, unter demselben Namen.
+        expect(array_column($imap['attachments'], 'filename'))->toBe([$name])
+            ->and(array_column($jmap['attachments'], 'filename'))->toBe([$name]);
+
+        // Und ueber denselben Index auch abholbar: Eine Zeile, die niemand
+        // oeffnen kann, ist keine Behebung.
+        expect((new MessageFormatter)->attachmentAt($imapNachricht, 0))->not->toBeNull()
+            ->and((new JmapMessageFormatter)->partAt($jmapMail, 0))->not->toBeNull();
+
+        // Und NICHT im Rumpf — dort gibt es nichts, worauf ein cid: zeigt.
+        expect($imap['body_html'])->not->toContain('data:')
+            ->and($jmap['body_html'])->not->toContain('data:');
+    })->with([
+        // Die Form, die Outlook und diverse ERP-Mailer verschicken.
+        'Bild als inline markiert, ohne Content-ID' => [['name' => 'foto.jpg', 'type' => 'image/jpeg', 'disposition' => 'inline'], 'foto.jpg'],
+        // Ein Anhang bleibt ein Anhang, auch mit Content-ID.
+        'PDF mit Content-ID, ohne disposition' => [['name' => 'Angebot.pdf', 'type' => 'application/pdf', 'cid' => 'pdf@x'], 'Angebot.pdf'],
+        'PDF ausdruecklich als inline markiert' => [['name' => 'Angebot.pdf', 'type' => 'application/pdf', 'cid' => 'pdf@x', 'disposition' => 'inline'], 'Angebot.pdf'],
+    ]);
+
+    it('nimmt ein eingebettetes Bild aus der Liste und gibt es auch nicht heraus', function () {
+        // Die Gegenprobe zum Test darueber: Die Regel darf nicht einfach alles
+        // in die Liste schieben. Wer Anhang 0 anfordert, meint nicht das Logo.
+        [$imapNachricht, $jmapMail] = teilformAufBeidenWegen([
+            'name' => 'logo.png', 'type' => 'image/png', 'cid' => 'logo@x', 'disposition' => 'inline',
+        ]);
+
+        $imap = (new MessageFormatter)->full($imapNachricht);
+        $jmap = (new JmapMessageFormatter)->full($jmapMail, fn () => 'PNG');
+
+        expect($imap['attachments'])->toBe([])
+            ->and($jmap['attachments'])->toBe([])
+            ->and($imap['body_html'])->toContain('data:image/png;base64,')
+            ->and($jmap['body_html'])->toContain('data:image/png;base64,')
+            ->and((new MessageFormatter)->attachmentAt($imapNachricht, 0))->toBeNull()
+            ->and((new JmapMessageFormatter)->partAt($jmapMail, 0))->toBeNull();
+    });
+
+    it('laesst einen Teil in der Liste, dessen Bytes der JMAP-Server nicht hergibt', function () {
+        // Sonst ist er nirgends: nicht im Rumpf (das cid: bleibt stehen, und
+        // die Anzeige laesst nur data: zu) und nicht in der Liste.
+        [, $jmapMail] = teilformAufBeidenWegen([
+            'name' => 'logo.png', 'type' => 'image/png', 'cid' => 'logo@x', 'disposition' => 'inline',
+        ]);
+
+        $jmap = (new JmapMessageFormatter)->full($jmapMail, fn () => null);
+
+        expect(array_column($jmap['attachments'], 'filename'))->toBe(['logo.png'])
+            ->and($jmap['body_html'])->toContain('cid:logo@x');
+    });
+
+    it('kennzeichnet im Archiv nur als inline, was wirklich im Rumpf steht', function (array $form, bool $imRumpf) {
+        // Die Produkte schliessen beim Weiterleiten genau nach diesem Feld aus.
+        // Ein falsches „inline" hier laesst die Datei eine Schicht hoeher
+        // verschwinden — die Behebung endete sonst an der Paketgrenze.
+        [$imapNachricht, $jmapMail] = teilformAufBeidenWegen($form);
+
+        $imap = (new MessageFormatter)->verbatim($imapNachricht);
+        $jmap = (new JmapMessageFormatter)->verbatim($jmapMail, fn () => 'BYTES');
+
+        expect($imap['files'][0]['inline'])->toBe($imRumpf)
+            ->and($jmap['files'][0]['inline'])->toBe($imRumpf);
+    })->with([
+        'Bild mit Content-ID gehoert in den Rumpf' => [['name' => 'logo.png', 'type' => 'image/png', 'cid' => 'logo@x', 'disposition' => 'inline'], true],
+        'Bild inline ohne Content-ID reist mit' => [['name' => 'foto.jpg', 'type' => 'image/jpeg', 'disposition' => 'inline'], false],
+        'Inline-PDF reist mit' => [['name' => 'Angebot.pdf', 'type' => 'application/pdf', 'cid' => 'pdf@x', 'disposition' => 'inline'], false],
+    ]);
+});
