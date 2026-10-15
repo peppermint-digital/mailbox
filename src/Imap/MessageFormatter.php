@@ -8,6 +8,7 @@ use Peppermint\Mailbox\Support\Betreff;
 use DirectoryTree\ImapEngine\Message;
 use Illuminate\Support\Str;
 use DirectoryTree\ImapEngine\BodyStructurePart;
+use Illuminate\Support\Facades\Log;
 use Peppermint\Mailbox\Content\CidReplacer;
 
 /**
@@ -39,6 +40,16 @@ class MessageFormatter
     public function __construct(
         private readonly CidReplacer $cids = new CidReplacer,
     ) {}
+
+    /**
+     * Siehe {@see anhangZahl()} — die Warnung kommt einmal, nicht hundertmal.
+     *
+     * Am Objekt und nicht `static`: Eine Liste baut genau einen Formatierer
+     * und reicht ihm hundert Nachrichten, also ist das die richtige Koernung.
+     * Ein `static` haette ausserdem ueber Testlaeufe hinweg geklebt und den
+     * Test von der Reihenfolge abhaengig gemacht.
+     */
+    private bool $rueckfallGemeldet = false;
 
     /**
      * For a list view: headers and a short preview.
@@ -168,6 +179,22 @@ class MessageFormatter
         $struktur = $message->bodyStructure();
 
         if ($struktur === null) {
+            /*
+             * Hier wird gleich eine Zahl herausgegeben, die sehr wahrscheinlich
+             * falsch ist: Ohne geladenen Rumpf antwortet die Bibliothek mit 0,
+             * und `0` sieht aus wie „keine Anhaenge" statt wie „nicht gefragt".
+             * Genau das war Bug #1025, und genau das faellt niemandem auf.
+             *
+             * Einmal je Vorgang, nicht je Nachricht — eine Liste hat hundert
+             * davon, und eine Warnung, die hundertmal kommt, wird abgeschaltet
+             * statt gelesen.
+             */
+            if (! $this->rueckfallGemeldet) {
+                $this->rueckfallGemeldet = true;
+
+                Log::warning('Mailbox: Anhangzahl ohne BODYSTRUCTURE ermittelt — die Zahl ist vermutlich 0, obwohl Anhaenge da sind. Die Abfrage sollte withBodyStructure() mitholen (siehe MailboxClient::fuerListenzeilen).');
+            }
+
             return $message->attachmentCount();
         }
 

@@ -4,6 +4,7 @@ use Carbon\Carbon;
 use DirectoryTree\ImapEngine\Address;
 use DirectoryTree\ImapEngine\Message;
 use DirectoryTree\ImapEngine\BodyStructureCollection;
+use Illuminate\Support\Facades\Log;
 use DirectoryTree\ImapEngine\BodyStructurePart;
 use DirectoryTree\ImapEngine\ContentDisposition;
 use DirectoryTree\ImapEngine\Enums\ContentDispositionType;
@@ -439,5 +440,40 @@ describe('Anhangzahl der Listenzeile (Bug #1025)', function () {
 
         expect($zeile['attachment_count'])->toBe(7)
             ->and($zeile['has_attachments'])->toBeTrue();
+    });
+});
+
+describe('Rueckfall auf die Bibliothekszahl meldet sich (Bug #1025)', function () {
+    it('warnt, wenn ohne Struktur gezaehlt wird', function () {
+        Log::spy();
+
+        (new MessageFormatter)->summary(nachricht(['attachmentCount' => 0]));
+
+        Log::shouldHaveReceived('warning')
+            ->withArgs(fn (string $text): bool => str_contains($text, 'BODYSTRUCTURE'))
+            ->once();
+    });
+
+    it('warnt einmal je Formatierer, nicht je Nachricht', function () {
+        // Eine Liste reicht demselben Formatierer hundert Nachrichten. Eine
+        // Warnung, die hundertmal kommt, wird abgeschaltet statt gelesen.
+        Log::spy();
+
+        $formatierer = new MessageFormatter;
+        foreach (range(1, 5) as $i) {
+            $formatierer->summary(nachricht(['attachmentCount' => 0]));
+        }
+
+        Log::shouldHaveReceived('warning')->once();
+    });
+
+    it('schweigt, wenn die Struktur da ist', function () {
+        Log::spy();
+
+        (new MessageFormatter)->summary(nachricht([
+            'bodyStructure' => new BodyStructureCollection(parts: []),
+        ]));
+
+        Log::shouldNotHaveReceived('warning');
     });
 });

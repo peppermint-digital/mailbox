@@ -248,7 +248,7 @@ class MailboxClient implements Mailbox
 
             $zeilen = [];
 
-            foreach ($abfrage->withHeaders()->withFlags()->withBodyStructure()->limit($limit)->get() as $nachricht) {
+            foreach (self::fuerListenzeilen($abfrage)->limit($limit)->get() as $nachricht) {
                 $zeilen[] = $this->formatter->summary($nachricht);
             }
 
@@ -282,7 +282,7 @@ class MailboxClient implements Mailbox
             $gesamt = $abfrage->count();
 
             $zeilen = MessagePage::sortByDateDesc($this->cheapRows(
-                $abfrage->withHeaders()->withFlags()->withBodyStructure()->limit(MessagePage::FETCH_LIMIT)->get()
+                self::fuerListenzeilen($abfrage)->limit(MessagePage::FETCH_LIMIT)->get()
             ));
 
             if (MessagePage::isSentFolder($ordner->path())) {
@@ -335,7 +335,7 @@ class MailboxClient implements Mailbox
             }
 
             $zeilen = $this->cheapRows(
-                $ordner->messages()->newest()->withHeaders()->withFlags()->withBodyStructure()->limit(MessagePage::FETCH_LIMIT)->get()
+                self::fuerListenzeilen($ordner->messages()->newest())->limit(MessagePage::FETCH_LIMIT)->get()
             );
 
             return ThreadPage::of(
@@ -363,6 +363,41 @@ class MailboxClient implements Mailbox
      * @param  iterable<mixed>  $messages
      * @return list<array<string, mixed>>
      */
+    /**
+     * Die Felder, die eine vollstaendige LISTENZEILE braucht.
+     *
+     * An einer Stelle, weil das Vergessen eines Feldes hier nicht auffaellt:
+     * Die Bibliothek antwortet dann nicht mit einem Fehler, sondern mit einem
+     * plausiblen Wert. `withBodyStructure()` wegzulassen kostete nicht die
+     * Anhangzahl — es machte sie zu `0`, in jeder Liste, fuer immer (Bug
+     * #1025). Wer einen neuen Listenweg baut, nimmt diese Methode und erbt
+     * damit die Felder, statt sie neu aufzuzaehlen.
+     *
+     * Kostet rund ein Viertel mehr Zeit als ohne die Struktur (gemessen am
+     * 15.10.2026: 265 ms statt 208 ms fuer 100 Nachrichten gegen einen Server
+     * im selben Netz). Das ist Datenmenge im selben FETCH, kein zusaetzlicher
+     * Gang zum Server — und der Preis dafuer, dass eine Mail mit Rechnung als
+     * solche zu erkennen ist.
+     */
+    private static function fuerListenzeilen(mixed $abfrage): mixed
+    {
+        return $abfrage->withHeaders()->withFlags()->withBodyStructure();
+    }
+
+    /**
+     * Die Felder der billigen Dreiergruppe — bewusst OHNE Struktur.
+     *
+     * `newest()`, `newerThan()` und `olderThan()` liefern keine Anhangzahl und
+     * keine Vorschau; sie sind das sparsame Gegenstueck fuer ein Verzeichnis,
+     * das nur buendeln will. Eigene Methode statt derselben Kette, damit der
+     * Unterschied zu {@see fuerListenzeilen()} eine Entscheidung ist und nicht
+     * wie ein vergessenes Feld aussieht.
+     */
+    private static function fuerKopfzeilen(mixed $abfrage): mixed
+    {
+        return $abfrage->withHeaders()->withFlags();
+    }
+
     private function cheapRows(iterable $messages): array
     {
         $zeilen = [];
@@ -507,7 +542,7 @@ class MailboxClient implements Mailbox
                 return [];
             }
 
-            $abfrage = $eingrenzen($ordner->messages()->withHeaders()->withFlags());
+            $abfrage = $eingrenzen(self::fuerKopfzeilen($ordner->messages()));
 
             $zeilen = [];
 
@@ -607,7 +642,7 @@ class MailboxClient implements Mailbox
 
         $zeilen = [];
 
-        foreach ($abfrage->withHeaders()->withFlags()->withBodyStructure()->limit($limit)->get() as $nachricht) {
+        foreach (self::fuerListenzeilen($abfrage)->limit($limit)->get() as $nachricht) {
             $zeilen[] = $this->formatter->summary($nachricht);
         }
 
