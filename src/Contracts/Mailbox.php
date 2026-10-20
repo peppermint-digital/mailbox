@@ -473,5 +473,5 @@ interface Mailbox
      *
      * @param  list<string>  $trashNames  lowercase aliases of the trash folder
      */
-    public function delete(string $folder, int|string $uid, array $trashNames = ['trash', 'papierkorb', 'deleted items', 'gelöschte elemente']): bool;
+    public function delete(string $folder, int|string $uid, array $trashNames = FolderNames::TRASH_ALIASES): bool;
 }

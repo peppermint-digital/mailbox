@@ -1033,7 +1033,7 @@ class JmapClient implements Mailbox
      *
      * @param  list<string>  $trashNames
      */
-    public function delete(string $folder, int|string $uid, array $trashNames = ['trash', 'papierkorb', 'deleted items', 'gelöschte elemente']): bool
+    public function delete(string $folder, int|string $uid, array $trashNames = FolderNames::TRASH_ALIASES): bool
     {
         $papierkorb = null;
 

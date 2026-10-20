@@ -4,6 +4,7 @@ namespace Peppermint\Mailbox\Http;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Folders\FolderNames;
@@ -55,6 +56,29 @@ trait HandlesMailboxActions
     abstract protected function mailboxFailure(callable $work): JsonResponse;
 
     /**
+     * Nach einer Aenderung am Postfach. Standardmaessig passiert nichts.
+     *
+     * ## Warum es diesen Haken gibt
+     *
+     * Aufgefallen am 19.10.2026 beim Versuch, den Projekt-Manager auf dieses
+     * Merkmal zu ziehen: Seine eigenen Wege sind KEINE Dopplung. Sie rufen
+     * dasselbe Paket, raeumen danach aber ihre Zwischenspeicher auf — die
+     * Seiten eines Ordners, die Kettenansicht, die einzelne Nachricht.
+     *
+     * Ohne diesen Haken waere die Uebernahme ein Rueckschritt mit Ansage: Wer
+     * eine Mail als gelesen markiert, saehe sie weiter als ungelesen, bis der
+     * Zwischenspeicher von selbst ablaeuft. Das sieht nicht wie ein Fehler
+     * aus, sondern wie „hat nicht geklickt" — und dann klickt man noch mal.
+     *
+     * Ein Produkt ohne Zwischenspeicher ueberschreibt nichts und merkt von
+     * diesem Haken nie etwas.
+     *
+     * @param  list<string>  $ordner  Jeder Ordner, dessen Inhalt sich geaendert hat — bei einem Verschieben also ZWEI.
+     * @param  list<int|string>  $nachrichten  Die betroffenen Kennungen, wo es welche gibt.
+     */
+    protected function afterMailboxChange(int $account, array $ordner, array $nachrichten = []): void {}
+
+    /**
      * Gelesen oder ungelesen.
      */
     public function markSeen(Request $request, int $account, int|string $uid): JsonResponse
@@ -64,9 +88,15 @@ trait HandlesMailboxActions
             'seen' => ['required', 'boolean'],
         ]);
 
-        return $this->mailboxFailure(fn (): array => [
-            'success' => $this->mailboxFor($account)->setSeen($daten['folder'], $uid, (bool) $daten['seen']),
-        ]);
+        return $this->mailboxFailure(function () use ($account, $daten, $uid): array {
+            $erfolg = $this->mailboxFor($account)->setSeen($daten['folder'], $uid, (bool) $daten['seen']);
+
+            if ($erfolg) {
+                $this->afterMailboxChange($account, [$daten['folder']], [$uid]);
+            }
+
+            return ['success' => $erfolg];
+        });
     }
 
     /**
@@ -79,9 +109,15 @@ trait HandlesMailboxActions
             'flagged' => ['required', 'boolean'],
         ]);
 
-        return $this->mailboxFailure(fn (): array => [
-            'success' => $this->mailboxFor($account)->setFlagged($daten['folder'], $uid, (bool) $daten['flagged']),
-        ]);
+        return $this->mailboxFailure(function () use ($account, $daten, $uid): array {
+            $erfolg = $this->mailboxFor($account)->setFlagged($daten['folder'], $uid, (bool) $daten['flagged']);
+
+            if ($erfolg) {
+                $this->afterMailboxChange($account, [$daten['folder']], [$uid]);
+            }
+
+            return ['success' => $erfolg];
+        });
     }
 
     /**
@@ -94,9 +130,18 @@ trait HandlesMailboxActions
             'target_folder' => ['required', 'string'],
         ]);
 
-        return $this->mailboxFailure(fn (): array => [
-            'success' => $this->mailboxFor($account)->move($daten['folder'], $uid, $daten['target_folder']),
-        ]);
+        return $this->mailboxFailure(function () use ($account, $daten, $uid): array {
+            $erfolg = $this->mailboxFor($account)->move($daten['folder'], $uid, $daten['target_folder']);
+
+            if ($erfolg) {
+                // BEIDE Ordner: Der eine hat eine Nachricht weniger, der
+                // andere eine mehr. Nur den Quellordner zu melden liesse die
+                // Mail im Ziel fehlen, bis der Zwischenspeicher ablaeuft.
+                $this->afterMailboxChange($account, [$daten['folder'], $daten['target_folder']], [$uid]);
+            }
+
+            return ['success' => $erfolg];
+        });
     }
 
     /**
@@ -106,9 +151,15 @@ trait HandlesMailboxActions
     {
         $daten = $request->validate(['folder' => ['required', 'string']]);
 
-        return $this->mailboxFailure(fn (): array => [
-            'success' => $this->mailboxFor($account)->delete($daten['folder'], $uid),
-        ]);
+        return $this->mailboxFailure(function () use ($account, $daten, $uid): array {
+            $erfolg = $this->mailboxFor($account)->delete($daten['folder'], $uid);
+
+            if ($erfolg) {
+                $this->afterMailboxChange($account, [$daten['folder']], [$uid]);
+            }
+
+            return ['success' => $erfolg];
+        });
     }
 
     /**
@@ -158,6 +209,10 @@ trait HandlesMailboxActions
         return $this->mailboxFailure(function () use ($daten, $account): array {
             $this->mailboxFor($account)->createFolder($daten['path']);
 
+            // Die Ordnerliste hat sich geaendert — ohne diese Meldung zeigt ein
+            // Produkt mit Zwischenspeicher den neuen Ordner erst spaeter.
+            $this->afterMailboxChange($account, [$daten['path']]);
+
             return ['success' => true];
         });
     }
@@ -177,6 +232,9 @@ trait HandlesMailboxActions
         return $this->mailboxFailure(function () use ($daten, $account): array {
             $neu = $this->mailboxFor($account)->renameFolder($daten['path'], $daten['name']);
 
+            // Beide Namen: der alte verschwindet, der neue kommt.
+            $this->afterMailboxChange($account, [$daten['path'], $neu]);
+
             return ['success' => true, 'path' => $neu];
         });
     }
@@ -192,6 +250,8 @@ trait HandlesMailboxActions
 
         return $this->mailboxFailure(function () use ($daten, $account): array {
             $this->mailboxFor($account)->deleteFolder($daten['path']);
+
+            $this->afterMailboxChange($account, [$daten['path']]);
 
             return ['success' => true];
         });
@@ -249,7 +309,23 @@ trait HandlesMailboxActions
         $daten = $request->validate([
             'folder' => ['required', 'string'],
             'action' => ['required', 'string', 'in:read,unread,flag,unflag,move,delete,archive'],
-            'uids' => ['required', 'array', 'min:1'],
+            /*
+             * `max:200` ist ein Riegel gegen die Schleife darunter, nicht
+             * gegen den Menschen davor: Jede Kennung ist ein eigener Aufruf
+             * am Mailserver, und O365 drosselt pro Postfach ueber alle
+             * Verbindungen (#4159). Aus dem Manager gehoben, der ihn hatte.
+             *
+             * KEINE Regel auf `uids.*`: Der Manager verlangte dort `integer`,
+             * und das ist fuer JMAP falsch — dort ist eine Kennung eine
+             * Zeichenkette. Die Uebernahme repariert das mit.
+             *
+             * Was die Grenze NICHT kann: Sie antwortet mit 422, und `postCounted()`
+             * macht aus allem, was nicht 2xx ist, ein `null` — die Oberflaeche
+             * sagt dann „nicht erreichbar". Erreichbar ist das heute nicht, weil
+             * keine Liste mehr als 200 Zeilen auf einmal zeigt. Zeigt sie es
+             * einmal, braucht der Transport einen eigenen Zweig fuer 422.
+             */
+            'uids' => ['required', 'array', 'min:1', 'max:200'],
             'target_folder' => ['required_if:action,move', 'string'],
         ]);
 
@@ -266,6 +342,25 @@ trait HandlesMailboxActions
             // Drosselung (im Manager als #4159 gemessen).
             if ($daten['action'] === 'archive') {
                 $ergebnis = $postfach->archive($ordner, $kennungen);
+
+                /*
+                 * Der ZIELORDNER gehoert dazu, nicht nur der Quellordner.
+                 * Stand hier bis zum 20.10.2026 nicht — und der Manager hat
+                 * es in seinem eigenen Weg gemacht, also waere die Uebernahme
+                 * ein Rueckschritt gewesen: Das Archiv haette nach dem
+                 * Archivieren weiter den alten Stand gezeigt.
+                 *
+                 * Nur bei Erfolg nachfragen: `specialFolder()` kostet eine
+                 * Ordnerliste, und wenn nichts verschoben wurde, ist auch
+                 * nichts im Archiv zu vergessen.
+                 */
+                $ziele = [$ordner];
+
+                if ($ergebnis['archived'] > 0) {
+                    $ziele[] = $postfach->specialFolder('Archive');
+                }
+
+                $this->afterMailboxChange($account, array_values(array_filter($ziele)), $kennungen);
 
                 return [
                     'success' => true,
@@ -288,11 +383,77 @@ trait HandlesMailboxActions
                     default => false,
                 };
 
-                $ok ? $erledigt++ : $fehlgeschlagen++;
+                if ($ok) {
+                    $erledigt++;
+
+                    continue;
+                }
+
+                $fehlgeschlagen++;
+
+                /*
+                 * Ein `false` heisst: Die Kennung liegt in DIESEM Ordner
+                 * nicht. Das wirft keine Ausnahme — und wurde deshalb nirgends
+                 * festgehalten, waehrend der Aufruf Erfolg meldete. Wer
+                 * mehrere Mails ankreuzte und loeschte, sah keine
+                 * Fehlermeldung und keine Wirkung (im Projekt-Manager am
+                 * 13.09.2026 gemeldet).
+                 *
+                 * Die Zahl allein reicht nicht: „3 von 5 fehlgeschlagen" sagt
+                 * nicht, WELCHE — und ohne das ist es nicht nachvollziehbar.
+                 * Deshalb steht es im Paket und nicht in einem Haken: Der
+                 * Fehler gehoert jedem, der die Mehrfachauswahl benutzt.
+                 */
+                Log::warning('Massenaktion: Nachricht im Ordner nicht gefunden.', [
+                    'account' => $account,
+                    'folder' => $ordner,
+                    'uid' => $uid,
+                    'action' => $daten['action'],
+                ]);
             }
 
+            /*
+             * EINMAL am Ende, nicht je Nachricht: Eine Mehrfachauswahl mit
+             * fuenfzig Zeilen wuerde sonst fuenfzig Mal dieselben
+             * Zwischenspeicher leeren. Beim Verschieben gehoert der
+             * Zielordner dazu.
+             */
+            $this->afterMailboxChange(
+                $account,
+                array_values(array_filter([$ordner, $daten['action'] === 'move' ? ($daten['target_folder'] ?? null) : null])),
+                $kennungen,
+            );
+
+            /*
+             * `success` heisst hier: DIE ANFRAGE IST GELAUFEN — nicht „alles
+             * hat geklappt". Das Ergebnis tragen `processed` und `failed`.
+             *
+             * Die Unterscheidung ist nicht kosmetisch, sie entscheidet, was
+             * der Mensch davor liest. Hier stand bis zum 20.10.2026
+             * `$fehlgeschlagen === 0`, und das machte den Teilerfolgs-Zweig
+             * der Oberflaeche zu totem Code:
+             *
+             *   postCounted() gibt bei `success: false` ein `null` zurueck
+             *   → runBulkAcrossFolders() setzt `unreachable`
+             *   → die Oberflaeche sagt „Sammelaktion fehlgeschlagen"
+             *
+             * Also genau die Meldung, die der Fund vom 13.09.2026 abschaffen
+             * sollte: „3 von 5 bearbeitet, 2 im Ordner nicht gefunden" waere
+             * nie erschienen, und „keine einzige konnte bearbeitet werden,
+             * laden Sie die Liste neu" auch nicht. Beides hat der Nutzer
+             * gemeldet, beides war gebaut, beides war unerreichbar.
+             *
+             * Schlimmer noch: `unreachable` klebt ueber Ordner hinweg. Faellt
+             * Ordner A teilweise und gelingt B vollstaendig, hiesse es
+             * „fehlgeschlagen", waehrend zwanzig Mails verschoben wurden.
+             *
+             * Beide Haelften waren fuer sich getestet und gruen. Der Test auf
+             * dieser Seite behauptete `success === false` ausdruecklich.
+             * Gefunden nur, indem Server und Transport GEGENEINANDER gelesen
+             * wurden.
+             */
             return [
-                'success' => $fehlgeschlagen === 0,
+                'success' => true,
                 'processed' => $erledigt,
                 'failed' => $fehlgeschlagen,
             ];

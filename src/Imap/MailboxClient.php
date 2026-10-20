@@ -1075,7 +1075,7 @@ class MailboxClient implements Mailbox
      *
      * @param  list<string>  $trashNames  lowercase aliases of the trash folder
      */
-    public function delete(string $folder, int|string $uid, array $trashNames = ['trash', 'papierkorb', 'deleted items', 'gelöschte elemente']): bool
+    public function delete(string $folder, int|string $uid, array $trashNames = FolderNames::TRASH_ALIASES): bool
     {
         return $this->session(function ($mailbox) use ($folder, $uid, $trashNames): bool {
             $quelle = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
@@ -1090,12 +1090,44 @@ class MailboxClient implements Mailbox
                 return false;
             }
 
+            /*
+             * Die MARKE zuerst, der Name danach.
+             *
+             * Hier stand bis zum 20.10.2026 nur die Namenssuche — entgegen
+             * dem, was der Vertrag dieser Methode zusagt („a transport that
+             * knows the folder's role uses that"), und entgegen dem, was der
+             * JMAP-Weg daneben schon tat (`role === 'trash'`).
+             *
+             * Der Unterschied ist nicht akademisch, denn der Rueckfall dieser
+             * Methode ist das ENDGUELTIGE Loeschen. Ein Postfach, dessen
+             * Papierkorb wir nicht benennen konnten, ist von einem ohne
+             * Papierkorb nicht zu unterscheiden — und die Mail ist weg. Ein
+             * `\Trash` liefert die Antwort ohne Raten; die Namen fangen die
+             * Server auf, die keine Marken setzen.
+             *
+             * Zwei Durchgaenge und nicht einer: Ein markierter Ordner weiter
+             * unten in der Liste ist die bessere Antwort als ein passender
+             * Name weiter oben. Dieselbe Begruendung wie in
+             * {@see specialFolder()}.
+             */
+            $ordnerliste = $mailbox->folders()->get();
             $papierkorb = null;
 
-            foreach ($mailbox->folders()->get() as $kandidat) {
-                if (FolderPaths::matchesAny($kandidat->name(), $kandidat->path(), $trashNames)) {
-                    $papierkorb = $kandidat->path();
-                    break;
+            foreach ($ordnerliste as $kandidat) {
+                foreach ((array) ($kandidat->flags() ?? []) as $flag) {
+                    if (mb_strtolower((string) $flag) === '\\trash') {
+                        $papierkorb = $kandidat->path();
+                        break 2;
+                    }
+                }
+            }
+
+            if ($papierkorb === null) {
+                foreach ($ordnerliste as $kandidat) {
+                    if (FolderPaths::matchesAny($kandidat->name(), $kandidat->path(), $trashNames)) {
+                        $papierkorb = $kandidat->path();
+                        break;
+                    }
                 }
             }
 

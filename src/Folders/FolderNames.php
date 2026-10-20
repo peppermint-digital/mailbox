@@ -42,6 +42,46 @@ class FolderNames
     ];
 
     /**
+     * What the trash folder may be called.
+     *
+     * ## Why this list is a data-loss boundary, not a convenience
+     *
+     * {@see \Peppermint\Mailbox\Contracts\Mailbox::delete()} moves a message
+     * into the trash — and when it finds no trash, it deletes the message for
+     * good. That fallback is intended for a mailbox that genuinely has no
+     * trash folder. It cannot tell that case apart from "there is one and I
+     * failed to recognise its name".
+     *
+     * So a missing spelling here does not degrade gracefully. It turns the
+     * delete button into permanent deletion, once, silently, on somebody's
+     * mail. That is the reason this list is long and lives in one place.
+     *
+     * ## Why the encoded spellings are in it
+     *
+     * Same reason as {@see EXCLUDED_FROM_SEARCH}: over IMAP a non-ASCII folder
+     * name arrives in modified UTF-7 (RFC 3501), and Office 365 reports the
+     * German trash as `Gel&APY-schte Elemente`. A comparison against
+     * "gelöschte elemente" does not find it. In the search path that cost was
+     * measured — 10 of 50 hits came out of the trash — and the encoded forms
+     * fixed it. Here the cost would be higher than a confusing hit.
+     *
+     * An alias that never matches anything is free. A missing one is not.
+     *
+     * `deleted` and `gelöscht` come from peppermint-manager, which passed them
+     * by hand because its mailboxes needed them; carrying them here is what
+     * makes that hand-off unnecessary.
+     *
+     * @var list<string>
+     */
+    public const TRASH_ALIASES = [
+        'trash', 'papierkorb',
+        'deleted', 'deleted items', 'deleted messages',
+        'gelöscht', 'geloscht', 'gelöschte elemente', 'geloschte elemente',
+        // IMAP modified UTF-7, the way Office 365 reports them:
+        'gel&apy-schte elemente', 'gel&apy-scht',
+    ];
+
+    /**
      * The standard folders, and the names they hide behind.
      *
      * Key = the name to create when none exists, value = aliases for
