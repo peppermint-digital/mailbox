@@ -161,48 +161,85 @@ class ZustandUmziehenCommand extends Command
              * bleibt die zugewiesene Person die Handelnde.
              */
             $zuweisenderId = $zeile->assigned_by_user_id === null ? null : (int) $zeile->assigned_by_user_id;
-            $nutzer = $this->nutzer($zuweisenderId) ?? $this->nutzer((int) $zeile->assigned_to_user_id);
+            $zuweisender = $this->nutzer($zuweisenderId);
+            $empfaenger = $this->nutzer((int) $zeile->assigned_to_user_id);
 
-            if ($hindernis !== null) {
+            /*
+             * Wer handelt — und ob der Zuweisende dabei genannt werden darf.
+             *
+             * Beides wird in BEIDEN Laeufen bestimmt, nicht nur im Probelauf.
+             * Vorher fragte nur der Probelauf bei der Mitte nach, und zwar
+             * ausschliesslich fuer die handelnde Person. Ergebnis am
+             * 20.10.2026: 20 Zeilen standen auf „bereit" und scheiterten dann
+             * doch, weil die ZUGEWIESENE Person der Mitte unbekannt war. Ein
+             * Probelauf, der die halbe Vorbedingung prueft, liest sich wie
+             * „wird klappen" — dieselbe Falle wie am Morgen, nur die andere
+             * Haelfte.
+             */
+            $handelnder = null;
+            $ohneZuweisenden = false;
+
+            if ($hindernis === null) {
+                if ($empfaenger === null) {
+                    $hindernis = 'kein Nutzersatz — niemand kann handeln';
+                } elseif (! $this->darfHinein($mitte, $konto, $empfaenger)) {
+                    /*
+                     * Die Zustaendigkeit selbst kann nicht umziehen: Die Mitte
+                     * fuehrt Menschen ueber ihre Adresse, und wen sie nicht
+                     * kennt, dem kann sie nichts zuschreiben. Hier NICHTS
+                     * umzubiegen ist der Punkt — eine Zustaendigkeit auf gut
+                     * Glueck einzutragen haengt sie an den Falschen.
+                     */
+                    $hindernis = 'die zugewiesene Person laesst die Mitte nicht hinein';
+                } else {
+                    $handelnder = $empfaenger;
+
+                    if ($zuweisender !== null && $this->darfHinein($mitte, $konto, $zuweisender)) {
+                        $handelnder = $zuweisender;
+                    } elseif ($zuweisender !== null) {
+                        /*
+                         * Der Zuweisende ist ausgeschieden (oder der Mitte aus
+                         * anderem Grund unbekannt). Die ZUSTAENDIGKEIT ist
+                         * trotzdem lebender Zustand und gehoert jemandem, den
+                         * die Mitte kennt — sie deswegen liegen zu lassen
+                         * hiesse, dem Empfaenger seine Arbeit zu verstecken.
+                         *
+                         * Also handelt der Empfaenger, und der Zuweisende wird
+                         * NICHT genannt. Das ist bewusst weniger, als wir
+                         * wissen: `null` heisst in der Mitte „kein Zuweisender
+                         * vermerkt" und ist damit von einer Selbstzuweisung
+                         * nicht zu unterscheiden. Die ganze Wahrheit steht
+                         * weiter in der eigenen Zeile — der Umzug loescht sie
+                         * nicht. Den Falschen zu nennen waere die Alternative,
+                         * und die ist schlechter.
+                         */
+                        $ohneZuweisenden = true;
+                    }
+                }
+
+                if ($hindernis !== null) {
+                    $fehler++;
+                }
+            } else {
                 $fehler++;
-            } elseif ($echt) {
+            }
+
+            if ($hindernis === null && $echt) {
                 /*
-                 * ALS die zugewiesene Person schreiben. Die Bruecke liest die
-                 * handelnde Person aus `auth()->user()`, und ohne sie weist
-                 * die Mitte ab — siehe {@see alsPerson()}.
+                 * ALS die handelnde Person schreiben. Die Bruecke liest sie
+                 * aus `auth()->user()`, und ohne sie weist die Mitte ab —
+                 * siehe {@see alsPerson()}.
                  */
-                $geschrieben = $this->alsPerson($nutzer, fn () => $mitte->zuweisen(
+                $geschrieben = $this->alsPerson($handelnder, fn () => $mitte->zuweisen(
                     $konto,
                     (string) $zeile->message_id,
                     $zeile->thread_id === null ? null : (string) $zeile->thread_id,
                     $person,
-                    $this->person($zuweisenderId),
+                    $ohneZuweisenden ? null : $this->person($zuweisenderId),
                 ));
 
                 if ($geschrieben === null) {
                     $hindernis = 'die Mitte hat nicht angenommen';
-                    $fehler++;
-                }
-            } else {
-                /*
-                 * Der Probelauf FRAGT die Mitte, statt nur zu pruefen, ob die
-                 * Person benennbar ist.
-                 *
-                 * Vorher stand hier „bereit", sobald Postfach und Adresse
-                 * bekannt waren — und am 20.10.2026 scheiterten danach alle
-                 * 80 Zeilen an der Sichtpruefung. Ein Probelauf, der eine
-                 * VORBEDINGUNG prueft und „bereit" meldet, liest sich wie
-                 * „der Schreibvorgang wird klappen".
-                 *
-                 * Ein Lesen ist harmlos und laeuft durch denselben Riegel wie
-                 * das Schreiben. Antwortet die Mitte nicht, ist das hier die
-                 * Auskunft, die zaehlt.
-                 */
-                if ($nutzer === null) {
-                    $hindernis = 'kein Nutzersatz — niemand kann handeln';
-                    $fehler++;
-                } elseif (! $this->darfHinein($mitte, $konto, $nutzer)) {
-                    $hindernis = 'die Mitte laesst diese Person nicht hinein';
                     $fehler++;
                 }
             }
@@ -211,10 +248,12 @@ class ZustandUmziehenCommand extends Command
                 $postfach ?? "Konto #{$konto}",
                 $zeile->thread_id ?? $zeile->message_id,
                 $person?->adresse ?? "Nutzer #{$zeile->assigned_to_user_id}",
-                // Die Spalte, um die es geht: Nicht „hat geklappt", sondern
-                // „ist die Sache ueberhaupt benennbar".
-                $person === null ? 'nein' : 'ja',
-                $hindernis ?? ($echt ? 'umgezogen' : 'bereit'),
+                // Die Spalte, um die es geht — und sie sagt jetzt, was sie
+                // behauptet: nicht „Adresse vorhanden", sondern „die Mitte
+                // laesst diese Person an dieses Postfach". Vorher stand hier
+                // „ja", sobald die Person benennbar war.
+                $hindernis === null ? 'ja' : 'nein',
+                $this->ergebnis($hindernis, $echt, $ohneZuweisenden),
             ];
         }
 
@@ -222,10 +261,41 @@ class ZustandUmziehenCommand extends Command
         $this->components->info("Zuständigkeiten: {$offen} offen in `{$tabelle}`");
 
         if ($zeilen !== []) {
-            $this->table(['Postfach', 'Kette / Nachricht', 'Person', 'zentral bekannt', 'Ergebnis'], $zeilen);
+            $this->table(['Postfach', 'Kette / Nachricht', 'Person', 'Mitte lässt hinein', 'Ergebnis'], $zeilen);
+        }
+
+        /*
+         * Scheitert ALLES an der Sichtpruefung, ist die naheliegende Deutung
+         * („diese Menschen kennt die Mitte nicht") womoeglich falsch: Eine
+         * Mitte, die gar nicht antwortet, sieht genauso aus. Das gehoert
+         * dazugesagt, sonst sucht man am falschen Ende.
+         */
+        if ($offen > 0 && $fehler === $offen) {
+            $this->components->warn(
+                'Keine einzige Zeile kam durch. Das sieht bei einer Mitte, die nicht antwortet, '
+                .'genauso aus wie bei Menschen, die sie nicht kennt — erst das prüfen.'
+            );
         }
 
         return $fehler;
+    }
+
+    /**
+     * Was in der Ergebnisspalte steht.
+     *
+     * Eigene Methode, weil der Fall „umgezogen, aber ohne den Zuweisenden"
+     * sonst in einem dreifach verschachtelten Ausdruck in der Tabellenzeile
+     * verschwindet — und genau dieser Fall ist der, den ein Mensch sehen muss.
+     */
+    private function ergebnis(?string $hindernis, bool $echt, bool $ohneZuweisenden): string
+    {
+        if ($hindernis !== null) {
+            return $hindernis;
+        }
+
+        $kern = $echt ? 'umgezogen' : 'bereit';
+
+        return $ohneZuweisenden ? $kern.' (Zuweisender ausgeschieden, nicht vermerkt)' : $kern;
     }
 
     private function schlummer(bool $echt): int
@@ -370,6 +440,7 @@ class ZustandUmziehenCommand extends Command
      * ein Umzug ist kein Grund, eine Zugriffsgrenze aufzuheben.
      *
      * @template T
+     *
      * @param  callable(): T  $tun
      * @return T
      */

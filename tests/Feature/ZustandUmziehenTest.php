@@ -12,7 +12,6 @@ use Peppermint\Mailbox\Models\MailAccount;
 use Peppermint\Mailbox\Models\MailAssignment;
 use Peppermint\Mailbox\Models\MailSnooze;
 use Peppermint\Mailbox\Zustand\Person;
-use Peppermint\Mailbox\Zustand\Schlummer;
 use Peppermint\Mailbox\Zustand\Schlummerliste;
 use Peppermint\Mailbox\Zustand\Zuweisung;
 use Peppermint\Mailbox\Zustand\Zuweisungsliste;
@@ -96,6 +95,69 @@ class MitteMitschrift implements Zuweisungsspeicher
         );
 
         return $zuweisung;
+    }
+
+    public function aufheben(int $konto, string $nachricht, ?string $kette): bool
+    {
+        return true;
+    }
+}
+
+/**
+ * Eine Mitte, die nur bestimmte Menschen hineinlässt — und mitschreibt, wer
+ * jeweils gehandelt hat.
+ *
+ * Das ist der Fall, der sich mit {@see MitteMitschrift} nicht nachstellen
+ * lässt: Dort ist jede Person willkommen, und deshalb war am 20.10.2026 kein
+ * Test rot, obwohl 30 von 79 Zeilen in Produktion nicht umziehen konnten.
+ *
+ * `erreichbar` hängt hier an der ANGEMELDETEN Person, genau wie in der Mitte:
+ * Die Brücke liest sie aus `auth()->user()`, und wen sie nicht kennt, den
+ * lässt sie an kein Postfach.
+ */
+class MitteMitSichtpruefung implements Zuweisungsspeicher
+{
+    /** @var list<array{handelnder: ?string, an: string, von: ?string}> */
+    public array $geschrieben = [];
+
+    /** @param list<string> $ausgeschieden Adressen, die die Mitte nicht kennt. */
+    public function __construct(public array $ausgeschieden = []) {}
+
+    public function schreibbar(): bool
+    {
+        return true;
+    }
+
+    public function offene(int $konto): Zuweisungsliste
+    {
+        $wer = auth()->user()?->getAttribute('email');
+
+        return $wer !== null && in_array($wer, $this->ausgeschieden, true)
+            ? Zuweisungsliste::unerreichbar()
+            : Zuweisungsliste::mit([]);
+    }
+
+    public function fuer(int $konto, string $nachricht, ?string $kette): ?Zuweisung
+    {
+        return null;
+    }
+
+    public function zuweisen(int $konto, string $nachricht, ?string $kette, Person $an, ?Person $von): ?Zuweisung
+    {
+        $this->geschrieben[] = [
+            'handelnder' => auth()->user()?->getAttribute('email'),
+            'an' => $an->adresse,
+            'von' => $von?->adresse,
+        ];
+
+        return new Zuweisung(
+            konto: $konto,
+            postfach: 'department@example.test',
+            nachricht: $nachricht,
+            kette: $kette,
+            an: $an,
+            von: $von,
+        );
     }
 
     public function aufheben(int $konto, string $nachricht, ?string $kette): bool
@@ -221,9 +283,15 @@ it('schlägt fehl, wenn eine Person keine Adresse hat — und zieht sie nicht um
     expect($this->mitte->geschrieben)->toBe([]);
 });
 
-it('nennt im Probelauf, ob die Person zentral benennbar ist', function () {
+it('nennt im Probelauf, ob die Mitte die Person hineinlässt', function () {
     // Die Spalte, die sonst niemand aufschreibt — und die beim vergleichbaren
     // Fehler am 21.09.2026 der einzige Ort war, an dem er sichtbar wurde.
+    //
+    // Die Überschrift hiess bis zum 20.10.2026 „zentral bekannt" und MASS
+    // etwas anderes, naemlich ob die Person eine Adresse hat. Das ist der
+    // Unterschied zwischen „benennbar" und „die Mitte nimmt sie an" — und
+    // genau in dieser Luecke standen 20 Zeilen auf „bereit", die nicht
+    // klappen konnten.
     MailAssignment::create([
         'email_account_id' => $this->postfach->id,
         'message_id' => '<a@example.test>',
@@ -233,7 +301,7 @@ it('nennt im Probelauf, ob die Person zentral benennbar ist', function () {
     ]);
 
     $this->artisan('mailbox:zustand-umziehen')
-        ->expectsOutputToContain('zentral bekannt')
+        ->expectsOutputToContain('Mitte lässt hinein')
         ->assertFailed();
 });
 
@@ -387,7 +455,7 @@ it('handelt ALS die zugewiesene Person — sonst weist die Mitte ab', function (
 
         public function offene(int $konto): Zuweisungsliste
         {
-            return new Zuweisungsliste(zuweisungen: [], erreichbar: true);
+            return Zuweisungsliste::mit([]);
         }
 
         public function fuer(int $konto, string $nachricht, ?string $kette): ?Zuweisung
@@ -454,7 +522,7 @@ it('handelt als der ZUWEISENDE, wenn es einen gibt', function () {
 
         public function offene(int $konto): Zuweisungsliste
         {
-            return new Zuweisungsliste(zuweisungen: [], erreichbar: true);
+            return Zuweisungsliste::mit([]);
         }
 
         public function fuer(int $konto, string $nachricht, ?string $kette): ?Zuweisung
@@ -500,4 +568,132 @@ it('laesst nach dem Umzug niemanden angemeldet zurueck', function () {
     $this->artisan('mailbox:zustand-umziehen --ausfuehren --nur=zuweisungen');
 
     expect(auth()->user())->toBeNull();
+});
+
+it('meldet keine Bereitschaft, wenn die Mitte die ZUGEWIESENE Person nicht hineinlässt', function () {
+    /*
+     * Der Fund vom 20.10.2026 — die dritte Hälfte desselben Fehlers.
+     *
+     * Der Probelauf fragte die Mitte nur für die HANDELNDE Person. Bei 20
+     * Zeilen war die handelnde Person willkommen und die ZUGEWIESENE nicht:
+     * ein ausgeschiedener Kollege, dem noch 20 Ketten gehörten. Der Probelauf
+     * meldete 10 Hindernisse, der Echtlauf hatte 30 — und die Differenz stand
+     * vorher als „bereit" da.
+     *
+     * Eine Zuständigkeit für jemanden, den die Mitte nicht kennt, kann sie
+     * nicht halten. Das ist richtig so; falsch war nur, es zu verschweigen,
+     * bis geschrieben wurde.
+     */
+    $weg = UmzugsNutzer::create(['name' => 'Ausgeschieden', 'email' => 'weg@example.test']);
+
+    app()->instance(Zuweisungsspeicher::class, $mitte = new MitteMitSichtpruefung(['weg@example.test']));
+
+    MailAssignment::create([
+        'email_account_id' => $this->postfach->id,
+        'message_id' => '<a@example.test>',
+        'thread_id' => 'kette-1',
+        'assigned_to_user_id' => $weg->id,
+        'assigned_by_user_id' => $this->anna->id,
+        'status' => MailAssignment::STATUS_OPEN,
+    ]);
+
+    $this->artisan('mailbox:zustand-umziehen --nur=zuweisungen')
+        ->expectsOutputToContain('die zugewiesene Person')
+        ->assertFailed();
+
+    // Und der Echtlauf schreibt sie auch nicht — er sagt es nur vorher.
+    $this->artisan('mailbox:zustand-umziehen --ausfuehren --nur=zuweisungen')->assertFailed();
+
+    expect($mitte->geschrieben)->toBe([]);
+});
+
+it('zieht um, wenn nur der ZUWEISENDE ausgeschieden ist — und nennt ihn dann nicht', function () {
+    /*
+     * Die Gegenseite desselben Falles, und sie darf NICHT liegen bleiben.
+     *
+     * Fünf Zeilen im Manager gehörten einem aktiven Kollegen, zugewiesen von
+     * einem ausgeschiedenen. Die Zuständigkeit ist lebender Zustand und
+     * gehört jemandem, den die Mitte kennt — sie wegen des Zuweisenden liegen
+     * zu lassen hiesse, dem Empfänger seine Arbeit zu verstecken.
+     *
+     * Also handelt der Empfänger. Der Zuweisende wird dabei NICHT genannt:
+     * Die Mitte verlangt, dass der genannte Zuweisende die handelnde Person
+     * ist, und jemanden zu nennen, der sie nicht ist, hiesse die Zuständigkeit
+     * dem Falschen zuzuschreiben. Weniger zu sagen, als man weiss, ist hier
+     * die kleinere Unwahrheit — die ganze steht weiter in der eigenen Zeile.
+     */
+    $weg = UmzugsNutzer::create(['name' => 'Ausgeschieden', 'email' => 'weg@example.test']);
+
+    app()->instance(Zuweisungsspeicher::class, $mitte = new MitteMitSichtpruefung(['weg@example.test']));
+
+    MailAssignment::create([
+        'email_account_id' => $this->postfach->id,
+        'message_id' => '<a@example.test>',
+        'thread_id' => 'kette-1',
+        'assigned_to_user_id' => $this->anna->id,
+        'assigned_by_user_id' => $weg->id,
+        'status' => MailAssignment::STATUS_OPEN,
+    ]);
+
+    $this->artisan('mailbox:zustand-umziehen --ausfuehren --nur=zuweisungen')
+        ->expectsOutputToContain('Zuweisender ausgeschieden')
+        ->assertSuccessful();
+
+    expect($mitte->geschrieben)->toBe([[
+        // Gehandelt hat der Empfänger, nicht der Ausgeschiedene …
+        'handelnder' => 'anna@example.test',
+        'an' => 'anna@example.test',
+        // … und als Zuweisender steht NICHTS da, nicht der Ausgeschiedene.
+        'von' => null,
+    ]]);
+});
+
+it('warnt, wenn keine einzige Zeile durchkam — das kann auch die Mitte selbst sein', function () {
+    /*
+     * Die Verwechslung, die am 20.10.2026 eine Stunde gekostet hat: „Die Mitte
+     * kennt diese Menschen nicht" und „die Mitte antwortet gar nicht" sehen
+     * durch diese Prüfung hindurch identisch aus.
+     *
+     * Bei EINER gescheiterten Zeile ist die erste Deutung die wahrscheinliche.
+     * Bei ALLEN ist sie die unwahrscheinliche — dann gehört der Hinweis dazu,
+     * sonst sucht man den Fehler bei den Personen.
+     */
+    app()->instance(Zuweisungsspeicher::class, new MitteMitSichtpruefung(['anna@example.test']));
+
+    MailAssignment::create([
+        'email_account_id' => $this->postfach->id,
+        'message_id' => '<a@example.test>',
+        'thread_id' => 'kette-1',
+        'assigned_to_user_id' => $this->anna->id,
+        'status' => MailAssignment::STATUS_OPEN,
+    ]);
+
+    $this->artisan('mailbox:zustand-umziehen --nur=zuweisungen')
+        ->expectsOutputToContain('nicht antwortet')
+        ->assertFailed();
+});
+
+it('warnt NICHT, wenn nur ein Teil liegen bleibt', function () {
+    /*
+     * Die Gegenprobe zum Hinweis oben. Ein Warnhinweis, der immer erscheint,
+     * ist keiner — und „die Mitte antwortet vielleicht gar nicht" wäre bei
+     * einer durchgekommenen Zeile nachweislich falsch.
+     */
+    $weg = UmzugsNutzer::create(['name' => 'Ausgeschieden', 'email' => 'weg@example.test']);
+
+    app()->instance(Zuweisungsspeicher::class, new MitteMitSichtpruefung(['weg@example.test']));
+
+    foreach ([[$this->anna->id, 'kette-geht'], [$weg->id, 'kette-bleibt']] as [$wem, $kette]) {
+        MailAssignment::create([
+            'email_account_id' => $this->postfach->id,
+            'message_id' => "<{$kette}@example.test>",
+            'thread_id' => $kette,
+            'assigned_to_user_id' => $wem,
+            'status' => MailAssignment::STATUS_OPEN,
+        ]);
+    }
+
+    $this->artisan('mailbox:zustand-umziehen --nur=zuweisungen')
+        ->doesntExpectOutputToContain('nicht antwortet')
+        ->assertFailed();
 });
