@@ -271,6 +271,11 @@ final class Werkzeug
             'label' => (string) ($feld['wort'] ?? ''),
             'type' => (string) ($feld['art'] ?? ''),
             'required' => (bool) ($feld['pflicht'] ?? false),
+            // Was schon drinsteht. Bei „Zustaendig" ist das die Person, die es
+            // gerade ist — damit die Leiste den Stand ZEIGEN und zugleich
+            // aenderbar lassen kann. Ein Feld ohne Vorbelegung koennte nur
+            // eines von beiden.
+            'value' => (string) ($feld['wert'] ?? ''),
         ];
 
         if (is_array($feld['auswahl'] ?? null)) {
@@ -299,6 +304,7 @@ final class Werkzeug
             'wort' => (string) ($roh['label'] ?? ''),
             'art' => (string) ($roh['type'] ?? ''),
             'pflicht' => (bool) ($roh['required'] ?? false),
+            'wert' => (string) ($roh['value'] ?? ''),
         ];
 
         if (is_array($roh['options'] ?? null)) {

@@ -101,6 +101,17 @@ class PersonZuordnen implements LiefertFelder, NurHier, Vorgangswerkzeug
             'wort' => $this->feldWort,
             'art' => 'select',
             'pflicht' => true,
+            /*
+             * Der aktuelle Stand als Vorbelegung — NICHT als Zustand.
+             *
+             * Das ist der Unterschied zu „Ticket anlegen": Dort schlaegt der
+             * Zustand das Verb, weil ein zweites Ticket ein Fehler waere. Hier
+             * ist das Aendern der Normalfall. Am 20.10.2026 im Browser
+             * gesehen: Mit `zustand()` stand an einer zugewiesenen Mail nur
+             * noch ein Text, und die Zustaendigkeit liess sich von dort gar
+             * nicht mehr aendern — nur ueber das Abzeichen in der Listenzeile.
+             */
+            'wert' => $konto === null ? '' : $this->zustaendigeAdresse($konto, $vorgang),
             'auswahl' => array_map(static fn (array $n): array => [
                 // Der WERT ist die Adresse. Stuende hier die Nummer, waere die
                 // Zuweisung beim naechsten Systemwechsel ein anderer Mensch.
@@ -111,42 +122,23 @@ class PersonZuordnen implements LiefertFelder, NurHier, Vorgangswerkzeug
     }
 
     /**
-     * Wer gerade zustaendig ist — die Auskunft, um die es geht.
+     * KEIN Zustand — und das ist eine Entscheidung, keine Luecke.
      *
-     * Ohne sie waere der Knopf in der Leiste eine Frage ohne Antwort: Die
-     * Mailseite zeigt die Zustaendigkeit heute als Abzeichen mit Initialen,
-     * und wer sie in die Leiste holt, muss die Auskunft mitnehmen. Beim
-     * Zusammenlegen darf nichts wegfallen.
+     * Ein Zustand SCHLAEGT in der Leiste das Verb: Statt des Knopfes steht
+     * dann der Hinweis, dass es die Sache schon gibt. Fuer „Ticket anlegen"
+     * ist das richtig — ein zweites Ticket waere ein Fehler.
+     *
+     * Fuer die Zustaendigkeit ist es falsch, und das war im Browser sofort zu
+     * sehen (20.10.2026): An einer zugewiesenen Mail stand nur noch
+     * „Zustaendig: …", und wer die Zustaendigkeit AENDERN wollte, konnte es
+     * von dort nicht. Das Aendern ist hier aber der Normalfall.
+     *
+     * Der aktuelle Stand steht deshalb als Vorbelegung im Auswahlfeld. Dann
+     * zeigt die Leiste ihn UND laesst ihn aendern.
      */
     public function zustand(Vorgang $vorgang, Model $person): ?array
     {
-        $konto = $this->konto($vorgang);
-
-        if ($konto === null) {
-            return null;
-        }
-
-        $zuweisung = app(Zuweisungsspeicher::class)->fuer(
-            $konto,
-            $vorgang->nachricht,
-            $vorgang->kette,
-        );
-
-        if ($zuweisung === null) {
-            return null;
-        }
-
-        return [
-            'wort' => str_replace(
-                ':name',
-                $zuweisung->an->name ?? $zuweisung->an->adresse,
-                $this->zustandMuster,
-            ),
-            // Kein Verweis: Die Zustaendigkeit hat keine eigene Seite, sie
-            // steht an dieser Mail. Eine Adresse hierhin zu erfinden fuehrte
-            // im Kreis.
-            'verweis' => null,
-        ];
+        return null;
     }
 
     public function verweis(Vorgang $vorgang, Model $person): ?string
@@ -252,6 +244,62 @@ class PersonZuordnen implements LiefertFelder, NurHier, Vorgangswerkzeug
         }
 
         return null;
+    }
+
+    /**
+     * Die Adresse der Person, die gerade zustaendig ist — oder ''.
+     *
+     * ## Warum das aufgeloest werden MUSS
+     *
+     * Der ORTSEIGENE Speicher gibt eine Person nur mit NUMMER heraus, ohne
+     * Adresse und ohne Namen — er fuehrt in seiner Tabelle nichts anderes
+     * (siehe `LokalerZuweisungsspeicher::alsWert()`). Die zentrale Fassung
+     * gibt die Adresse. Beide Formen kommen hier an, je nachdem, worauf das
+     * Produkt steht.
+     *
+     * Genau daran ist der erste Entwurf im Browser gescheitert: An einer
+     * zugewiesenen Mail stand „Zustaendig:" — ohne Namen. Der Code las
+     * `$an->name ?? $an->adresse`, und beide waren im AI Brain der leere
+     * String. `??` greift bei `null`, nicht bei `''`.
+     *
+     * {@see Zuweisbare} ist die einzige Stelle, die Nummer UND Adresse kennt.
+     * Deshalb wird hier darueber aufgeloest, und nicht geraten.
+     */
+    private function zustaendigeAdresse(int $konto, Vorgang $vorgang): string
+    {
+        $zuweisung = app(Zuweisungsspeicher::class)->fuer(
+            $konto,
+            $vorgang->nachricht,
+            $vorgang->kette,
+        );
+
+        if ($zuweisung === null) {
+            return '';
+        }
+
+        $adresse = mb_strtolower(trim($zuweisung->an->adresse));
+        $nummer = $zuweisung->an->nummer;
+
+        foreach ($this->personen($konto) as $kandidat) {
+            $trefferAdresse = $adresse !== '' && mb_strtolower($kandidat['email']) === $adresse;
+            $trefferNummer = $nummer !== null && (int) $kandidat['id'] === $nummer;
+
+            if ($trefferAdresse || $trefferNummer) {
+                return $kandidat['email'];
+            }
+        }
+
+        /*
+         * Zugewiesen, aber nicht in der Liste dieses Postfachs: Dann steht in
+         * der Auswahl NICHTS vorbelegt. Das ist richtig — eine Vorbelegung,
+         * die nicht in der Auswahl steht, waere ein Feld mit einem Wert, den
+         * man nicht wiederherstellen kann, wenn man einmal daneben klickt.
+         *
+         * Vorkommen kann es: Im Projekt-Manager haengt die Liste an der
+         * Zuteilung des Postfachs, und die kann sich geaendert haben,
+         * nachdem zugewiesen wurde.
+         */
+        return '';
     }
 
     /**

@@ -10,6 +10,7 @@ use Peppermint\Mailbox\Contracts\Zuweisungsspeicher;
 use Peppermint\Mailbox\Models\MailAccount;
 use Peppermint\Mailbox\Werkzeuge\PersonZuordnen;
 use Peppermint\Mailbox\Werkzeuge\Vorgang;
+use Peppermint\Mailbox\Werkzeuge\Werkzeug;
 use Peppermint\Mailbox\Werkzeuge\Werkzeugverzeichnis;
 use Peppermint\Mailbox\Zustand\Person;
 use Peppermint\Mailbox\Zustand\Zuweisung;
@@ -229,7 +230,18 @@ it('laesst Personen ohne Adresse aus der Auswahl', function () {
     expect(array_column($felder[0]['auswahl'], 'wert'))->toBe(['anna@example.test']);
 });
 
-it('sagt, wer gerade zustaendig ist — sonst waere der Knopf eine Frage ohne Antwort', function () {
+it('belegt die Auswahl mit der Person vor, die gerade zustaendig ist', function () {
+    /*
+     * Im Browser am 20.10.2026 gesehen, und vorher von keinem Test erfasst:
+     *
+     * Der erste Entwurf setzte einen ZUSTAND („Zustaendig: Anna"). Ein Zustand
+     * schlaegt in der Leiste das Verb — an einer zugewiesenen Mail stand also
+     * nur noch ein Text, und die Zustaendigkeit liess sich von dort gar nicht
+     * mehr aendern. Fuer „Ticket anlegen" ist das richtig; hier ist das
+     * Aendern der Normalfall.
+     *
+     * Jetzt steht der Stand als Vorbelegung IM Feld: sichtbar und aenderbar.
+     */
     $this->mitte->vorhanden = new Zuweisung(
         konto: 1,
         postfach: 'department@example.test',
@@ -239,17 +251,61 @@ it('sagt, wer gerade zustaendig ist — sonst waere der Knopf eine Frage ohne An
         von: null,
     );
 
-    $zustand = (new PersonZuordnen)->zustand($this->vorgang, $this->anna);
+    $werkzeug = new PersonZuordnen;
 
-    expect($zustand['wort'])->toBe('Zuständig: Bodo Brecht')
-        // Kein Verweis: Die Zustaendigkeit hat keine eigene Seite. Eine
-        // Adresse hierhin zu erfinden fuehrte im Kreis.
-        ->and($zustand['verweis'])->toBeNull();
+    expect($werkzeug->felder($this->vorgang, $this->anna)[0]['wert'])->toBe('bodo@example.test')
+        // UND kein Zustand, sonst verschwindet der Knopf.
+        ->and($werkzeug->zustand($this->vorgang, $this->anna))->toBeNull();
+});
+
+it('loest die zustaendige Person auch auf, wenn sie nur als NUMMER kommt', function () {
+    /*
+     * Der Fehler, der im AI Brain sichtbar wurde: Dort steht das Postfach-Paket
+     * auf dem ORTSEIGENEN Speicher, und der gibt eine Person nur mit Nummer
+     * heraus — `adresse` und `name` sind der leere String (siehe
+     * `LokalerZuweisungsspeicher::alsWert()`).
+     *
+     * Der erste Entwurf las `$an->name ?? $an->adresse`. `??` greift bei
+     * `null`, nicht bei `''` — in der Leiste stand „Zustaendig:" ohne Namen.
+     *
+     * Aufgeloest wird ueber `Zuweisbare`, die einzige Stelle, die Nummer UND
+     * Adresse kennt.
+     */
+    $this->mitte->vorhanden = new Zuweisung(
+        konto: 1,
+        postfach: 'department@example.test',
+        nachricht: '<a@example.test>',
+        kette: 'kette-1',
+        an: new Person(adresse: '', nummer: 2, name: ''),
+        von: null,
+    );
+
+    expect((new PersonZuordnen)->felder($this->vorgang, $this->anna)[0]['wert'])
+        ->toBe('bodo@example.test');
+});
+
+it('belegt NICHTS vor, wenn die zustaendige Person nicht in der Auswahl steht', function () {
+    /*
+     * Eine Vorbelegung, die nicht in der Auswahl steht, waere ein Wert, den man
+     * nach einem Fehlklick nicht wiederherstellen kann. Vorkommen kann der Fall
+     * im Projekt-Manager: Dort haengt die Liste an der Zuteilung des Postfachs,
+     * und die kann sich geaendert haben, nachdem zugewiesen wurde.
+     */
+    $this->mitte->vorhanden = new Zuweisung(
+        konto: 1,
+        postfach: 'department@example.test',
+        nachricht: '<a@example.test>',
+        kette: 'kette-1',
+        an: new Person(adresse: 'weg@woanders.test', name: 'Weg'),
+        von: null,
+    );
+
+    expect((new PersonZuordnen)->felder($this->vorgang, $this->anna)[0]['wert'])->toBe('');
 });
 
 it('nimmt die Woerter des Produkts, wenn es welche uebergibt', function () {
     // Das Paket BRINGT eine Sprache mit, es imponiert keine.
-    $werkzeug = new PersonZuordnen(wort: 'Bearbeiter', zustandMuster: 'Macht: :name');
+    $werkzeug = new PersonZuordnen(wort: 'Bearbeiter', feldWort: 'Wer', zustandMuster: 'Macht: :name');
 
     $this->mitte->vorhanden = new Zuweisung(
         konto: 1,
@@ -260,8 +316,12 @@ it('nimmt die Woerter des Produkts, wenn es welche uebergibt', function () {
         von: null,
     );
 
+    $ergebnis = $werkzeug->ausfuehren($this->vorgang, ['person' => 'bodo@example.test'], $this->anna);
+
     expect($werkzeug->werkzeug()->wort)->toBe('Bearbeiter')
-        ->and($werkzeug->zustand($this->vorgang, $this->anna)['wort'])->toBe('Macht: Bodo Brecht');
+        // Das Muster traegt auch die Rueckmeldung nach dem Zuweisen.
+        ->and($ergebnis->wort)->toBe('Macht: Bodo Brecht')
+        ->and($werkzeug->felder($this->vorgang, $this->anna)[0]['wort'])->toBe('Wer');
 });
 
 it('geht NICHT an fremde Systeme heraus — sonst kaeme es vierfach', function () {
@@ -308,8 +368,49 @@ it('haengt die Felder an das Werkzeug, wenn es welche fuehrt', function () {
         'label' => 'Person',
         'type' => 'select',
         'required' => true,
+        // Die Vorbelegung MUSS mitreisen. Ohne sie zeigt die Leiste ein leeres
+        // Feld an einer zugewiesenen Mail — und wer dann klickt, ohne
+        // hinzusehen, nimmt die Zustaendigkeit weg statt sie zu bestaetigen.
+        'value' => '',
     ])->and($draht['fields'][0]['options'][0])->toBe([
         'value' => 'anna@example.test',
         'label' => 'Anna Meier',
     ]);
+
+    // Und zurueck: Ein fremdes System schickt `value`, hier heisst es `wert`.
+    // Faellt die Uebersetzung in EINER Richtung aus, ist das Feld leer, ohne
+    // dass etwas bricht.
+    $zurueck = Werkzeug::aus($draht);
+
+    expect($zurueck->felder[0]['wert'])->toBe('')
+        ->and($zurueck->felder[0]['auswahl'][0])->toBe([
+            'wert' => 'anna@example.test',
+            'wort' => 'Anna Meier',
+        ]);
+});
+
+it('traegt die Vorbelegung durch die Drahtform — in beide Richtungen', function () {
+    /*
+     * Die Mutationsprobe „wert nicht in der Drahtform" hat am 20.10.2026
+     * UEBERLEBT: Kein Test sah hin, ob die Vorbelegung ueberhaupt hinausgeht.
+     * Sie ist der Unterschied zwischen „Bodo ist zustaendig" und einem leeren
+     * Feld an derselben Mail.
+     */
+    $this->mitte->vorhanden = new Zuweisung(
+        konto: 1,
+        postfach: 'department@example.test',
+        nachricht: '<a@example.test>',
+        kette: 'kette-1',
+        an: new Person(adresse: 'bodo@example.test', name: 'Bodo Brecht'),
+        von: null,
+    );
+
+    $werkzeug = app(Werkzeugverzeichnis::class)
+        ->anmelden(new PersonZuordnen)
+        ->sammeln($this->vorgang, $this->anna)['werkzeuge'][0];
+
+    $draht = $werkzeug->toArray();
+
+    expect($draht['fields'][0]['value'])->toBe('bodo@example.test')
+        ->and(Werkzeug::aus($draht)->felder[0]['wert'])->toBe('bodo@example.test');
 });

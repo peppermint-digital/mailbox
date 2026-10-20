@@ -464,3 +464,104 @@ describe('Felder — die Zusage, hinter der bis zum 20.10.2026 nichts stand', ()
             .then(() => unmount());
     });
 });
+
+describe('Vorbelegung: den Stand zeigen UND änderbar lassen', () => {
+    /**
+     * Im Browser am 20.10.2026 gefunden. Der erste Entwurf von „Zuständig"
+     * setzte einen ZUSTAND, und ein Zustand schlägt in der Leiste das Verb:
+     * An einer zugewiesenen Mail stand nur noch ein Text, und die
+     * Zuständigkeit ließ sich von dort nicht mehr ändern.
+     *
+     * Jetzt kommt der Stand als `value` im Feld. Beides geht: sehen und
+     * ändern.
+     */
+
+    function mitVorbelegung(wert: string): MailWerkzeug {
+        return werkzeug({
+            key: 'person',
+            label: 'Zuständig',
+            fields: [
+                {
+                    name: 'person',
+                    label: 'Person',
+                    type: 'select',
+                    required: true,
+                    value: wert,
+                    options: [
+                        { value: 'anna@example.test', label: 'Anna Meier' },
+                        { value: 'bodo@example.test', label: 'Bodo Brecht' },
+                    ],
+                },
+            ],
+        });
+    }
+
+    it('zeigt die vorbelegte Person und lässt den Knopf zu', () => {
+        const { container, unmount } = leiste({ werkzeuge: [mitVorbelegung('bodo@example.test')] });
+
+        expect(container.querySelector('select')?.value).toBe('bodo@example.test');
+        // Nicht aus: Es fehlt nichts, und das Ändern ist hier der Normalfall.
+        expect(container.querySelector('button')?.disabled).toBe(false);
+
+        unmount();
+    });
+
+    it('schickt die vorbelegte Person mit, auch wenn niemand etwas angefasst hat', async () => {
+        const gesehen: unknown[] = [];
+
+        const { container, unmount } = leiste({
+            werkzeuge: [mitVorbelegung('bodo@example.test')],
+            ausloesen: async (w, eingabe) => {
+                gesehen.push(eingabe);
+
+                return { ok: true, message: 'getan' };
+            },
+        });
+
+        container.querySelector('button')!.click();
+
+        await vi.waitFor(() => expect(gesehen).toHaveLength(1));
+
+        expect(gesehen[0]).toEqual({ person: 'bodo@example.test' });
+
+        unmount();
+    });
+
+    it('lässt die Wahl des Menschen die Vorbelegung schlagen', async () => {
+        const gesehen: unknown[] = [];
+
+        const { container, unmount } = leiste({
+            werkzeuge: [mitVorbelegung('bodo@example.test')],
+            ausloesen: async (w, eingabe) => {
+                gesehen.push(eingabe);
+
+                return { ok: true, message: 'getan' };
+            },
+        });
+
+        const auswahl = container.querySelector('select')!;
+
+        auswahl.value = 'anna@example.test';
+        auswahl.dispatchEvent(new Event('change', { bubbles: true }));
+
+        await vi.waitFor(() => expect(container.querySelector('select')!.value).toBe('anna@example.test'));
+
+        container.querySelector('button')!.click();
+
+        await vi.waitFor(() => expect(gesehen).toHaveLength(1));
+
+        expect(gesehen[0]).toEqual({ person: 'anna@example.test' });
+
+        unmount();
+    });
+
+    it('hält den Knopf aus, wenn NICHTS vorbelegt ist', () => {
+        // Niemand zuständig: Dann fehlt die Pflichtangabe wirklich.
+        const { container, unmount } = leiste({ werkzeuge: [mitVorbelegung('')] });
+
+        expect(container.querySelector('select')?.value).toBe('');
+        expect(container.querySelector('button')?.disabled).toBe(true);
+
+        unmount();
+    });
+});

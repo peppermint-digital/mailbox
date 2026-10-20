@@ -193,6 +193,30 @@ export function MailWerkzeugleiste({
     const zeichenbar = (werkzeug: MailWerkzeug): boolean =>
         (werkzeug.fields ?? []).every((feld) => feld.type === 'select');
 
+    /**
+     * Die WIRKSAMEN Werte eines Verbs: was der Mensch gewählt hat, sonst die
+     * Vorbelegung des Servers.
+     *
+     * Eine Funktion und keine zwei Rechnungen — das Zeichnen und der Klick
+     * müssen dasselbe ergeben. Der erste Entwurf hatte zwei: Die Leiste
+     * ZEIGTE die vorbelegte Person und SCHICKTE ein leeres Objekt, weil die
+     * Vorbelegung nur im Zeichnen stand. Der Server hätte korrekt „es wurde
+     * niemand ausgewählt" geantwortet, während im Feld jemand stand.
+     *
+     * `??` je Feld: Wer eines von zwei Feldern angefasst hat, soll das andere
+     * weiter vorbelegt sehen — und mitschicken.
+     */
+    function werteFuer(werkzeug: MailWerkzeug): Record<string, string> {
+        const kennung = werkzeug.key + (werkzeug.system ?? '');
+        const werte: Record<string, string> = {};
+
+        for (const feld of werkzeug.fields ?? []) {
+            werte[feld.name] = eingaben[kennung]?.[feld.name] ?? feld.value ?? '';
+        }
+
+        return werte;
+    }
+
     const nichtZeichenbar = sichtbar.filter((w) => !w.url && !w.state && !zeichenbar(w));
 
     /*
@@ -220,7 +244,7 @@ export function MailWerkzeugleiste({
         setLaufend(kennung);
 
         try {
-            const ergebnis = await ausloesen(werkzeug, eingaben[kennung] ?? {});
+            const ergebnis = await ausloesen(werkzeug, werteFuer(werkzeug));
             onMeldung?.(ergebnis.message, ergebnis.ok);
 
             if (ergebnis.ok) {
@@ -326,7 +350,7 @@ export function MailWerkzeugleiste({
                     }
 
                     const felder = werkzeug.fields ?? [];
-                    const werte = eingaben[kennung] ?? {};
+                    const werte = werteFuer(werkzeug);
 
                     /*
                      * Fehlt eine Pflichtangabe, ist der Knopf aus — nicht
@@ -344,7 +368,7 @@ export function MailWerkzeugleiste({
                                 <select
                                     key={feld.name}
                                     aria-label={feld.label}
-                                    value={werte[feld.name] ?? ''}
+                                    value={werte[feld.name]}
                                     disabled={beschaeftigt}
                                     onChange={(e) =>
                                         setEingaben((vorher) => ({

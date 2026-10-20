@@ -51,6 +51,15 @@ export interface MailWerkzeugFeld {
     label: string;
     type: string;
     required: boolean;
+    /**
+     * Was schon drinsteht.
+     *
+     * Bei „Zuständig" die Person, die es gerade ist — damit die Leiste den
+     * Stand ZEIGEN und ihn zugleich änderbar lassen kann. Der Weg über
+     * `state` kann nur eines von beiden: Ein Zustand schlägt in der Leiste
+     * das Verb, und dann ist der Knopf weg.
+     */
+    value?: string;
     options?: MailWerkzeugFeldOption[];
 }
 
