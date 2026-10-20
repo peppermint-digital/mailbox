@@ -42,6 +42,14 @@ return [
     'chat_tool' => env('MAILBOX_CHAT_TOOL', 'mailbox-chat-tool'),
 
     /*
+    | Die Werkzeuge der Mitte fuer Zustaendigkeit und Geschlummertes. Nur
+    | gebraucht, wenn `store: brain` — ein eigenstaendiges System fuehrt beides
+    | in seinen eigenen Tabellen.
+    */
+    'assignment_tool' => env('MAILBOX_ASSIGNMENT_TOOL', 'mail-assignment-tool'),
+    'snooze_tool' => env('MAILBOX_SNOOZE_TOOL', 'mail-snooze-tool'),
+
+    /*
     | Das Werkzeug, ueber das ein Produkt ohne eigene Ablage den
     | Gespraechsverlauf aus der Mitte liest.
     */
@@ -165,5 +173,42 @@ return [
     |
     */
     'view_secrets_ability' => env('MAILBOX_SECRET_ABILITY'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Die Werkzeuge am Vorgang
+    |--------------------------------------------------------------------------
+    |
+    | „Als Eingangsrechnung", „Ticket erstellen", „Aufgabe anhaengen" — die
+    | Verben, die ein Produkt an einer Mail anbietet. Angemeldet werden sie im
+    | Dienstanbieter des Produkts, nicht hier:
+    |
+    |     app(Werkzeugverzeichnis::class)->anmelden(AlsEingangsrechnung::class);
+    |
+    | Der Grund ist derselbe wie bei den Inbox-Arten: Ein Verb kommt selten
+    | allein. Wer eines einfuehrt, bringt die Klasse mit, die es ausfuehrt —
+    | beides gehoert nebeneinander und nicht auseinandergerissen auf Code und
+    | Konfiguration.
+    |
+    */
+    'werkzeuge' => [
+        // Platz fuer kuenftige Einstellungen der Leiste. Die Verben selbst
+        // werden angemeldet, nicht konfiguriert.
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | An welchem Model die Menschen haengen
+    |--------------------------------------------------------------------------
+    |
+    | Das kann das Paket nicht wissen, und es braucht es an zwei Stellen: Die
+    | MCP-Werkzeuge loesen die handelnde Person aus einer Adresse auf, und der
+    | Umzug in die Mitte muss zu einer Benutzer-Nummer die Adresse finden.
+    |
+    | Immer die ADRESSE: Jedes Produkt fuehrt seine eigene Nutzertabelle, und
+    | Nutzer 5 ist hier jemand anders als dort.
+    |
+    */
+    'user_model' => env('MAILBOX_USER_MODEL', 'App\\Models\\User'),
 
 ];

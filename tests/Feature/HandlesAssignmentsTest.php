@@ -44,7 +44,10 @@ function zuweisungsAnfrage(array $daten): Request
     return $r;
 }
 
-$personen = [['id' => 3, 'name' => 'Anna Meier'], ['id' => 4, 'name' => 'Bernd Schulz']];
+$personen = [
+    ['id' => 3, 'name' => 'Anna Meier', 'email' => 'anna@example.test'],
+    ['id' => 4, 'name' => 'Bernd Schulz', 'email' => 'bernd@example.test'],
+];
 
 it('weist die KETTE zu, nicht nur die Nachricht', function () use ($personen) {
     // Sonst ist die naechste Antwort in derselben Sache wieder niemandem
@@ -148,7 +151,7 @@ it('laesst das Produkt einen Riegel vor ALLE Wege setzen', function () {
     // Zuweisungs-Wege rufen `mailboxFor()` gar nicht auf — sie brauchen kein
     // Postfach, nur die Datenbank. Ohne diesen Haken waeren sie an der
     // Schranke vorbei erreichbar, und zwar lautlos.
-    $streng = new class(([['id' => 3, 'name' => 'Anna Meier']])) extends TestControllerFuerZuweisungen
+    $streng = new class(([['id' => 3, 'name' => 'Anna Meier', 'email' => 'anna@example.test']])) extends TestControllerFuerZuweisungen
     {
         protected function guardAssignments(int $account): void
         {
@@ -185,9 +188,9 @@ it('sagt beim Zuweisen, WER es vorher war', function () use ($personen) {
             parent::__construct($personen);
         }
 
-        protected function afterAssign(Peppermint\Mailbox\Models\MailAssignment $zuweisung, ?int $vorher, array $daten): void
+        protected function afterAssign(Peppermint\Mailbox\Zustand\Zuweisung $zuweisung, ?int $vorher, array $daten): void
         {
-            $this->gesehen[] = [$vorher, $zuweisung->assigned_to_user_id];
+            $this->gesehen[] = [$vorher, $zuweisung->an->nummer];
         }
     };
 

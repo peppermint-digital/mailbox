@@ -7,15 +7,28 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 use Peppermint\Mailbox\Brain\MailboxChat;
 use Peppermint\Mailbox\Console\InstallCommand;
+use Peppermint\Mailbox\Console\ZustandUmziehenCommand;
 use Illuminate\Support\Facades\Event;
 use Peppermint\Mailbox\Contracts\AccountStore;
 use Peppermint\Mailbox\Events\VerlaufVergessen;
 use Peppermint\Mailbox\Contracts\Verlaufsspeicher;
+use Peppermint\Mailbox\Contracts\Schlummerspeicher;
+use Peppermint\Mailbox\Contracts\Zuweisungsspeicher;
 use Peppermint\Mailbox\Stores\BrainAccountStore;
 use Peppermint\Mailbox\Stores\BrainVerlaufsspeicher;
+use Peppermint\Mailbox\Stores\BrainSchlummerspeicher;
+use Peppermint\Mailbox\Stores\BrainZuweisungsspeicher;
+use Peppermint\Mailbox\Stores\LokalerSchlummerspeicher;
+use Peppermint\Mailbox\Stores\LokalerZuweisungsspeicher;
 use Peppermint\Mailbox\Stores\LokalerVerlaufsspeicher;
 use Peppermint\Mailbox\Stores\LocalAccountStore;
 use Peppermint\Mailbox\Stores\MergedAccountStore;
+use Peppermint\Mailbox\Werkzeuge\BridgeWerkzeugquelle;
+use Peppermint\Mailbox\Werkzeuge\FremdeWerkzeuge;
+use Peppermint\Mailbox\Werkzeuge\GesamtWerkzeuge;
+use Peppermint\Mailbox\Werkzeuge\Vorgang;
+use Peppermint\Mailbox\Werkzeuge\Werkzeugquelle;
+use Peppermint\Mailbox\Werkzeuge\Werkzeugverzeichnis;
 
 class MailboxServiceProvider extends ServiceProvider
 {
@@ -31,8 +44,28 @@ class MailboxServiceProvider extends ServiceProvider
 
         $this->app->singleton(AccountStore::class, fn (): AccountStore => $this->store());
         $this->app->singleton(Verlaufsspeicher::class, fn (): Verlaufsspeicher => $this->verlaufsspeicher());
+        $this->app->singleton(Zuweisungsspeicher::class, fn (): Zuweisungsspeicher => $this->zuweisungsspeicher());
+        $this->app->singleton(Schlummerspeicher::class, fn (): Schlummerspeicher => $this->schlummerspeicher());
 
         $this->app->singleton(MailboxChat::class, fn (): MailboxChat => $this->chat());
+
+        /*
+         * Die Werkzeuge am Vorgang — „Als Eingangsrechnung", „Ticket
+         * erstellen", „Aufgabe anhaengen".
+         *
+         * Das Verzeichnis ist LEER, wenn ein Produkt nichts anmeldet. Das ist
+         * der richtige Ausgangszustand: Die Verben sind das Produkt, und ein
+         * Paket, das welche mitbringt, braechte eine Fachlichkeit mit, die es
+         * nicht kennen darf (Grundsatz: zwei Core-Pakete duerfen sich nicht
+         * kennen).
+         */
+        $this->app->singleton(Werkzeugverzeichnis::class);
+        $this->app->singleton(Werkzeugquelle::class, fn (): Werkzeugquelle => $this->werkzeugquelle());
+        $this->app->singleton(
+            FremdeWerkzeuge::class,
+            fn ($app): FremdeWerkzeuge => new FremdeWerkzeuge($app->make(Werkzeugquelle::class)),
+        );
+        $this->app->singleton(GesamtWerkzeuge::class);
     }
 
     public function boot(): void
@@ -62,7 +95,7 @@ class MailboxServiceProvider extends ServiceProvider
         ], 'mailbox-config');
 
         if ($this->app->runningInConsole()) {
-            $this->commands([InstallCommand::class]);
+            $this->commands([InstallCommand::class, ZustandUmziehenCommand::class]);
         }
 
         if (config('mailbox.run_migrations', true)) {
@@ -140,6 +173,188 @@ class MailboxServiceProvider extends ServiceProvider
                 ? (string) $konto->field('email')
                 : null,
         );
+    }
+
+    /**
+     * Wo die Zustaendigkeiten liegen.
+     *
+     * ## Erkannt an der Einstellung, nicht an den Tabellen
+     *
+     * Anders als beim Verlauf, der sich an der Ablage erkennt. Dort war die
+     * Tabelle die richtige Frage: Wer archiviert, HAT den Verlauf, wer nicht,
+     * KANN ihn nicht haben.
+     *
+     * Hier nicht. Alle vier Produkte haben eine Zuweisungstabelle — sie ist ja
+     * der Altbestand, den dieser Umbau ersetzt. An ihr zu erkennen, wo die
+     * Wahrheit liegt, hiesse: nirgends umschalten. Also entscheidet dieselbe
+     * Einstellung wie bei den Postfaechern, und damit liegt beides am selben
+     * Schalter.
+     *
+     * ## Ohne Bridge laut zurueckfallen
+     *
+     * `store: brain` ohne Bridge ist eine Fehlkonfiguration, kein Grenzfall —
+     * dieselbe Lage wie bei den Konten, dieselbe Behandlung. Still
+     * zurueckzufallen hiesse: Jemand glaubt, die Zustaendigkeit gilt
+     * systemweit, und sie steht lokal.
+     */
+    private function zuweisungsspeicher(): Zuweisungsspeicher
+    {
+        if (! $this->zustandZentral('Zustaendigkeiten', 'wer sie fuer systemweit haelt, weist im falschen System zu')) {
+            return new LokalerZuweisungsspeicher($this->postfachAdresse());
+        }
+
+        return new BrainZuweisungsspeicher($this->mitteRufen(), $this->postfachAdresse());
+    }
+
+    /**
+     * Wo das Geschlummerte liegt — dieselbe Entscheidung, dasselbe Muster.
+     *
+     * Bewusst am selben Schalter wie die Zustaendigkeit: Beides sind Aussagen
+     * ueber die Sache, und ein System, bei dem das eine zentral und das andere
+     * lokal liegt, haette eine Mail, die zugewiesen mitreist und weggelegt
+     * nicht. Das waere schwerer zu erklaeren als beides falsch.
+     */
+    private function schlummerspeicher(): Schlummerspeicher
+    {
+        if (! $this->zustandZentral('Geschlummertes', 'eine weggelegte Mail taucht im naechsten System wieder auf')) {
+            return new LokalerSchlummerspeicher($this->postfachAdresse());
+        }
+
+        return new BrainSchlummerspeicher($this->mitteRufen(), $this->postfachAdresse());
+    }
+
+    /**
+     * Soll dieser Zustand in der Mitte liegen — und wenn nicht, warum?
+     *
+     * Die Warnung ist der eigentliche Zweck. `store: brain` ohne Bridge ist
+     * eine Fehlkonfiguration, kein Grenzfall: Still zurueckzufallen hiesse,
+     * dass jemand den Zustand fuer systemweit haelt, waehrend er lokal steht.
+     */
+    private function zustandZentral(string $was, string $folge): bool
+    {
+        if (config('mailbox.store', 'local') !== 'brain') {
+            return false;
+        }
+
+        if (! class_exists(self::BRIDGE)) {
+            Log::warning(
+                'mailbox.store ist "brain", aber peppermint/ai-brain-bridge fehlt. '
+                .$was.' bleiben LOKAL — '.$folge.'.'
+            );
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Die Mailadresse zur oertlichen Kennung.
+     *
+     * Erst spaet aufgeloest: Beim Binden steht der Kontenspeicher unter
+     * Umstaenden noch gar nicht.
+     *
+     * @return callable(int): ?string
+     */
+    private function postfachAdresse(): callable
+    {
+        return fn (int $konto): ?string => ($zeile = app(AccountStore::class)->find($konto))
+            ? (string) $zeile->field('email')
+            : null;
+    }
+
+    /**
+     * Wie der Zustand in der Mitte angesprochen wird.
+     *
+     * ## `call()` und ausdruecklich NICHT der Gateway
+     *
+     * Der Gateway leitet an ein angebundenes PRODUKT weiter. AI Brain ist
+     * keines — es ist die Nabe und steht in keinem Faehigkeits-Register.
+     * `gateway(..., 'ai-brain')` haette also nie ein Ziel gefunden, und der
+     * Ausfall waere als „Mitte nicht erreichbar" durchgegangen: Jede
+     * Zustaendigkeit haette gefehlt, ohne dass etwas bricht.
+     *
+     * Dieselbe Entscheidung wie beim Kontenspeicher, aus demselben Grund —
+     * dort steht sie ausfuehrlich begruendet.
+     *
+     * Die handelnde Person reist trotzdem mit: `brain()` setzt die
+     * Acting-User-Kopfzeile, und die Mitte liest daraus, wer zuweist oder
+     * weglegt. Sie glaubt die Angabe in der Nutzlast nicht, sie VERGLEICHT
+     * sie damit.
+     *
+     * ## Vom Schluessel zum Werkzeug
+     *
+     * Die Speicher sprechen in Vorgaengen (`mail.assignments.set`), die Mitte
+     * in Werkzeugen mit einer Aktion. Die Uebersetzung steht hier, an einer
+     * Stelle — in jedem Speicher den Werkzeugnamen zu kennen hiesse, ihn bei
+     * einer Umbenennung an zwei Stellen zu pflegen.
+     *
+     * @return callable(string, array<string, mixed>): ?array
+     */
+    private function mitteRufen(): callable
+    {
+        $bridge = self::BRIDGE;
+
+        $werkzeuge = [
+            'mail.assignments' => (string) config('mailbox.assignment_tool', 'mail-assignment-tool'),
+            'mail.snoozes' => (string) config('mailbox.snooze_tool', 'mail-snooze-tool'),
+        ];
+
+        return function (string $vorgang, array $argumente) use ($bridge, $werkzeuge): ?array {
+            $trennung = strrpos($vorgang, '.');
+            $bereich = $trennung === false ? $vorgang : substr($vorgang, 0, $trennung);
+            $aktion = $trennung === false ? '' : substr($vorgang, $trennung + 1);
+
+            if (! isset($werkzeuge[$bereich])) {
+                // Ein Vorgang ohne Werkzeug ist ein Programmfehler, kein
+                // Betriebszustand. `null` heisst hier „nicht erreichbar", und
+                // genau das soll es sein: Es wird nichts erfunden.
+                Log::warning('Fuer diesen Mail-Vorgang ist kein Werkzeug der Mitte bekannt.', ['vorgang' => $vorgang]);
+
+                return null;
+            }
+
+            return $bridge::call($werkzeuge[$bereich], ['action' => $aktion] + $argumente);
+        };
+    }
+
+    /**
+     * Woher die Werkzeuge der anderen Systeme kommen — oder eben keine.
+     *
+     * Ohne Bruecke gibt es keinen Verbund, den man fragen koennte. Dann
+     * bleiben die EIGENEN Verben, und zwar vollstaendig: Eine eigenstaendige
+     * Installation hat eine Werkzeugleiste, sie traegt nur nichts Fremdes.
+     *
+     * Eine Ausnahme zu werfen waere hier der falsche Klang — „nicht
+     * eingerichtet" ist kein Fehler, sondern eine Betriebsart (siehe Wiki:
+     * zwei Betriebsarten, nie beide zugleich).
+     */
+    private function werkzeugquelle(): Werkzeugquelle
+    {
+        if (! class_exists(self::BRIDGE)) {
+            return new class implements Werkzeugquelle
+            {
+                public function anbieter(): array
+                {
+                    return [];
+                }
+
+                public function holen(string $slug, Vorgang $vorgang, string $adresse): array
+                {
+                    return ['tools' => [], 'failed' => []];
+                }
+
+                public function ausloesen(string $slug, string $schluessel, Vorgang $vorgang, array $daten, string $adresse): array
+                {
+                    // Erreichbar nur, wenn die Oberflaeche ein fremdes
+                    // Werkzeug anbietet, das sie nie bekommen haben kann.
+                    // „Nichts passiert" waere die schlechtere Antwort.
+                    return ['ok' => false, 'message' => 'Dieses System ist nicht an den Verbund angeschlossen.'];
+                }
+            };
+        }
+
+        return new BridgeWerkzeugquelle;
     }
 
     private function store(): AccountStore

@@ -51,6 +51,10 @@ state, not a target, and no product is on it any more.
 **Attaching a new system?** See [docs/INTEGRATION.md](docs/INTEGRATION.md) — it
 has the picture and the six steps.
 
+**Adding verbs to a mail** — "book as an incoming invoice", "create a ticket",
+"attach a task"? See [docs/WERKZEUGE.md](docs/WERKZEUGE.md). Since 19.10.2026
+they meet in one toolbar across all systems instead of one per product window.
+
 `brain` requires `peppermint/ai-brain-bridge`. When it is missing, the package
 falls back to the local store **and logs a warning** — silently falling back
 would mean someone believes the settings are central while they are local, and
