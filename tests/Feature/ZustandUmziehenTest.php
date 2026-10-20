@@ -413,6 +413,74 @@ it('handelt ALS die zugewiesene Person — sonst weist die Mitte ab', function (
     expect($gesehen)->toBe(['anna@example.test']);
 });
 
+it('handelt als der ZUWEISENDE, wenn es einen gibt', function () {
+    /*
+     * Die zweite Haelfte des Fundes vom 20.10.2026, und sie kostete einen
+     * zweiten Anlauf in Produktion.
+     *
+     * Die Mitte prueft, dass der genannte Zuweisende die handelnde Person
+     * ist — „damit die Zustaendigkeit nicht auf den Falschen geraet". Der
+     * erste Versuch handelte als die ZUGEWIESENE Person; 48 von 79 Zeilen
+     * wurden abgewiesen, genau die mit zwei verschiedenen Menschen.
+     *
+     * Fuer einen Umzug ist der Zuweisende aus der alten Zeile eine Tatsache,
+     * und wer sie eintraegt, muss er selbst sein.
+     */
+    $anna = UmzugsNutzer::create(['id' => 3, 'email' => 'anna@example.test', 'name' => 'Anna']);
+    $bodo = UmzugsNutzer::create(['id' => 7, 'email' => 'bodo@example.test', 'name' => 'Bodo']);
+
+    MailAssignment::create([
+        'email_account_id' => 1,
+        'message_id' => '<a@b.test>',
+        'thread_id' => 'kette-1',
+        'assigned_to_user_id' => $anna->id,
+        'assigned_by_user_id' => $bodo->id,
+        'status' => MailAssignment::STATUS_OPEN,
+    ]);
+
+    $gesehen = [];
+    $mitte = new class($gesehen) implements Zuweisungsspeicher
+    {
+        public function __construct(private array &$gesehen) {}
+
+        public function zuweisen(int $konto, string $nachricht, ?string $kette, Person $an, ?Person $von): ?Zuweisung
+        {
+            // Beides festhalten: WER handelt und WEN die Zeile als Zuweisenden
+            // nennt. Die Mitte verlangt, dass es derselbe ist.
+            $this->gesehen[] = [auth()->user()?->getAttribute('email'), $von?->adresse];
+
+            return new Zuweisung(konto: $konto, postfach: 'a@b.test', nachricht: $nachricht, kette: $kette, an: $an, von: $von);
+        }
+
+        public function offene(int $konto): Zuweisungsliste
+        {
+            return new Zuweisungsliste(zuweisungen: [], erreichbar: true);
+        }
+
+        public function fuer(int $konto, string $nachricht, ?string $kette): ?Zuweisung
+        {
+            return null;
+        }
+
+        public function aufheben(int $konto, string $nachricht, ?string $kette): bool
+        {
+            return true;
+        }
+
+        public function schreibbar(): bool
+        {
+            return true;
+        }
+    };
+
+    app()->instance(Zuweisungsspeicher::class, $mitte);
+
+    $this->artisan('mailbox:zustand-umziehen --ausfuehren --nur=zuweisungen')->assertSuccessful();
+
+    // Handelnde Person UND genannter Zuweisender muessen Bodo sein.
+    expect($gesehen)->toBe([['bodo@example.test', 'bodo@example.test']]);
+});
+
 it('laesst nach dem Umzug niemanden angemeldet zurueck', function () {
     /*
      * Die Gegenprobe zur Anmeldung: Ein Befehl, der eine Person angemeldet

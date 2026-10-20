@@ -140,7 +140,28 @@ class ZustandUmziehenCommand extends Command
                 default => null,
             };
 
-            $nutzer = $this->nutzer((int) $zeile->assigned_to_user_id);
+            /*
+             * Gehandelt wird als der ZUWEISENDE, nicht als die zugewiesene
+             * Person — und das ist die zweite Haelfte des Fundes vom
+             * 20.10.2026.
+             *
+             * Die Mitte prueft, dass der genannte Zuweisende die handelnde
+             * Person ist: „Abgelehnt, damit die Zustaendigkeit nicht auf den
+             * Falschen geraet." Die Regel ist richtig — ein Produkt darf nicht
+             * behaupten, X habe zugewiesen, waehrend Y handelt.
+             *
+             * Fuer einen UMZUG heisst das: Der Zuweisende aus der alten Zeile
+             * ist eine Tatsache, keine Behauptung, und wer sie eintraegt, muss
+             * er selbst sein. Beim ersten Versuch handelte der Befehl als die
+             * zugewiesene Person — 48 von 79 Zeilen wurden deshalb abgewiesen,
+             * naemlich genau die, bei denen zwei verschiedene Menschen
+             * beteiligt waren.
+             *
+             * Ohne Zuweisenden (Selbstzuweisung oder alte Zeile ohne Angabe)
+             * bleibt die zugewiesene Person die Handelnde.
+             */
+            $zuweisenderId = $zeile->assigned_by_user_id === null ? null : (int) $zeile->assigned_by_user_id;
+            $nutzer = $this->nutzer($zuweisenderId) ?? $this->nutzer((int) $zeile->assigned_to_user_id);
 
             if ($hindernis !== null) {
                 $fehler++;
@@ -155,7 +176,7 @@ class ZustandUmziehenCommand extends Command
                     (string) $zeile->message_id,
                     $zeile->thread_id === null ? null : (string) $zeile->thread_id,
                     $person,
-                    $this->person($zeile->assigned_by_user_id === null ? null : (int) $zeile->assigned_by_user_id),
+                    $this->person($zuweisenderId),
                 ));
 
                 if ($geschrieben === null) {
