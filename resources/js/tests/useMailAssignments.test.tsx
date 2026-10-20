@@ -23,7 +23,7 @@ const zuweisung: MailAssignment = {
 function Probe({ nachricht }: { nachricht: { message_id?: string; thread_id?: string | null } }) {
     const quelle = {
         users: async () => [],
-        load: async () => [zuweisung],
+        load: async () => ({ assignments: [zuweisung], reachable: true }),
         assign: async () => true,
         unassign: async () => true,
     };
@@ -64,5 +64,69 @@ describe('useMailAssignments.fuer', () => {
         expect(
             await trefferFuer({ message_id: '<x@example.com>', thread_id: 'ganz-anders' }),
         ).toBe('keiner');
+    });
+});
+
+/**
+ * „Nicht geholt" ist nicht „niemand zuständig" (19.10.2026).
+ *
+ * Seit die Zuständigkeit in der Mitte liegt, gibt es den Fall, dass niemand zu
+ * fragen war. Beide Lagen ergeben eine leere Liste — und nur eine davon ist
+ * eine Aussage. Wer sie verwechselt, zeigt jede Mail als frei, zwei Leute
+ * fangen dieselbe Sache an, und es gibt keine Meldung.
+ */
+function Erreichbarkeit({ antwort }: { antwort: 'gut' | 'leer' | 'stumm' | 'wirft' }) {
+    const quelle = {
+        users: async () => [],
+        load: async () => {
+            if (antwort === 'wirft') {
+                throw new Error('Zeitüberschreitung.');
+            }
+
+            return {
+                assignments: antwort === 'gut' ? [zuweisung] : [],
+                reachable: antwort !== 'stumm',
+            };
+        },
+        assign: async () => true,
+        unassign: async () => true,
+    };
+
+    const { erreichbar, assignments } = useMailAssignments({ accountId: 1, source: quelle });
+
+    return <span data-slot="stand">{`${erreichbar ? 'erreichbar' : 'stumm'}:${assignments.length}`}</span>;
+}
+
+async function standFuer(antwort: 'gut' | 'leer' | 'stumm' | 'wirft'): Promise<string> {
+    const { container, unmount } = render(<Erreichbarkeit antwort={antwort} />);
+
+    await new Promise((r) => setTimeout(r, 0));
+
+    const text = container.querySelector('[data-slot="stand"]')?.textContent ?? '';
+    unmount();
+
+    return text;
+}
+
+describe('useMailAssignments.erreichbar', () => {
+    it('unterscheidet eine leere Liste von einer, die nicht zu holen war', async () => {
+        expect(await standFuer('leer')).toBe('erreichbar:0');
+        expect(await standFuer('stumm')).toBe('stumm:0');
+    });
+
+    it('meldet auch einen geworfenen Fehler als nicht erreichbar', async () => {
+        // Die Ansicht bleibt benutzbar — aber sie behauptet nicht, dass
+        // niemand zuständig ist.
+        expect(await standFuer('wirft')).toBe('stumm:0');
+    });
+
+    it('gilt bis zur ersten Antwort als erreichbar', async () => {
+        // Ein Hinweis, der schon beim Laden steht, wäre eine Störungsmeldung
+        // für einen normalen Zustand.
+        const { container, unmount } = render(<Erreichbarkeit antwort="gut" />);
+
+        expect(container.querySelector('[data-slot="stand"]')?.textContent).toBe('erreichbar:0');
+
+        unmount();
     });
 });

@@ -27,16 +27,41 @@ export interface MailAssignee {
 export interface MailAssignment {
     message_id: string;
     thread_id: string | null;
-    user_id: number;
+    /**
+     * Die oertliche Benutzer-Nummer — oder `null`.
+     *
+     * `null` ist seit dem 19.10.2026 ein echter Fall, kein Fehler: Die
+     * Zustaendigkeit liegt in der Mitte und kann fuer jemanden stehen, den
+     * DIESES System nicht kennt. Dann traegt das Abzeichen die Adresse.
+     *
+     * Sie trotzdem anzuzeigen ist der Punkt. Die Zeile weglassen hiesse: Die
+     * Mail sieht frei aus, obwohl jemand an ihr arbeitet.
+     */
+    user_id: number | null;
+    /** Die Adresse — die Kennung, die ueber Systemgrenzen traegt. */
+    email?: string;
     name: string;
     initials: string;
+}
+
+/**
+ * Die Antwort auf „wer kuemmert sich hier um was".
+ *
+ * `reachable: false` heisst: Es war niemand zu fragen. Das ist NICHT dasselbe
+ * wie eine leere Liste, und die Verwechslung ist die teuerste in diesem
+ * Bereich — jede Mail saehe frei aus, zwei Leute fingen dieselbe Sache an,
+ * und niemand bekaeme eine Meldung.
+ */
+export interface MailAssignmentsAnswer {
+    assignments: MailAssignment[];
+    reachable: boolean;
 }
 
 export interface MailAssignmentSource {
     /** Die Personen, denen zugewiesen werden darf. */
     users: (accountId: number | string, signal: AbortSignal) => Promise<MailAssignee[]>;
-    /** Die offenen Zuweisungen dieses Postfachs. */
-    load: (accountId: number | string, signal: AbortSignal) => Promise<MailAssignment[]>;
+    /** Die offenen Zuweisungen dieses Postfachs — und ob sie zu holen waren. */
+    load: (accountId: number | string, signal: AbortSignal) => Promise<MailAssignmentsAnswer>;
     assign: (accountId: number | string, message: RowMessage, userId: number) => Promise<boolean>;
     unassign: (accountId: number | string, message: RowMessage) => Promise<boolean>;
 }
@@ -50,6 +75,9 @@ export interface MailAssignmentOptions {
 export function useMailAssignments({ accountId, source, onFailure }: MailAssignmentOptions) {
     const [users, setUsers] = useState<MailAssignee[]>([]);
     const [assignments, setAssignments] = useState<MailAssignment[]>([]);
+    // Bis zur ersten Antwort gilt „erreichbar": Ein Hinweis, der schon beim
+    // Laden steht, waere eine Stoerungsmeldung fuer einen normalen Zustand.
+    const [erreichbar, setErreichbar] = useState(true);
     const [busy, setBusy] = useState(false);
 
     const holeUsers = source.users;
@@ -59,6 +87,7 @@ export function useMailAssignments({ accountId, source, onFailure }: MailAssignm
         if (accountId === null || accountId === '') {
             setUsers([]);
             setAssignments([]);
+            setErreichbar(true);
 
             return;
         }
@@ -73,11 +102,20 @@ export function useMailAssignments({ accountId, source, onFailure }: MailAssignm
                 ]);
 
                 setUsers(personen);
-                setAssignments(offene);
+                setAssignments(offene.assignments);
+                setErreichbar(offene.reachable);
             } catch {
-                // Ohne Zuweisungen bleibt das Postfach benutzbar. Eine
-                // Fehlermeldung ueber der Liste waere hier schlimmer als die
-                // fehlende Anzeige: Sie behauptet eine Stoerung des Postfachs.
+                /*
+                 * Ohne Zuweisungen bleibt das Postfach benutzbar. Eine
+                 * Fehlermeldung ueber der Liste waere schlimmer als die
+                 * fehlende Anzeige: Sie behauptet eine Stoerung des Postfachs.
+                 *
+                 * Gemerkt wird es trotzdem. Seit die Zustaendigkeit in der
+                 * Mitte liegt, ist „nicht geholt" ein echter Zustand — und
+                 * eine stille leere Liste sagt „niemand zustaendig", was
+                 * falsch ist und nicht bloss fehlend.
+                 */
+                setErreichbar(false);
             }
         })();
 
@@ -122,9 +160,13 @@ export function useMailAssignments({ accountId, source, onFailure }: MailAssignm
         const abbruch = new AbortController();
 
         try {
-            setAssignments(await holeZuweisungen(accountId, abbruch.signal));
+            const antwort = await holeZuweisungen(accountId, abbruch.signal);
+
+            setAssignments(antwort.assignments);
+            setErreichbar(antwort.reachable);
         } catch {
             // siehe oben
+            setErreichbar(false);
         }
     }, [accountId, holeZuweisungen]);
 
@@ -170,5 +212,5 @@ export function useMailAssignments({ accountId, source, onFailure }: MailAssignm
         [accountId, busy, source, neuLaden, onFailure],
     );
 
-    return { users, assignments, fuer, zuweisen, aufheben, busy, neuLaden };
+    return { users, assignments, fuer, zuweisen, aufheben, busy, neuLaden, erreichbar };
 }

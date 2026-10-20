@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { groupUidsByFolder, runBulkAcrossFolders } from '../src/bulk';
+import type { RunBulkOptions } from '../src/bulk';
+import { postCounted } from '../src/transport';
 
 /**
  * Aus peppermint-manager gehoben (#5488, dort Bug #587).
@@ -136,5 +138,104 @@ describe('runBulkAcrossFolders', () => {
         });
 
         expect(gesendet).toEqual([['INBOX', [9]]]);
+    });
+});
+
+/**
+ * Die Naht zwischen Server und Transport (gefunden am 20.10.2026).
+ *
+ * Diese Tests sind die einzigen hier, die NICHT `send` erfinden, sondern das
+ * echte `postCounted` mit genau dem Rumpf fuettern, den `bulk()` im Paket
+ * schickt. Der Grund ist ein Fehler, den beide Haelften fuer sich gruen
+ * ueberstanden haben:
+ *
+ *   `bulk()` gab bei einem Teilerfolg `success: false` zurueck,
+ *   `postCounted()` macht daraus `null`,
+ *   `runBulkAcrossFolders()` macht daraus `unreachable`,
+ *   und die Oberflaeche sagt „Sammelaktion fehlgeschlagen".
+ *
+ * Die Zweige „3 von 5 bearbeitet" und „keine einzige, laden Sie die Liste neu"
+ * waren damit unerreichbar — die Meldungen, die der Fund vom 13.09.2026 erst
+ * eingefuehrt hatte. Jede Haelfte hatte einen Test, der ihr Verhalten
+ * festschrieb. Gefehlt hat der, der sie aneinanderhaelt.
+ */
+describe('Naht: der Rumpf des Servers durch den echten Transport', () => {
+    /** Was `HandlesMailboxActions::bulk()` schickt — Schluessel und Werte wie dort. */
+    function serverAntwort(processed: number, failed: number): Response {
+        return {
+            ok: true,
+            status: 200,
+            json: async () => ({ success: true, processed, failed }),
+        } as unknown as Response;
+    }
+
+    function sendeUeber(antworten: Response[]): RunBulkOptions['send'] {
+        let i = 0;
+        return (_ordner, uids) =>
+            postCounted('/mail/bulk', { uids }, {
+                csrfToken: 'tok',
+                fetch: (async () => antworten[i++]) as never,
+            });
+    }
+
+    it('nennt einen Teilerfolg einen Teilerfolg', async () => {
+        const verdikt = await runBulkAcrossFolders({
+            uids: [1, 2, 3, 4, 5],
+            folderOf: () => 'INBOX',
+            currentFolder: 'INBOX',
+            send: sendeUeber([serverAntwort(3, 2)]),
+        });
+
+        expect(verdikt.kind).toBe('partial');
+        expect(verdikt.processed).toBe(3);
+        expect(verdikt.failed).toBe(2);
+    });
+
+    it('unterscheidet „keine einzige erwischt" von „nicht erreichbar"', async () => {
+        // Der Unterschied ist die naechste Handlung des Menschen davor:
+        // abwarten oder die Liste neu laden.
+        const verdikt = await runBulkAcrossFolders({
+            uids: [1, 2],
+            folderOf: () => 'INBOX',
+            currentFolder: 'INBOX',
+            send: sendeUeber([serverAntwort(0, 2)]),
+        });
+
+        expect(verdikt.kind).toBe('none');
+        expect(verdikt.failed).toBe(2);
+    });
+
+    it('laesst einen teilweisen Ordner nicht den gelungenen mitnehmen', async () => {
+        /*
+         * `unreachable` klebt: Es gewinnt im Verdikt ueber alles andere. Kam
+         * fuer einen Ordner ein `null`, hiess das Ergebnis „fehlgeschlagen",
+         * auch wenn im zweiten Ordner zwanzig Mails verschoben wurden.
+         *
+         * Zwei Ordner sind der Normalfall, nicht der Rand — eine Sammelaktion
+         * auf Suchtreffer greift fast immer in mehrere.
+         */
+        const verdikt = await runBulkAcrossFolders({
+            uids: [1, 2, 3],
+            folderOf: (uid) => (uid === 3 ? 'Archiv' : 'INBOX'),
+            currentFolder: 'INBOX',
+            send: sendeUeber([serverAntwort(1, 1), serverAntwort(1, 0)]),
+        });
+
+        expect(verdikt.kind).toBe('partial');
+        expect(verdikt.processed).toBe(2);
+        expect(verdikt.failed).toBe(1);
+    });
+
+    it('bleibt bei „nicht erreichbar", wenn der Server wirklich nicht antwortet', async () => {
+        // Die Gegenprobe: Der Zweig muss erhalten bleiben. Sonst waere die
+        // Reparatur nur eine Verschiebung des Problems.
+        const verdikt = await runBulkAcrossFolders({
+            uids: [1],
+            folderOf: () => 'INBOX',
+            currentFolder: 'INBOX',
+            send: () => Promise.resolve(null),
+        });
+
+        expect(verdikt.kind).toBe('unreachable');
     });
 });

@@ -234,4 +234,27 @@ describe('MailListToolbar', () => {
         expect(container.querySelector('button[title="Ordner einblenden"]')).not.toBeNull();
         unmount();
     });
+
+    it('zeigt einen Hinweis neben der Zahl, wenn eine Nebenauskunft fehlte', () => {
+        /*
+         * „Nicht geholt" und „niemand zustaendig" ergeben dieselbe leere
+         * Anzeige. Seit die Zustaendigkeit in der Mitte liegt, ist das ein
+         * echter Unterschied — und ohne diesen Hinweis saehe jede Mail frei
+         * aus, obwohl jemand an ihr arbeitet.
+         */
+        const { container, rerender, unmount } = render(<MailListToolbar {...grund} search={suche()} />);
+
+        expect(container.querySelector('[data-slot="mail-list-hint"]')).toBeNull();
+
+        rerender(<MailListToolbar {...grund} search={suche()} hint="Zuständigkeiten nicht erreichbar" />);
+
+        const hinweis = container.querySelector('[data-slot="mail-list-hint"]');
+
+        expect(hinweis?.textContent).toContain('nicht erreichbar');
+        // Der Satz steht auch im Titel: Die Zeile wird abgeschnitten, wenn
+        // die Leiste eng ist, und dann ist er nur noch dort lesbar.
+        expect(hinweis?.getAttribute('title')).toBe('Zuständigkeiten nicht erreichbar');
+
+        unmount();
+    });
 });

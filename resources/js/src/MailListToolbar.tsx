@@ -13,6 +13,7 @@ import {
     PanelLeftClose,
     Search,
     Trash2,
+    TriangleAlert,
     X,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -138,6 +139,20 @@ export interface MailListToolbarProps {
     loading?: boolean;
     onPage?: (page: number) => void;
 
+    /**
+     * Ein Satz neben der Zahl — fuer etwas, das gerade NICHT zu holen war.
+     *
+     * Gebraucht seit dem 19.10.2026: Zustaendigkeit und Geschlummertes liegen
+     * in der Mitte, und „nicht geholt" ergibt dieselbe leere Anzeige wie
+     * „niemand zustaendig". Nur eine davon ist eine Aussage.
+     *
+     * Bewusst HIER und nicht als Wolke ueber der Liste: Eine Fehlermeldung
+     * ueber dem Postfach behauptet eine Stoerung des Postfachs — das Postfach
+     * ist aber in Ordnung, es fehlt eine Nebenauskunft. Neben der Zahl steht
+     * sie da, wo man ohnehin hinsieht, ohne die Arbeit zu unterbrechen.
+     */
+    hint?: string | null;
+
     grouped?: boolean;
     onToggleGrouped?: () => void;
 
@@ -178,6 +193,7 @@ export function MailListToolbar({
     page,
     totalPages,
     loading = false,
+    hint = null,
     onPage,
     grouped = false,
     onToggleGrouped,
@@ -376,6 +392,16 @@ export function MailListToolbar({
                         <span>{labels.countHits(total, search.totalFound, search.foldersSearched)}</span>
                     ) : (
                         <span>{labels.countMessages(total, grouped)}</span>
+                    )}
+                    {hint && (
+                        <span
+                            className="flex items-center gap-1 text-amber-600 dark:text-amber-500"
+                            data-slot="mail-list-hint"
+                            title={hint}
+                        >
+                            <TriangleAlert className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{hint}</span>
+                        </span>
                     )}
                 </div>
 
