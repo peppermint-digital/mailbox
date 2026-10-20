@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Auth\Authenticatable as AuthenticatableTrait;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
@@ -35,9 +37,19 @@ use Peppermint\Mailbox\Zustand\Zuweisungsliste;
  */
 uses(RefreshDatabase::class);
 
-/** Eine Nutzertabelle, wie ein Produkt sie hat. */
-class UmzugsNutzer extends Model
+/**
+ * Eine Nutzertabelle, wie ein Produkt sie hat.
+ *
+ * `Authenticatable`, und das ist seit dem 20.10.2026 keine Formalie: Der
+ * Umzug meldet sich fuer jede Zeile ALS die zugewiesene Person an, weil die
+ * Bruecke die handelnde Person aus `auth()->user()` liest. Ohne den Vertrag
+ * koennte `setUser()` sie nicht annehmen — und der Test pruefte einen Weg,
+ * den es in Produktion nicht gibt.
+ */
+class UmzugsNutzer extends Model implements Authenticatable
 {
+    use AuthenticatableTrait;
+
     protected $table = 'umzugs_nutzer';
 
     protected $guarded = [];
@@ -335,4 +347,89 @@ it('kann zweimal laufen', function () {
     // Zweimal dieselbe Aussage geschickt — die Mitte haelt je Kette eine.
     expect($this->mitte->geschrieben)->toHaveCount(2)
         ->and($this->mitte->geschrieben[0]->kette)->toBe($this->mitte->geschrieben[1]->kette);
+});
+
+it('handelt ALS die zugewiesene Person — sonst weist die Mitte ab', function () {
+    /*
+     * Der Fehler vom 20.10.2026, live beim Ausrollen.
+     *
+     * `peppermint/ai-brain-bridge` bestimmt die handelnde Person aus
+     * `auth()->user()`. Ein Konsolenlauf hat keine, und die Mitte antwortete:
+     * „Die handelnde Person darf in dieses Postfach nicht hineinsehen."
+     *
+     * ALLE 80 Zeilen scheiterten — nachdem der Probelauf sie als „bereit"
+     * gemeldet hatte. Kein Test hatte es gesehen, weil die Attrappe hier
+     * keine handelnde Person braucht. Also prueft dieser Test genau das:
+     * WER war angemeldet, als geschrieben wurde.
+     */
+    $anna = UmzugsNutzer::create(['id' => 3, 'email' => 'anna@example.test', 'name' => 'Anna']);
+
+    MailAssignment::create([
+        'email_account_id' => 1,
+        'message_id' => '<a@b.test>',
+        'thread_id' => 'kette-1',
+        'assigned_to_user_id' => $anna->id,
+        'status' => MailAssignment::STATUS_OPEN,
+    ]);
+
+    $gesehen = [];
+    $mitte = new class($gesehen) implements Zuweisungsspeicher
+    {
+        public function __construct(private array &$gesehen) {}
+
+        public function zuweisen(int $konto, string $nachricht, ?string $kette, Person $an, ?Person $von): ?Zuweisung
+        {
+            // Die Frage dieses Tests: Wer ist in diesem Augenblick angemeldet?
+            $this->gesehen[] = auth()->user()?->getAttribute('email');
+
+            return new Zuweisung(konto: $konto, postfach: 'a@b.test', nachricht: $nachricht, kette: $kette, an: $an, von: $von);
+        }
+
+        public function offene(int $konto): Zuweisungsliste
+        {
+            return new Zuweisungsliste(zuweisungen: [], erreichbar: true);
+        }
+
+        public function fuer(int $konto, string $nachricht, ?string $kette): ?Zuweisung
+        {
+            return null;
+        }
+
+        public function aufheben(int $konto, string $nachricht, ?string $kette): bool
+        {
+            return true;
+        }
+
+        public function schreibbar(): bool
+        {
+            return true;
+        }
+    };
+
+    app()->instance(Zuweisungsspeicher::class, $mitte);
+
+    $this->artisan('mailbox:zustand-umziehen --ausfuehren --nur=zuweisungen')->assertSuccessful();
+
+    expect($gesehen)->toBe(['anna@example.test']);
+});
+
+it('laesst nach dem Umzug niemanden angemeldet zurueck', function () {
+    /*
+     * Die Gegenprobe zur Anmeldung: Ein Befehl, der eine Person angemeldet
+     * liegen laesst, vererbt sie an alles, was im selben Prozess danach
+     * laeuft — in Octane waere das der naechste Request.
+     */
+    $anna = UmzugsNutzer::create(['id' => 3, 'email' => 'anna@example.test', 'name' => 'Anna']);
+
+    MailAssignment::create([
+        'email_account_id' => 1,
+        'message_id' => '<a@b.test>',
+        'thread_id' => 'kette-1',
+        'assigned_to_user_id' => $anna->id,
+        'status' => MailAssignment::STATUS_OPEN,
+    ]);
+
+    $this->artisan('mailbox:zustand-umziehen --ausfuehren --nur=zuweisungen');
+
+    expect(auth()->user())->toBeNull();
 });

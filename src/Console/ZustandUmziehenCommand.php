@@ -3,6 +3,7 @@
 namespace Peppermint\Mailbox\Console;
 
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Schema;
 use Peppermint\Mailbox\Contracts\AccountStore;
 use Peppermint\Mailbox\Contracts\Schlummerspeicher;
@@ -139,19 +140,48 @@ class ZustandUmziehenCommand extends Command
                 default => null,
             };
 
+            $nutzer = $this->nutzer((int) $zeile->assigned_to_user_id);
+
             if ($hindernis !== null) {
                 $fehler++;
             } elseif ($echt) {
-                $geschrieben = $mitte->zuweisen(
+                /*
+                 * ALS die zugewiesene Person schreiben. Die Bruecke liest die
+                 * handelnde Person aus `auth()->user()`, und ohne sie weist
+                 * die Mitte ab — siehe {@see alsPerson()}.
+                 */
+                $geschrieben = $this->alsPerson($nutzer, fn () => $mitte->zuweisen(
                     $konto,
                     (string) $zeile->message_id,
                     $zeile->thread_id === null ? null : (string) $zeile->thread_id,
                     $person,
                     $this->person($zeile->assigned_by_user_id === null ? null : (int) $zeile->assigned_by_user_id),
-                );
+                ));
 
                 if ($geschrieben === null) {
                     $hindernis = 'die Mitte hat nicht angenommen';
+                    $fehler++;
+                }
+            } else {
+                /*
+                 * Der Probelauf FRAGT die Mitte, statt nur zu pruefen, ob die
+                 * Person benennbar ist.
+                 *
+                 * Vorher stand hier „bereit", sobald Postfach und Adresse
+                 * bekannt waren — und am 20.10.2026 scheiterten danach alle
+                 * 80 Zeilen an der Sichtpruefung. Ein Probelauf, der eine
+                 * VORBEDINGUNG prueft und „bereit" meldet, liest sich wie
+                 * „der Schreibvorgang wird klappen".
+                 *
+                 * Ein Lesen ist harmlos und laeuft durch denselben Riegel wie
+                 * das Schreiben. Antwortet die Mitte nicht, ist das hier die
+                 * Auskunft, die zaehlt.
+                 */
+                if ($nutzer === null) {
+                    $hindernis = 'kein Nutzersatz — niemand kann handeln';
+                    $fehler++;
+                } elseif (! $this->darfHinein($mitte, $konto, $nutzer)) {
+                    $hindernis = 'die Mitte laesst diese Person nicht hinein';
                     $fehler++;
                 }
             }
@@ -209,12 +239,18 @@ class ZustandUmziehenCommand extends Command
 
             if ($hindernis !== null) {
                 $fehler++;
-            } elseif ($echt && ! $mitte->weglegen(
-                $konto,
-                $person,
-                (string) $zeile->thread_id,
-                (string) $zeile->message_id,
-                $zeile->snooze_until->toDateTimeImmutable(),
+            } elseif ($echt && ! $this->alsPerson(
+                // ALS die Person, der das Geschlummerte gehoert — Schlummern
+                // ist ohnehin pro Person, und die Bruecke liest die handelnde
+                // aus `auth()->user()`. Siehe {@see alsPerson()}.
+                $this->nutzer((int) $zeile->user_id),
+                fn (): bool => $mitte->weglegen(
+                    $konto,
+                    $person,
+                    (string) $zeile->thread_id,
+                    (string) $zeile->message_id,
+                    $zeile->snooze_until->toDateTimeImmutable(),
+                ),
             )) {
                 $hindernis = 'die Mitte hat nicht angenommen';
                 $fehler++;
@@ -254,6 +290,92 @@ class ZustandUmziehenCommand extends Command
         $adresse = mb_strtolower(trim((string) $zeile->field('email')));
 
         return $adresse === '' ? null : $adresse;
+    }
+
+    /**
+     * Darf diese Person in dieses Postfach? Einmal je Paar gefragt.
+     *
+     * Ein Lesen durch denselben Riegel, durch den auch das Schreiben geht —
+     * harmlos, und die einzige Auskunft, die „bereit" verdient. Gemerkt wird
+     * je Postfach und Person: Bei 79 Zeilen auf einem Postfach wären es sonst
+     * 79 Anfragen an die Mitte für dieselbe Frage.
+     *
+     * @var array<string, bool>
+     */
+    private array $sicht = [];
+
+    private function darfHinein(Zuweisungsspeicher $mitte, int $konto, object $nutzer): bool
+    {
+        $schluessel = $konto.'|'.($nutzer->getAttribute('email') ?? spl_object_id($nutzer));
+
+        return $this->sicht[$schluessel] ??= $this->alsPerson(
+            $nutzer,
+            fn (): bool => $mitte->offene($konto)->erreichbar,
+        );
+    }
+
+    /**
+     * Das Nutzermodell zu einer örtlichen Nummer.
+     *
+     * Gebraucht, weil die Brücke die HANDELNDE Person aus `auth()->user()`
+     * liest — und ein Konsolenlauf hat keine. Siehe {@see alsPerson()}.
+     */
+    private function nutzer(?int $nummer): ?object
+    {
+        if ($nummer === null) {
+            return null;
+        }
+
+        $modell = (string) config('mailbox.user_model', 'App\\Models\\User');
+
+        return class_exists($modell) ? $modell::query()->whereKey($nummer)->first() : null;
+    }
+
+    /**
+     * Etwas tun, als wäre diese Person angemeldet.
+     *
+     * ## Der Fehler, den das behebt — und er war nur live zu sehen
+     *
+     * `peppermint/ai-brain-bridge` bestimmt die handelnde Person aus
+     * `auth()->user()`. In einem Konsolenlauf gibt es keine, und die Mitte
+     * weist dann ab: „Die handelnde Person darf in dieses Postfach nicht
+     * hineinsehen." Am 20.10.2026 beim Ausrollen so passiert — ALLE 80 Zeilen
+     * gescheitert, nachdem der Probelauf sie als „bereit" gemeldet hatte.
+     *
+     * Warum die ZUGEWIESENE Person die richtige Handelnde ist: Sie ist
+     * diejenige, deren Zuständigkeit umzieht, und sie darf das Postfach
+     * sehen — sonst wäre sie nie zugewiesen worden. `asService()` der Brücke
+     * wäre die Alternative und die falsche: Es umgeht die Sichtprüfung, und
+     * ein Umzug ist kein Grund, eine Zugriffsgrenze aufzuheben.
+     *
+     * @template T
+     * @param  callable(): T  $tun
+     * @return T
+     */
+    private function alsPerson(?object $nutzer, callable $tun): mixed
+    {
+        /*
+         * `instanceof Authenticatable` und nicht blind `setUser()`: Der Wächter
+         * verlangt den Vertrag, und ein Nutzermodell, das ihn nicht erfüllt,
+         * ist eine Fehlkonfiguration — aber keine, die diesen Umzug mit einem
+         * TypeError abbrechen darf. Dann läuft der Vorgang ohne handelnde
+         * Person, und die Mitte sagt, was sie davon hält.
+         */
+        if (! $nutzer instanceof Authenticatable || ! function_exists('auth')) {
+            return $tun();
+        }
+
+        $vorher = auth()->user();
+
+        try {
+            auth()->setUser($nutzer);
+
+            return $tun();
+        } finally {
+            // Zurücksetzen, nicht einfach abmelden: Der nächste Durchlauf
+            // soll seine eigene Person bekommen, nicht die vorige.
+            $vorher === null ? auth()->forgetUser() : auth()->setUser($vorher);
+        }
     }
 
     /**
