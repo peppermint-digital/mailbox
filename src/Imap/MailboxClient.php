@@ -2,11 +2,11 @@
 
 namespace Peppermint\Mailbox\Imap;
 
-use Peppermint\Mailbox\Content\RohFassung;
 use DirectoryTree\ImapEngine\Mailbox as ImapEngineMailbox;
 use DirectoryTree\ImapEngine\MailboxInterface;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
+use Peppermint\Mailbox\Content\RohFassung;
 use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Contracts\TokenRefresher;
 use Peppermint\Mailbox\Folders\FolderNames;
@@ -281,8 +281,25 @@ class MailboxClient implements Mailbox
             $abfrage = $ordner->messages()->newest();
             $gesamt = $abfrage->count();
 
+            /*
+             * Das Fenster OHNE BODYSTRUCTURE (#6119, gemessen 20.10.2026 an
+             * `department@peppermint-digital.de`, 49 Nachrichten):
+             *
+             *     100 Zeilen mit Struktur     3.100 ms
+             *     100 Zeilen nur Kopf+Flags     930 ms
+             *     25 Zeilen mit Struktur        635 ms
+             *
+             * Die Struktur ist der teure Teil, und sie wurde fuer HUNDERT
+             * Zeilen geholt, obwohl nur die sichtbaren sie brauchen — fuer
+             * `attachment_count`. Das Fenster selbst dient dem Sortieren nach
+             * Datum und der Entdoppelung; dafuer genuegen Kopfzeilen.
+             *
+             * Serverseitig zu sortieren waere der kuerzere Weg und geht nicht:
+             * Dieses Postfach antwortet „IMAP server does not support SORT
+             * capability".
+             */
             $zeilen = MessagePage::sortByDateDesc($this->cheapRows(
-                self::fuerListenzeilen($abfrage)->limit(MessagePage::FETCH_LIMIT)->get()
+                self::fuerKopfzeilen($ordner->messages()->newest())->limit(MessagePage::FETCH_LIMIT)->get()
             ));
 
             if (MessagePage::isSentFolder($ordner->path())) {
@@ -294,10 +311,7 @@ class MailboxClient implements Mailbox
             $effektiv = MessagePage::effectiveTotal($gesamt, count($zeilen));
 
             return [
-                array_map(
-                    fn (array $zeile): array => $this->formatter->summary($zeile['message']),
-                    MessagePage::slice($zeilen, $page, $perPage),
-                ),
+                $this->mitStruktur($ordner, MessagePage::slice($zeilen, $page, $perPage)),
                 $effektiv,
             ];
         });
@@ -396,6 +410,67 @@ class MailboxClient implements Mailbox
     private static function fuerKopfzeilen(mixed $abfrage): mixed
     {
         return $abfrage->withHeaders()->withFlags();
+    }
+
+    /**
+     * Die sichtbaren Zeilen formatieren — mit BODYSTRUCTURE, in EINEM Abruf.
+     *
+     * ## Warum ein zweiter Abruf schneller ist als ein grosser erster
+     *
+     * `attachment_count` braucht die Struktur, und ohne sie waere Bug #1025
+     * zurueck: Die Zahl waere still 0, und `0` sieht aus wie „keine Anhaenge"
+     * statt wie „nicht gefragt". Die Struktur fuer das ganze
+     * Hundert-Zeilen-Fenster zu holen kostete aber das Dreifache dessen, was
+     * sie fuer die sichtbaren fuenfundzwanzig kostet.
+     *
+     * Gebuendelt, nicht je Zeile: `uid([...])` wird zu einem einzigen
+     * `UID 1,2,3`-Abruf. Eine Schleife mit `find($uid)` waere wieder der
+     * Fehler, den dieses Paket heute schon zweimal hatte — nur in der
+     * Gegenrichtung.
+     *
+     * ## Wenn der zweite Abruf nicht klappt
+     *
+     * Dann wird mit den Fenster-Zeilen formatiert. Die Anhangzahl ist dann 0,
+     * und `anhangZahl()` schreibt die Warnung aus Bug #1025 ins Log — eine
+     * laute Zahl, die falsch sein KANN, statt einer leeren Liste. Eine
+     * Nachricht ohne Anhang-Klammer ist ein kleinerer Schaden als eine Seite,
+     * die gar nicht kommt.
+     *
+     * @param  array<int, array<string, mixed>>  $sichtbar
+     * @return array<int, array<string, mixed>>
+     */
+    private function mitStruktur(mixed $ordner, array $sichtbar): array
+    {
+        /*
+         * Kein eigener Riegel fuer die leere Seite: `$kennungen !== []` unten
+         * verhindert die Abfrage schon, und `array_map` ueber ein leeres Feld
+         * ist leer. Hier stand einer, und eine Mutationsprobe hat ihn
+         * UEBERLEBT — ein Zweig, dessen Entfernen kein Test merkt, ist
+         * entweder toter Code oder falsch geprueft. Hier war er tot.
+         */
+        $kennungen = array_values(array_filter(array_map(
+            static fn (array $zeile): mixed => $zeile['uid'] ?? null,
+            $sichtbar,
+        )));
+
+        $voll = [];
+
+        if ($kennungen !== []) {
+            try {
+                foreach (self::fuerListenzeilen($ordner->messages()->uid($kennungen))->get() as $nachricht) {
+                    $voll[(string) $nachricht->uid()] = $nachricht;
+                }
+            } catch (\Throwable $fehler) {
+                Log::warning('Mailbox: Struktur der sichtbaren Zeilen nicht nachgeholt — die Anhangzahl bleibt 0. '.$fehler->getMessage());
+            }
+        }
+
+        return array_map(
+            fn (array $zeile): array => $this->formatter->summary(
+                $voll[(string) ($zeile['uid'] ?? '')] ?? $zeile['message'],
+            ),
+            $sichtbar,
+        );
     }
 
     private function cheapRows(iterable $messages): array
