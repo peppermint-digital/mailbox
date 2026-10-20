@@ -101,6 +101,33 @@ class MailboxServiceProvider extends ServiceProvider
         if (config('mailbox.run_migrations', true)) {
             $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
         }
+
+        /*
+         * Das Kopfzeilen-Verzeichnis liegt getrennt und haengt NICHT an
+         * `run_migrations` (#6119).
+         *
+         * ## Warum das kein Schlupfloch ist
+         *
+         * `run_migrations` steht in allen vier Produkten auf `false`, und zwar
+         * aus einem Grund: Die Kontotabelle des Pakets wuerde neben der
+         * gewachsenen eigenen eine zweite, leere anlegen, die niemand benutzt
+         * und die beim naechsten Blick in die Datenbank Raetsel aufgibt.
+         *
+         * Fuer `mailbox_headers` gilt dieser Grund nicht. Es gibt kein Produkt,
+         * das eine eigene Tabelle dafuer haette — das Verzeichnis gehoert dem
+         * Paket allein, kein Fremdschluessel zeigt darauf, und ein Produkt
+         * liest es nie selbst. Haengte es am selben Schalter, waere die
+         * Tabelle in keinem der vier Produkte je entstanden.
+         *
+         * Gebunden ist es stattdessen an sein eigenes Merkmal: Wer das
+         * Verzeichnis abschaltet, bekommt auch die Tabelle nicht.
+         *
+         * Der Unterordner ist noetig, weil Laravel einen Migrationspfad NICHT
+         * rekursiv liest — sonst waere die Datei in beiden Pfaden.
+         */
+        if (config('mailbox.header_index', true)) {
+            $this->loadMigrationsFrom(__DIR__.'/../database/migrations/intern');
+        }
     }
 
     /**
