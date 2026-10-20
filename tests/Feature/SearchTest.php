@@ -56,6 +56,22 @@ function suchOrdner(string $pfad, array $flags = [], array $nachrichten = [], bo
             return $this->flags;
         }
 
+        /**
+         * Wie ein echter Ordner: MESSAGES und UIDVALIDITY.
+         *
+         * Seit dem Kopfzeilen-Verzeichnis (#6119) fragt die Listenseite danach,
+         * statt zu zaehlen — ein Befehl wie vorher, halb so teuer, und die
+         * Gueltigkeit kommt mit.
+         */
+        public function status(): array
+        {
+            return [
+                'MESSAGES' => (string) count($this->nachrichten),
+                'UIDVALIDITY' => '14',
+                'UIDNEXT' => (string) (count($this->nachrichten) + 1),
+            ];
+        }
+
         public function messages(): object
         {
             if ($this->sperrt) {
@@ -71,8 +87,30 @@ function suchOrdner(string $pfad, array $flags = [], array $nachrichten = [], bo
                     return $this;
                 }
 
-                public function uid(int|float $von, int|float $bis): static
+                /**
+                 * Eine Spanne (`newerThan`) ODER eine Liste von Kennungen.
+                 *
+                 * Die Liste filtert wirklich. Sonst gaebe die Attrappe auf die
+                 * Frage „die Flags dieser fuenfundzwanzig" die Flags von allen
+                 * heraus, und ein Test koennte nicht sehen, ob die Seite
+                 * zuviel fragt — genau das, was dieses Paket heute zweimal
+                 * uebersehen hat.
+                 */
+                public function uid(int|string|array $von, int|float|null $bis = null): static
                 {
+                    if (is_array($von)) {
+                        $this->ordner->gesucht['kennungen'] = $von;
+
+                        $gesucht = array_map('strval', $von);
+
+                        $this->nachrichten = array_values(array_filter(
+                            $this->nachrichten,
+                            static fn (object $n): bool => in_array((string) $n->uid(), $gesucht, true),
+                        ));
+
+                        return $this;
+                    }
+
                     $this->ordner->gesucht['uid'] = [$von, $bis];
 
                     return $this;
@@ -121,6 +159,8 @@ function suchOrdner(string $pfad, array $flags = [], array $nachrichten = [], bo
 
                 public function withHeaders(): static
                 {
+                    $this->ordner->gesucht['mit'][] = 'kopf';
+
                     return $this;
                 }
 
@@ -128,6 +168,8 @@ function suchOrdner(string $pfad, array $flags = [], array $nachrichten = [], bo
                 {
                     // Die Liste zaehlt Anhaenge aus der BODYSTRUCTURE statt aus
                     // dem Rumpf, den sie gar nicht laedt (Bug #1025).
+                    $this->ordner->gesucht['mit'][] = 'struktur';
+
                     return $this;
                 }
 
@@ -154,6 +196,8 @@ function suchOrdner(string $pfad, array $flags = [], array $nachrichten = [], bo
 
                 public function withFlags(): static
                 {
+                    $this->ordner->gesucht['mit'][] = 'flags';
+
                     return $this;
                 }
 

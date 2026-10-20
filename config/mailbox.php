@@ -88,6 +88,31 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Kopfzeilen-Verzeichnis
+    |--------------------------------------------------------------------------
+    |
+    | Verzeichnet, was in einer Kennung steht — Betreff, Absender, Datum,
+    | Message-ID, Anhangzahl. Also alles, was sich fuer eine gegebene UID nicht
+    | mehr aendern kann. Lesemarken stehen NICHT darin.
+    |
+    | Gemessen am 20.10.2026 an `department@peppermint-digital.de`, einer Seite
+    | von 25 aus 54 Nachrichten:
+    |
+    |     ohne Verzeichnis      2.045 ms
+    |     kalter Ordner         1.740 ms   (einmal je Nachricht)
+    |     warmer Ordner           448 ms
+    |
+    | Abgeschaltet verhaelt sich die Liste wie bei einem Ordner, den sie zum
+    | ersten Mal sieht — also wie vor dem Verzeichnis. Der Schalter ist fuer den
+    | Fall gedacht, dass eine Liste einmal etwas Falsches zeigt: Dann ist er die
+    | Antwort von einer Minute, waehrend die Ursache gesucht wird.
+    |
+    */
+
+    'header_index' => (bool) env('MAILBOX_HEADER_INDEX', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Adoption — so a grown product can join
     |--------------------------------------------------------------------------
     |

@@ -101,28 +101,75 @@ class MessageFormatter
     public function summary(Message $message): array
     {
         $from = $message->from();
-        $anzahl = $this->anhangZahl($message);
 
-        return [
+        return $this->zeile([
             'uid' => $message->uid(),
             'message_id' => $message->messageId(),
             'subject' => Betreff::lesbar($message->subject()),
             'from_address' => $from?->email() ?? '',
             'from_name' => $from?->name() ?? '',
             'date' => $message->date()?->toIso8601String(),
-            'has_attachments' => $anzahl > 0,
-            'attachment_count' => $anzahl,
+            'attachment_count' => $this->anhangZahl($message),
             'is_read' => $message->isSeen(),
             'is_flagged' => $message->isFlagged(),
-            // Leer, mit Absicht — siehe Klassen-Text dieser Methode. Den Rumpf
+            'in_reply_to' => $this->header($message, 'in-reply-to'),
+            'references' => $this->header($message, 'references'),
+        ]);
+    }
+
+    /**
+     * Die Drahtform einer Listenzeile — aus Skalaren, nicht aus einer Nachricht.
+     *
+     * ## Warum das eine eigene Methode ist
+     *
+     * Seit dem Kopfzeilen-Verzeichnis (#6119) gibt es ZWEI Wege zu einer
+     * Listenzeile: der lebende Weg über eine Nachricht vom Server, und der
+     * Weg über eine verzeichnete Zeile aus der Datenbank. Beide müssen Feld für
+     * Feld und in derselben REIHENFOLGE dasselbe herausgeben — der
+     * Vertragstest vergleicht die Schlüssel streng, damit eine neue Spalte auf
+     * allen Wegen an derselben Stelle auftaucht.
+     *
+     * Zwei Stellen, die dieselbe Form bauen, laufen auseinander. Nicht sofort,
+     * sondern bei der nächsten Spalte — und dann zeigt eine Liste je nach
+     * Herkunft ihrer Zeilen ein anderes Feld.
+     *
+     * Was hier passiert, ist deshalb absichtlich wenig: zusammensetzen und
+     * `has_attachments` ableiten. Die WERTE bereitet jeder Weg selbst vor.
+     *
+     * @param  array<string, mixed>  $felder
+     * @return array<string, mixed>
+     */
+    public function zeile(array $felder): array
+    {
+        $anzahl = (int) ($felder['attachment_count'] ?? 0);
+
+        return [
+            'uid' => $felder['uid'],
+            'message_id' => $felder['message_id'] ?? null,
+            /*
+             * NICHT auf '' zurechtbiegen: Eine Nachricht ohne Betreff gibt
+             * `null` heraus, und die Oberflaeche macht daraus „(kein Betreff)".
+             * Ein leerer Text waere eine Zeile mit einem unsichtbaren Betreff.
+             * Der Vertragstest hat genau das gefunden, als diese Methode
+             * entstand.
+             */
+            'subject' => $felder['subject'] ?? null,
+            'from_address' => $felder['from_address'] ?? '',
+            'from_name' => $felder['from_name'] ?? '',
+            'date' => $felder['date'] ?? null,
+            'has_attachments' => $anzahl > 0,
+            'attachment_count' => $anzahl,
+            'is_read' => (bool) ($felder['is_read'] ?? false),
+            'is_flagged' => (bool) ($felder['is_flagged'] ?? false),
+            // Leer, mit Absicht — siehe Klassen-Text von summary(). Den Rumpf
             // hier anzufassen kostete 25 bis 100 Rundreisen je Liste, fuer ein
             // Feld, das keine Oberflaeche zeichnet.
             'preview' => '',
             // The threading headers travel along: they are loaded anyway when
             // listing, and without them a list cannot be grouped into
             // conversations afterwards without a second round trip.
-            'in_reply_to' => $this->header($message, 'in-reply-to'),
-            'references' => $this->header($message, 'references'),
+            'in_reply_to' => $felder['in_reply_to'] ?? null,
+            'references' => $felder['references'] ?? null,
         ];
     }
 
@@ -219,7 +266,7 @@ class MessageFormatter
      * matches what the opened message lists — and what JMAP reports for the
      * same mailbox.
      */
-    private function anhangZahl(Message $message): int
+    public function anhangZahl(Message $message): int
     {
         $struktur = $message->bodyStructure();
 

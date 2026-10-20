@@ -10,8 +10,10 @@ use Peppermint\Mailbox\Content\RohFassung;
 use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Contracts\TokenRefresher;
 use Peppermint\Mailbox\Folders\FolderNames;
+use Peppermint\Mailbox\Index\Kopfzeilenverzeichnis;
 use Peppermint\Mailbox\Models\MailAccount;
 use Peppermint\Mailbox\Search\Criteria;
+use Peppermint\Mailbox\Support\Betreff;
 use Peppermint\Mailbox\Threading\ThreadPage;
 use RuntimeException;
 
@@ -66,6 +68,13 @@ class MailboxClient implements Mailbox
         private readonly ?\Closure $connector = null,
         /** Turns an IMAP message into rows; swappable for a product that needs more. */
         private readonly MessageFormatter $formatter = new MessageFormatter,
+        /**
+         * Was in einer Kennung steht, ohne den Server zu fragen (#6119).
+         *
+         * Injizierbar, weil ein Test sehen will, WAS abgefragt wird — und weil
+         * ein Produkt mit eigener Ablage seine eigene mitbringen kann.
+         */
+        private readonly Kopfzeilenverzeichnis $verzeichnis = new Kopfzeilenverzeichnis,
     ) {
         if (! $connector && ! class_exists(ImapEngineMailbox::class)) {
             throw new RuntimeException(
@@ -260,12 +269,31 @@ class MailboxClient implements Mailbox
      * One page of a folder's message list.
      *
      * Der ganze Ablauf an einer Stelle — und in der Reihenfolge, die zaehlt:
-     * hundert Zeilen OHNE Rumpf holen, sortieren, im Gesendet-Ordner
-     * entdoppeln, schneiden, und erst die sichtbaren formatieren.
+     * Belegung vom Server holen, Zeilen aus dem Verzeichnis nehmen und nur
+     * Fehlendes nachholen, sortieren, im Gesendet-Ordner entdoppeln,
+     * schneiden, und erst fuer die sichtbaren Struktur und Flags holen.
      *
      * Vorher stand genau das in jedem Produkt einzeln, hinter einem
      * `headerRows()`, das alle hundert formatierte — und damit ueber IMAP
      * hundert Rumpf-Abrufe ausloeste. Siehe Bug #877.
+     *
+     * ## Was hier gegen den Server geht, und was nicht
+     *
+     * Gemessen am 20.10.2026 an `department@peppermint-digital.de`, 54
+     * Nachrichten, eine Seite von 25:
+     *
+     *     ohne Verzeichnis      2.045 ms
+     *     kalter Ordner         1.740 ms
+     *     warmer Ordner           448 ms
+     *
+     * Vom Server kommen IMMER: die Belegung (welche Kennungen liegen im
+     * Ordner) und die Flags der sichtbaren Zeilen. Aus dem Verzeichnis kommt
+     * nur, was sich fuer eine Kennung nicht mehr aendern KANN. Deshalb kann
+     * diese Liste nicht veralten — siehe {@see Kopfzeilenverzeichnis}.
+     *
+     * `headerRows()` eine Methode weiter oben laeuft weiter ueber den lebenden
+     * Weg: Es ist nicht der heisse Pfad, und zwei Wege zu pflegen, von denen
+     * einer selten benutzt wird, ist teurer als die Sekunde, die er kostet.
      *
      * @return array{0: list<array<string, mixed>>, 1: int}
      */
@@ -278,29 +306,27 @@ class MailboxClient implements Mailbox
                 return [[], 0];
             }
 
-            $abfrage = $ordner->messages()->newest();
-            $gesamt = $abfrage->count();
+            ['gesamt' => $gesamt, 'gueltigkeit' => $gueltigkeit] = $this->ordnerzustand($ordner);
 
             /*
-             * Das Fenster OHNE BODYSTRUCTURE (#6119, gemessen 20.10.2026 an
-             * `department@peppermint-digital.de`, 49 Nachrichten):
-             *
-             *     100 Zeilen mit Struktur     3.100 ms
-             *     100 Zeilen nur Kopf+Flags     930 ms
-             *     25 Zeilen mit Struktur        635 ms
-             *
-             * Die Struktur ist der teure Teil, und sie wurde fuer HUNDERT
-             * Zeilen geholt, obwohl nur die sichtbaren sie brauchen — fuer
-             * `attachment_count`. Das Fenster selbst dient dem Sortieren nach
-             * Datum und der Entdoppelung; dafuer genuegen Kopfzeilen.
-             *
-             * Serverseitig zu sortieren waere der kuerzere Weg und geht nicht:
-             * Dieses Postfach antwortet „IMAP server does not support SORT
-             * capability".
+             * Die BELEGUNG kommt immer vom Server — das ist die Invariante des
+             * Verzeichnisses (#6119). Ein reiner UID-Abruf kostet 69 ms und
+             * kann nichts verschweigen: Was angekommen ist, steht darin; was
+             * gelöscht wurde, nicht.
              */
-            $zeilen = MessagePage::sortByDateDesc($this->cheapRows(
-                self::fuerKopfzeilen($ordner->messages()->newest())->limit(MessagePage::FETCH_LIMIT)->get()
-            ));
+            $kennungen = [];
+
+            foreach ($ordner->messages()->newest()->withoutHeaders()->withoutFlags()->withoutBody()->limit(MessagePage::FETCH_LIMIT)->get() as $nachricht) {
+                $kennungen[] = $nachricht->uid();
+            }
+
+            if ($kennungen === []) {
+                return [[], $gesamt];
+            }
+
+            $zeilen = $this->fensterZeilen($ordner, $kennungen, $gueltigkeit);
+
+            $zeilen = MessagePage::sortByDateDesc($zeilen);
 
             if (MessagePage::isSentFolder($ordner->path())) {
                 // Viele Server legen beim Senden selbst eine Kopie ab, waehrend
@@ -308,13 +334,270 @@ class MailboxClient implements Mailbox
                 $zeilen = MessagePage::dedupe($zeilen);
             }
 
-            $effektiv = MessagePage::effectiveTotal($gesamt, count($zeilen));
+            $sichtbar = MessagePage::slice($zeilen, $page, $perPage);
 
             return [
-                $this->mitStruktur($ordner, MessagePage::slice($zeilen, $page, $perPage)),
-                $effektiv,
+                $this->sichtbareZeilen($ordner, $sichtbar, $gueltigkeit),
+                MessagePage::effectiveTotal($gesamt, count($zeilen)),
             ];
         });
+    }
+
+    /**
+     * Wie viele Nachrichten, und unter welcher Gueltigkeit.
+     *
+     * `status()` statt `count()`: Es ist EIN Befehl wie vorher, kostet aber die
+     * Haelfte (32 statt 70 ms, gemessen 20.10.2026 an `department@`) und bringt
+     * die `UIDVALIDITY` mit — ohne die waere das Verzeichnis nicht sicher.
+     *
+     * ## Warum es trotzdem einen Rueckweg gibt
+     *
+     * Weil die Liste damit von einem Befehl abhaengt, von dem sie vorher nicht
+     * abhing. `STATUS` ist in RFC 3501 Pflicht und alle unsere Postfaecher
+     * koennen es — aber „alle unsere" ist eine Aussage ueber heute. Ein Server,
+     * der es verweigert, soll eine langsamere Liste bekommen, keine fehlende.
+     *
+     * Ohne Gueltigkeit wird das Verzeichnis nicht gelesen: `bekannt()` gibt
+     * dann nur Zeilen heraus, die selbst ohne Gueltigkeit verzeichnet wurden.
+     * Im Zweifel lieber den Server fragen.
+     *
+     * @return array{gesamt: int, gueltigkeit: int|null}
+     */
+    private function ordnerzustand(mixed $ordner): array
+    {
+        try {
+            $werte = $ordner->status();
+
+            return [
+                'gesamt' => isset($werte['MESSAGES']) ? (int) $werte['MESSAGES'] : 0,
+                'gueltigkeit' => isset($werte['UIDVALIDITY']) ? (int) $werte['UIDVALIDITY'] : null,
+            ];
+        } catch (\Throwable $fehler) {
+            Log::warning('Mailbox: STATUS nicht moeglich — die Liste zaehlt selbst und laeuft ohne Verzeichnis. '.$fehler->getMessage());
+
+            return ['gesamt' => (int) $ordner->messages()->count(), 'gueltigkeit' => null];
+        }
+    }
+
+    /**
+     * Die Zeilen des Fensters — aus dem Verzeichnis, Fehlendes vom Server.
+     *
+     * Das Fenster dient dem Sortieren nach Datum und dem Entdoppeln im
+     * Gesendet-Ordner. Dafuer braucht es Datum, Message-ID, Betreff und
+     * Absender — und genau die stehen im Verzeichnis, weil sie sich fuer eine
+     * gegebene Kennung nicht mehr aendern koennen.
+     *
+     * Ein kalter Ordner kostet hier genau so viel wie vorher: Die Kopfzeilen
+     * der unbekannten Kennungen werden in EINEM Abruf geholt. Ein warmer kostet
+     * nichts.
+     *
+     * @param  list<int|string>  $kennungen
+     * @return list<array<string, mixed>>
+     */
+    private function fensterZeilen(mixed $ordner, array $kennungen, ?int $gueltigkeit): array
+    {
+        $konto = (int) $this->account->id;
+        $pfad = (string) $ordner->path();
+
+        $bekannt = $this->verzeichnis->bekannt($konto, $pfad, $gueltigkeit, $kennungen);
+
+        if ($bekannt === []) {
+            // Entweder nie gesehen oder die Gueltigkeit hat gewechselt. Im
+            // zweiten Fall liegen hier Zeilen, die nie wieder gelesen werden.
+            $this->verzeichnis->aufraeumen($konto, $pfad, $gueltigkeit);
+        }
+
+        $fehlende = array_values(array_filter(
+            $kennungen,
+            static fn (int|string $kennung): bool => ! isset($bekannt[(string) $kennung]),
+        ));
+
+        if ($fehlende !== []) {
+            $frisch = $this->kopfzeilenHolen($ordner, $fehlende);
+
+            $this->verzeichnis->merkenKopf($konto, $pfad, $gueltigkeit, $frisch);
+
+            foreach ($frisch as $zeile) {
+                $bekannt[(string) $zeile['uid']] = $zeile;
+            }
+        }
+
+        $zeilen = [];
+
+        foreach ($kennungen as $kennung) {
+            if (! isset($bekannt[(string) $kennung])) {
+                continue;
+            }
+
+            $zeile = $bekannt[(string) $kennung];
+
+            /*
+             * Die Kennung in der Form des SERVERS, nicht in der der Spalte.
+             * Die Spalte ist varchar (weil JMAP Zeichenketten vergibt), und
+             * eine verzeichnete Zeile kam deshalb als `'5'` heraus, eine frisch
+             * geholte als `5`. Die Oberflaeche vergleicht Kennungen — eine
+             * Liste aus beiden Quellen haette Zeilen gehabt, die sich nicht
+             * auswaehlen lassen. Ein Test hat genau das gefunden.
+             */
+            $zeile['uid'] = $kennung;
+
+            $zeilen[] = $zeile;
+        }
+
+        return $zeilen;
+    }
+
+    /**
+     * Kopfzeilen fuer unbekannte Kennungen — in EINEM Abruf, ohne Struktur.
+     *
+     * Der Betreff wird hier schon lesbar gemacht und so auch verzeichnet. Sonst
+     * benutzte die Entdoppelung je nach Herkunft der Zeile einmal die rohe und
+     * einmal die lesbare Form als Schluessel — derselbe Fehler wie bei der
+     * Drahtform, nur eine Ebene tiefer.
+     *
+     * @param  list<int|string>  $kennungen
+     * @return list<array<string, mixed>>
+     */
+    private function kopfzeilenHolen(mixed $ordner, array $kennungen): array
+    {
+        $zeilen = [];
+
+        try {
+            foreach (self::fuerKopfzeilen($ordner->messages()->uid($kennungen))->get() as $nachricht) {
+                $von = $nachricht->from();
+
+                $zeilen[] = [
+                    'uid' => $nachricht->uid(),
+                    'message_id' => $nachricht->messageId(),
+                    'subject' => Betreff::lesbar($nachricht->subject()),
+                    'from_address' => $von?->email() ?? '',
+                    'from_name' => $von?->name() ?? '',
+                    'date' => $nachricht->date()?->toIso8601String(),
+                    'in_reply_to' => $nachricht->header('in-reply-to')?->getValue(),
+                    'references' => $nachricht->header('references')?->getValue(),
+                ];
+            }
+        } catch (\Throwable $fehler) {
+            Log::warning('Mailbox: Kopfzeilen des Fensters nicht geholt — die Seite bleibt leer. '.$fehler->getMessage());
+        }
+
+        return $zeilen;
+    }
+
+    /**
+     * Die sichtbaren Zeilen fertigstellen: Anhangzahl und Flags.
+     *
+     * Zwei Abrufe, jeder so gross wie noetig:
+     *
+     *   - BODYSTRUCTURE nur fuer Zeilen OHNE verzeichnete Anhangzahl. Das ist
+     *     der teuerste Abruf ueberhaupt (2,2 bis 13 s fuer 54 Zeilen); im
+     *     warmen Zustand bleibt er aus.
+     *   - FLAGS fuer ALLE sichtbaren, immer. Lesemarken aendert jeder andere
+     *     Client jederzeit — eine verzeichnete Lesemarke waere die Art Fehler,
+     *     die niemand als Fehler erkennt.
+     *
+     * @param  list<array<string, mixed>>  $sichtbar
+     * @return list<array<string, mixed>>
+     */
+    private function sichtbareZeilen(mixed $ordner, array $sichtbar, ?int $gueltigkeit): array
+    {
+        $kennungen = array_values(array_filter(array_map(
+            static fn (array $zeile): mixed => $zeile['uid'] ?? null,
+            $sichtbar,
+        )));
+
+        if ($kennungen === []) {
+            return [];
+        }
+
+        $ohneZahl = array_values(array_filter(
+            $kennungen,
+            static function (int|string $kennung) use ($sichtbar): bool {
+                foreach ($sichtbar as $zeile) {
+                    if ((string) ($zeile['uid'] ?? '') === (string) $kennung) {
+                        return ($zeile['attachment_count'] ?? null) === null;
+                    }
+                }
+
+                return true;
+            },
+        ));
+
+        $zahlen = $this->anhangzahlenHolen($ordner, $ohneZahl);
+
+        if ($zahlen !== []) {
+            $this->verzeichnis->merkenAnhangzahl(
+                (int) $this->account->id,
+                (string) $ordner->path(),
+                $gueltigkeit,
+                $zahlen,
+            );
+        }
+
+        $flaggen = $this->flaggenHolen($ordner, $kennungen);
+
+        return array_map(
+            function (array $zeile) use ($zahlen, $flaggen): array {
+                $kennung = (string) ($zeile['uid'] ?? '');
+
+                return $this->formatter->zeile(array_merge($zeile, [
+                    'attachment_count' => $zahlen[$kennung] ?? $zeile['attachment_count'] ?? 0,
+                    'is_read' => $flaggen[$kennung]['is_read'] ?? true,
+                    'is_flagged' => $flaggen[$kennung]['is_flagged'] ?? false,
+                ]));
+            },
+            $sichtbar,
+        );
+    }
+
+    /**
+     * @param  list<int|string>  $kennungen
+     * @return array<string, int>
+     */
+    private function anhangzahlenHolen(mixed $ordner, array $kennungen): array
+    {
+        if ($kennungen === []) {
+            return [];
+        }
+
+        $zahlen = [];
+
+        try {
+            foreach ($ordner->messages()->uid($kennungen)->withBodyStructure()->get() as $nachricht) {
+                $zahlen[(string) $nachricht->uid()] = $this->formatter->anhangZahl($nachricht);
+            }
+        } catch (\Throwable $fehler) {
+            Log::warning('Mailbox: Struktur der sichtbaren Zeilen nicht geholt — die Anhangzahl bleibt 0. '.$fehler->getMessage());
+        }
+
+        return $zahlen;
+    }
+
+    /**
+     * @param  list<int|string>  $kennungen
+     * @return array<string, array{is_read: bool, is_flagged: bool}>
+     */
+    private function flaggenHolen(mixed $ordner, array $kennungen): array
+    {
+        $flaggen = [];
+
+        try {
+            foreach ($ordner->messages()->uid($kennungen)->withFlags()->get() as $nachricht) {
+                $flaggen[(string) $nachricht->uid()] = [
+                    'is_read' => $nachricht->isSeen(),
+                    'is_flagged' => $nachricht->isFlagged(),
+                ];
+            }
+        } catch (\Throwable $fehler) {
+            /*
+             * Lieber alles als gelesen zeigen als die Seite verlieren: Eine
+             * falsche Lesemarke ist aergerlich, eine leere Liste ist ein
+             * Ausfall. Die Warnung macht den Unterschied sichtbar.
+             */
+            Log::warning('Mailbox: Flags der sichtbaren Zeilen nicht geholt — alles erscheint gelesen. '.$fehler->getMessage());
+        }
+
+        return $flaggen;
     }
 
     /**
@@ -410,67 +693,6 @@ class MailboxClient implements Mailbox
     private static function fuerKopfzeilen(mixed $abfrage): mixed
     {
         return $abfrage->withHeaders()->withFlags();
-    }
-
-    /**
-     * Die sichtbaren Zeilen formatieren — mit BODYSTRUCTURE, in EINEM Abruf.
-     *
-     * ## Warum ein zweiter Abruf schneller ist als ein grosser erster
-     *
-     * `attachment_count` braucht die Struktur, und ohne sie waere Bug #1025
-     * zurueck: Die Zahl waere still 0, und `0` sieht aus wie „keine Anhaenge"
-     * statt wie „nicht gefragt". Die Struktur fuer das ganze
-     * Hundert-Zeilen-Fenster zu holen kostete aber das Dreifache dessen, was
-     * sie fuer die sichtbaren fuenfundzwanzig kostet.
-     *
-     * Gebuendelt, nicht je Zeile: `uid([...])` wird zu einem einzigen
-     * `UID 1,2,3`-Abruf. Eine Schleife mit `find($uid)` waere wieder der
-     * Fehler, den dieses Paket heute schon zweimal hatte — nur in der
-     * Gegenrichtung.
-     *
-     * ## Wenn der zweite Abruf nicht klappt
-     *
-     * Dann wird mit den Fenster-Zeilen formatiert. Die Anhangzahl ist dann 0,
-     * und `anhangZahl()` schreibt die Warnung aus Bug #1025 ins Log — eine
-     * laute Zahl, die falsch sein KANN, statt einer leeren Liste. Eine
-     * Nachricht ohne Anhang-Klammer ist ein kleinerer Schaden als eine Seite,
-     * die gar nicht kommt.
-     *
-     * @param  array<int, array<string, mixed>>  $sichtbar
-     * @return array<int, array<string, mixed>>
-     */
-    private function mitStruktur(mixed $ordner, array $sichtbar): array
-    {
-        /*
-         * Kein eigener Riegel fuer die leere Seite: `$kennungen !== []` unten
-         * verhindert die Abfrage schon, und `array_map` ueber ein leeres Feld
-         * ist leer. Hier stand einer, und eine Mutationsprobe hat ihn
-         * UEBERLEBT — ein Zweig, dessen Entfernen kein Test merkt, ist
-         * entweder toter Code oder falsch geprueft. Hier war er tot.
-         */
-        $kennungen = array_values(array_filter(array_map(
-            static fn (array $zeile): mixed => $zeile['uid'] ?? null,
-            $sichtbar,
-        )));
-
-        $voll = [];
-
-        if ($kennungen !== []) {
-            try {
-                foreach (self::fuerListenzeilen($ordner->messages()->uid($kennungen))->get() as $nachricht) {
-                    $voll[(string) $nachricht->uid()] = $nachricht;
-                }
-            } catch (\Throwable $fehler) {
-                Log::warning('Mailbox: Struktur der sichtbaren Zeilen nicht nachgeholt — die Anhangzahl bleibt 0. '.$fehler->getMessage());
-            }
-        }
-
-        return array_map(
-            fn (array $zeile): array => $this->formatter->summary(
-                $voll[(string) ($zeile['uid'] ?? '')] ?? $zeile['message'],
-            ),
-            $sichtbar,
-        );
     }
 
     private function cheapRows(iterable $messages): array

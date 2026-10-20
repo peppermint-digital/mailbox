@@ -5,10 +5,14 @@ use DirectoryTree\ImapEngine\BodyStructurePart;
 use DirectoryTree\ImapEngine\ContentDisposition;
 use DirectoryTree\ImapEngine\Enums\ContentDispositionType;
 use DirectoryTree\ImapEngine\Message;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Peppermint\Mailbox\Imap\MailboxClient;
 use Peppermint\Mailbox\Imap\RetryPolicy;
 use Peppermint\Mailbox\Models\MailAccount;
+
+uses(RefreshDatabase::class);
 
 /**
  * Was eine Listenseite beim Server abfragt (#6119).
@@ -18,21 +22,30 @@ use Peppermint\Mailbox\Models\MailAccount;
  * Die Seite kam vorher richtig heraus — sie dauerte nur elf Sekunden. Kein
  * Test konnte das sehen, weil keiner hinsah, WAS abgefragt wird.
  *
- * Gemessen am 20.10.2026 an `department@peppermint-digital.de`, 49 Nachrichten
- * im Posteingang:
+ * Gemessen am 20.10.2026 an `department@peppermint-digital.de`, 54 Nachrichten
+ * im Posteingang, alles in EINER offenen Verbindung:
  *
- *     100 Zeilen mit BODYSTRUCTURE   3.100 ms
- *     100 Zeilen nur Kopf+Flags        930 ms
- *     25 Zeilen mit BODYSTRUCTURE      635 ms
+ *     nur UIDs (SEARCH)                      69 ms
+ *     + FLAGS                               123 ms
+ *     + GANZER Kopfblock (490 KB)       660–1031 ms
+ *     + nur 5 Kopffelder (12 KB)            688 ms
+ *     + BODYSTRUCTURE                 2234–13024 ms
  *
- * Die Struktur wurde für das ganze Hundert-Zeilen-Fenster geholt, obwohl nur
- * die sichtbaren fünfundzwanzig sie brauchen (für `attachment_count`). Das
- * Fenster selbst dient dem Sortieren nach Datum — dafür genügen Kopfzeilen.
+ * Die dritte und vierte Zeile sind der Grund für das Kopfzeilen-Verzeichnis:
+ * Zwölf Kilobyte kosten so viel wie vierhundertneunzig. Der Engpass ist die
+ * Arbeit, die Exchange JE NACHRICHT leistet — rund 12,7 ms, unabhängig davon,
+ * wie wenig man abfragt. Eine Feldauswahl ließe sich bauen und brächte nichts.
  *
- * Diese Tests halten beide Hälften fest: dass das Fenster billig bleibt, und
- * dass die Struktur in EINEM Abruf nachgeholt wird und nicht je Zeile.
+ * ## Die Invariante, und was sie hier zu prüfen gibt
+ *
+ * > Das Verzeichnis beantwortet „was steht in UID 46807", NIE „welche Mails
+ * > liegen in diesem Ordner".
+ *
+ * Deshalb stehen hier drei Proben, die ein Zwischenspeicher sonst still
+ * verliert: Eine gelöschte Mail darf nicht erscheinen, eine angekommene nicht
+ * fehlen, und eine anderswo gelesene Mail muss gelesen aussehen.
  */
-function seitenNachricht(int $uid, string $betreff, string $datum, int $anhaenge = 0): Message
+function seitenNachricht(int $uid, string $betreff, string $datum, int $anhaenge = 0, bool $gelesen = true): Message
 {
     $message = Mockery::mock(Message::class);
 
@@ -41,14 +54,14 @@ function seitenNachricht(int $uid, string $betreff, string $datum, int $anhaenge
     $message->shouldReceive('subject')->andReturn($betreff);
     $message->shouldReceive('from')->andReturn(null);
     $message->shouldReceive('date')->andReturn(Carbon::parse($datum));
-    $message->shouldReceive('isSeen')->andReturn(true);
+    $message->shouldReceive('isSeen')->andReturn($gelesen);
     $message->shouldReceive('isFlagged')->andReturn(false);
     $message->shouldReceive('header')->andReturn(null);
     $message->shouldReceive('text')->andThrow(new RuntimeException('Die Liste darf den Rumpf nicht anfassen'));
     $message->shouldReceive('html')->andThrow(new RuntimeException('Die Liste darf den Rumpf nicht anfassen'));
 
     /*
-     * Die Struktur steckt nur in den Nachrichten des ZWEITEN Abrufs. Die
+     * Die Struktur steckt nur in den Nachrichten des STRUKTUR-Abrufs. Die
      * Fenster-Nachrichten liefern `null` — genau wie ein Server, der ohne
      * BODYSTRUCTURE gefragt wurde.
      */
@@ -76,12 +89,12 @@ function seitenNachricht(int $uid, string $betreff, string $datum, int $anhaenge
 }
 
 /**
- * Ein Ordner, der jede Abfrage mitschreibt: welche Felder, welches Limit,
- * welche Kennungen.
+ * Ein Ordner, der jede Abfrage mitschreibt: welche Posten, welche Kennungen,
+ * welches Limit.
  */
-function seitenOrdner(array $fenster, array $detail = [], bool $detailScheitert = false): object
+function seitenOrdner(array $fenster, array $detail = [], bool $detailScheitert = false, bool $ohneStatus = false, string $pfad = 'INBOX'): object
 {
-    return new class($fenster, $detail, $detailScheitert)
+    return new class($fenster, $detail, $detailScheitert, $ohneStatus, $pfad)
     {
         /** @var list<array<string, mixed>> */
         public array $abfragen = [];
@@ -90,16 +103,18 @@ function seitenOrdner(array $fenster, array $detail = [], bool $detailScheitert 
             private array $fenster,
             private array $detail,
             private bool $detailScheitert,
+            private bool $ohneStatus,
+            private string $pfad,
         ) {}
 
         public function path(): string
         {
-            return 'INBOX';
+            return $this->pfad;
         }
 
         public function name(): string
         {
-            return 'INBOX';
+            return $this->pfad;
         }
 
         public function flags(): array
@@ -107,11 +122,24 @@ function seitenOrdner(array $fenster, array $detail = [], bool $detailScheitert 
             return [];
         }
 
+        public function status(): array
+        {
+            if ($this->ohneStatus) {
+                throw new RuntimeException('STATUS not supported');
+            }
+
+            return [
+                'MESSAGES' => (string) count($this->fenster),
+                'UIDVALIDITY' => '14',
+                'UIDNEXT' => (string) (count($this->fenster) + 1),
+            ];
+        }
+
         public function messages(): object
         {
             return new class($this)
             {
-                private array $protokoll = ['struktur' => false, 'kennungen' => null, 'limit' => null];
+                private array $protokoll = ['posten' => [], 'kennungen' => null, 'limit' => null];
 
                 public function __construct(private $ordner) {}
 
@@ -122,18 +150,37 @@ function seitenOrdner(array $fenster, array $detail = [], bool $detailScheitert 
 
                 public function withHeaders(): static
                 {
+                    $this->protokoll['posten'][] = 'kopf';
+
                     return $this;
                 }
 
                 public function withFlags(): static
                 {
+                    $this->protokoll['posten'][] = 'flags';
+
                     return $this;
                 }
 
                 public function withBodyStructure(): static
                 {
-                    $this->protokoll['struktur'] = true;
+                    $this->protokoll['posten'][] = 'struktur';
 
+                    return $this;
+                }
+
+                public function withoutHeaders(): static
+                {
+                    return $this;
+                }
+
+                public function withoutFlags(): static
+                {
+                    return $this;
+                }
+
+                public function withoutBody(): static
+                {
                     return $this;
                 }
 
@@ -172,19 +219,22 @@ function seitenOrdner(array $fenster, array $detail = [], bool $detailScheitert 
 
         public function antwort(array $protokoll): array
         {
-            // Der zweite Abruf: nach Kennungen gefiltert, mit Struktur.
-            if ($protokoll['kennungen'] !== null) {
-                if ($this->detailScheitert) {
-                    throw new RuntimeException('Server mag keine UID-Liste');
-                }
+            $aus = in_array('struktur', $protokoll['posten'], true) ? $this->detail : $this->fenster;
 
-                return array_values(array_filter(
-                    $this->detail,
-                    fn (Message $m): bool => in_array($m->uid(), $protokoll['kennungen'], true),
-                ));
+            if ($protokoll['kennungen'] === null) {
+                return $aus;
             }
 
-            return $this->fenster;
+            if ($this->detailScheitert && in_array('struktur', $protokoll['posten'], true)) {
+                throw new RuntimeException('Server mag keine UID-Liste');
+            }
+
+            $gesucht = array_map('strval', $protokoll['kennungen']);
+
+            return array_values(array_filter(
+                $aus,
+                static fn (Message $m): bool => in_array((string) $m->uid(), $gesucht, true),
+            ));
         }
     };
 }
@@ -214,11 +264,11 @@ function seitenPostfach(object $ordner): object
     };
 }
 
-function seitenKlient(object $ordner): MailboxClient
+function seitenKlient(object $ordner, int $konto = 1): MailboxClient
 {
     return new MailboxClient(
         account: MailAccount::fromRemote([
-            'id' => 1, 'email' => 'post@beispiel.de', 'username' => null, 'password' => 'geheim',
+            'id' => $konto, 'email' => 'post@beispiel.de', 'username' => null, 'password' => 'geheim',
             'host' => 'imap.beispiel.de', 'port' => 993, 'encryption' => 'ssl', 'auth_type' => 'password',
             'oauth_access_token' => null, 'oauth_token_expires_at' => null,
         ]),
@@ -228,16 +278,32 @@ function seitenKlient(object $ordner): MailboxClient
     );
 }
 
-it('holt das Fenster OHNE Struktur und die Struktur nur fuer die sichtbaren Zeilen', function () {
+/** Dreissig Nachrichten, damit eine Seite von 25 wirklich schneidet. */
+function seitenBestand(int $wieviele = 30, int $mitAnhang = 3): array
+{
     $fenster = [];
     $detail = [];
 
-    // 30 Nachrichten, damit die Seite von 25 wirklich schneidet.
-    for ($i = 30; $i >= 1; $i--) {
+    for ($i = $wieviele; $i >= 1; $i--) {
         $datum = sprintf('2026-09-%02dT10:00:00+00:00', $i);
         $fenster[] = seitenNachricht($i, "Mail {$i}", $datum);
-        $detail[] = seitenNachricht($i, "Mail {$i}", $datum, $i <= 3 ? 2 : 0);
+        $detail[] = seitenNachricht($i, "Mail {$i}", $datum, $i <= $mitAnhang ? 2 : 0);
     }
+
+    return [$fenster, $detail];
+}
+
+/** @return list<array<string, mixed>> */
+function abfragenMit(object $ordner, string $posten): array
+{
+    return array_values(array_filter(
+        $ordner->abfragen,
+        static fn (array $a): bool => in_array($posten, $a['posten'], true),
+    ));
+}
+
+it('holt beim ersten Mal die Kopfzeilen des Fensters und die Struktur nur fuer die Sichtbaren', function () {
+    [$fenster, $detail] = seitenBestand();
 
     $ordner = seitenOrdner($fenster, $detail);
 
@@ -246,46 +312,162 @@ it('holt das Fenster OHNE Struktur und die Struktur nur fuer die sichtbaren Zeil
     expect($zeilen)->toHaveCount(25)
         ->and($gesamt)->toBe(30);
 
-    // ZWEI Abfragen, nicht sechsundzwanzig.
-    expect($ordner->abfragen)->toHaveCount(2);
+    // Vier Abrufe: Belegung, Kopfzeilen, Struktur, Flags. Nicht einunddreissig.
+    expect($ordner->abfragen)->toHaveCount(4);
 
-    [$erste, $zweite] = $ordner->abfragen;
+    // Erstens: die BELEGUNG, ohne jeden Posten. Die darf nichts verschweigen.
+    expect($ordner->abfragen[0]['posten'])->toBe([])
+        ->and($ordner->abfragen[0]['limit'])->toBe(100)
+        ->and($ordner->abfragen[0]['kennungen'])->toBeNull();
 
-    // Das Fenster: hundert Zeilen, OHNE Struktur.
-    expect($erste['struktur'])->toBeFalse()
-        ->and($erste['limit'])->toBe(100)
-        ->and($erste['kennungen'])->toBeNull();
+    // Zweitens: Kopfzeilen fuer die unbekannten Kennungen — alle dreissig.
+    $kopf = abfragenMit($ordner, 'kopf');
+    expect($kopf)->toHaveCount(1)
+        ->and($kopf[0]['kennungen'])->toHaveCount(30);
 
-    // Der Nachschlag: MIT Struktur, und genau die 25 sichtbaren Kennungen.
-    expect($zweite['struktur'])->toBeTrue()
-        ->and($zweite['kennungen'])->toHaveCount(25);
+    // Drittens: die STRUKTUR nur fuer die fuenfundzwanzig sichtbaren.
+    $struktur = abfragenMit($ordner, 'struktur');
+    expect($struktur)->toHaveCount(1)
+        ->and($struktur[0]['kennungen'])->toHaveCount(25);
 });
 
-it('nimmt die Anhangzahl aus dem zweiten Abruf — sonst waere sie still 0', function () {
+it('fragt beim zweiten Mal weder Kopfzeilen noch Struktur — nur noch Belegung und Flags', function () {
     /*
-     * Der Grund, warum die Struktur ueberhaupt geholt wird: Ohne sie gibt die
-     * Bibliothek 0 heraus, und `0` sieht aus wie „keine Anhaenge" statt wie
-     * „nicht gefragt" (Bug #1025).
-     *
-     * Die Fenster-Nachrichten dieses Tests liefern bewusst `bodyStructure()
-     * === null` — wie ein Server, der ohne BODYSTRUCTURE gefragt wurde. Kommt
-     * die Zahl trotzdem an, kann sie nur aus dem zweiten Abruf stammen.
+     * Das ist der ganze Zweck des Verzeichnisses. Gemessen an einem echten
+     * Postfach: 2.045 ms auf 448 ms.
      */
-    $fenster = [seitenNachricht(1, 'Mit Anhang', '2026-09-01T10:00:00+00:00')];
-    $detail = [seitenNachricht(1, 'Mit Anhang', '2026-09-01T10:00:00+00:00', 2)];
+    // Alle mit Anhang, damit die sichtbare Seite welche enthaelt: Sortiert
+    // wird nach Datum, und die drei aeltesten liegen gar nicht auf Seite eins.
+    [$fenster, $detail] = seitenBestand(30, 30);
 
-    [$zeilen] = seitenKlient(seitenOrdner($fenster, $detail))->page('INBOX', 1, 25);
+    seitenKlient(seitenOrdner($fenster, $detail))->page('INBOX', 1, 25);
 
-    expect($zeilen[0]['attachment_count'])->toBe(2)
-        ->and($zeilen[0]['has_attachments'])->toBeTrue();
+    $zweiter = seitenOrdner($fenster, $detail);
+    [$zeilen] = seitenKlient($zweiter)->page('INBOX', 1, 25);
+
+    expect($zeilen)->toHaveCount(25)
+        ->and(abfragenMit($zweiter, 'kopf'))->toBe([])
+        ->and(abfragenMit($zweiter, 'struktur'))->toBe([]);
+
+    // Zwei Abrufe: die Belegung und die Flags.
+    expect($zweiter->abfragen)->toHaveCount(2)
+        ->and($zweiter->abfragen[1]['posten'])->toBe(['flags'])
+        ->and($zweiter->abfragen[1]['kennungen'])->toHaveCount(25);
+
+    // Und die teuer erkaufte Anhangzahl ist noch da.
+    expect($zeilen[0]['attachment_count'])->toBe(2);
 });
 
-it('liefert die Seite auch dann, wenn der zweite Abruf scheitert', function () {
+it('laesst bei gleichem Datum die Reihenfolge des SERVERS entscheiden', function () {
+    /*
+     * Was die Schleife ueber die Server-Kennungen wirklich leistet. Die
+     * Invariante haengt am `whereIn` des Verzeichnisses — eine Mutationsprobe
+     * hat gezeigt, dass die Schleife daran keinen Anteil hat.
+     *
+     * Ihre Aufgabe ist die REIHENFOLGE: PHP sortiert seit 8.0 stabil, also
+     * entscheidet bei gleichem Datum die Eingabe. Kaeme die aus der Datenbank,
+     * stuende dort die Einfuegereihenfolge — und die ist nach einem Nachtrag
+     * eine andere als die des Servers. Dieselbe Liste saehe dann je nach
+     * Vorgeschichte anders aus.
+     */
+    $gleich = '2026-09-10T10:00:00+00:00';
+
+    $erst = [seitenNachricht(5, 'fuenf', $gleich)];
+    seitenKlient(seitenOrdner($erst, $erst))->page('INBOX', 1, 25);
+
+    // Die neue Kennung kommt beim Server ZUERST, in der Tabelle als LETZTE.
+    $dann = [seitenNachricht(9, 'neun', $gleich), seitenNachricht(5, 'fuenf', $gleich)];
+
+    [$zeilen] = seitenKlient(seitenOrdner($dann, $dann))->page('INBOX', 1, 25);
+
+    expect(array_column($zeilen, 'uid'))->toBe([9, 5])
+        ->and(DB::table('mailbox_headers')->orderBy('id')->pluck('uid')->all())->toBe(['5', '9']);
+});
+
+it('zeigt eine geloeschte Mail nicht mehr, obwohl sie verzeichnet ist', function () {
+    /*
+     * Die Invariante. Ein Verzeichnis, das die BELEGUNG beantwortet, haette
+     * hier eine Nachricht gezeigt, die es nicht mehr gibt — und das waere kein
+     * Absturz, sondern eine Liste, die falsch aussieht wie eine richtige.
+     */
+    [$fenster, $detail] = seitenBestand(5, 5);
+
+    seitenKlient(seitenOrdner($fenster, $detail))->page('INBOX', 1, 25);
+
+    expect(DB::table('mailbox_headers')->count())->toBe(5);
+
+    // Zwei sind weg — der Server nennt sie nicht mehr.
+    $uebrig = array_slice($fenster, 0, 3);
+    $uebrigDetail = array_slice($detail, 0, 3);
+
+    [$zeilen, $gesamt] = seitenKlient(seitenOrdner($uebrig, $uebrigDetail))->page('INBOX', 1, 25);
+
+    expect($zeilen)->toHaveCount(3)->and($gesamt)->toBe(3);
+});
+
+it('holt die Kopfzeilen nur fuer die NEUEN Kennungen, nicht fuer alle', function () {
+    [$fenster, $detail] = seitenBestand(5, 0);
+
+    seitenKlient(seitenOrdner($fenster, $detail))->page('INBOX', 1, 25);
+
+    // Zwei kommen dazu.
+    $mehr = array_merge([
+        seitenNachricht(6, 'ganz neu', '2026-09-20T10:00:00+00:00'),
+        seitenNachricht(7, 'noch neuer', '2026-09-21T10:00:00+00:00'),
+    ], $fenster);
+    $mehrDetail = array_merge([
+        seitenNachricht(6, 'ganz neu', '2026-09-20T10:00:00+00:00'),
+        seitenNachricht(7, 'noch neuer', '2026-09-21T10:00:00+00:00'),
+    ], $detail);
+
+    $zweiter = seitenOrdner($mehr, $mehrDetail);
+    [$zeilen] = seitenKlient($zweiter)->page('INBOX', 1, 25);
+
+    expect($zeilen)->toHaveCount(7);
+
+    $kopf = abfragenMit($zweiter, 'kopf');
+    expect($kopf)->toHaveCount(1)
+        ->and($kopf[0]['kennungen'])->toHaveCount(2)
+        ->and(array_map('intval', $kopf[0]['kennungen']))->toEqualCanonicalizing([6, 7]);
+});
+
+it('nimmt die Lesemarke IMMER vom Server, nie aus dem Verzeichnis', function () {
+    /*
+     * Flags aendert jeder andere Client jederzeit. Eine verzeichnete Lesemarke
+     * waere die Art Fehler, die niemand als Fehler erkennt: Die Liste sieht
+     * richtig aus und ist falsch.
+     */
+    $ungelesen = [seitenNachricht(1, 'Posteingang', '2026-09-01T10:00:00+00:00', 0, gelesen: false)];
+
+    [$zeilen] = seitenKlient(seitenOrdner($ungelesen, $ungelesen))->page('INBOX', 1, 25);
+
+    expect($zeilen[0]['is_read'])->toBeFalse();
+
+    // Jemand anders liest sie — am Verzeichnis aendert das nichts.
+    $gelesen = [seitenNachricht(1, 'Posteingang', '2026-09-01T10:00:00+00:00', 0, gelesen: true)];
+
+    [$zeilen] = seitenKlient(seitenOrdner($gelesen, $gelesen))->page('INBOX', 1, 25);
+
+    expect($zeilen[0]['is_read'])->toBeTrue();
+});
+
+it('verzeichnet die Anhangzahl erst, wenn eine Zeile wirklich gezeigt wurde', function () {
+    /*
+     * `0` heisst „keine Anhaenge", NULL heisst „noch nicht gefragt" — die
+     * Unterscheidung, die Bug #1025 gekostet hat. Die Struktur ist der
+     * teuerste Abruf ueberhaupt; sie wird nur fuer sichtbare Zeilen geholt.
+     */
+    [$fenster, $detail] = seitenBestand(30, 30);
+
+    seitenKlient(seitenOrdner($fenster, $detail))->page('INBOX', 1, 25);
+
+    expect(DB::table('mailbox_headers')->whereNotNull('attachment_count')->count())->toBe(25)
+        ->and(DB::table('mailbox_headers')->whereNull('attachment_count')->count())->toBe(5);
+});
+
+it('liefert die Seite auch dann, wenn der Struktur-Abruf scheitert', function () {
     /*
      * Ein Server, der keine UID-Liste mag, darf nicht die ganze Seite kosten.
-     * Dann wird mit den Fenster-Zeilen formatiert: Die Anhangzahl ist 0, und
-     * `anhangZahl()` schreibt die Warnung aus Bug #1025 ins Log.
-     *
      * Eine Nachricht ohne Anhang-Klammer ist ein kleinerer Schaden als eine
      * Seite, die gar nicht kommt.
      */
@@ -299,7 +481,7 @@ it('liefert die Seite auch dann, wenn der zweite Abruf scheitert', function () {
         ->and($zeilen[0]['attachment_count'])->toBe(0);
 });
 
-it('fragt gar nicht nach, wenn die Seite leer ist', function () {
+it('fragt gar nicht nach, wenn der Ordner leer ist', function () {
     // Eine UID-Liste ohne Kennungen waere ein Abruf fuer nichts — und bei
     // manchen Servern ein Fehler.
     $ordner = seitenOrdner([]);
@@ -308,4 +490,84 @@ it('fragt gar nicht nach, wenn die Seite leer ist', function () {
 
     expect($zeilen)->toBe([])
         ->and($ordner->abfragen)->toHaveCount(1);
+});
+
+it('laeuft ohne STATUS weiter — langsamer, nicht fehlend', function () {
+    /*
+     * Die Liste haengt jetzt an einem Befehl, an dem sie vorher nicht hing.
+     * Ein Server, der ihn verweigert, soll eine langsamere Liste bekommen.
+     * Ohne Gueltigkeit wird das Verzeichnis nicht gelesen — im Zweifel lieber
+     * den Server fragen.
+     */
+    [$fenster, $detail] = seitenBestand(5, 5);
+
+    $ordner = seitenOrdner($fenster, $detail, ohneStatus: true);
+    [$zeilen, $gesamt] = seitenKlient($ordner)->page('INBOX', 1, 25);
+
+    expect($zeilen)->toHaveCount(5)
+        ->and($gesamt)->toBe(5)
+        ->and(abfragenMit($ordner, 'kopf'))->toHaveCount(1);
+});
+
+it('verhaelt sich abgeschaltet wie beim ersten Mal — ein Codeweg, nicht zwei', function () {
+    config()->set('mailbox.header_index', false);
+
+    [$fenster, $detail] = seitenBestand(5, 5);
+
+    seitenKlient(seitenOrdner($fenster, $detail))->page('INBOX', 1, 25);
+
+    $zweiter = seitenOrdner($fenster, $detail);
+    [$zeilen] = seitenKlient($zweiter)->page('INBOX', 1, 25);
+
+    expect($zeilen)->toHaveCount(5)
+        ->and(DB::table('mailbox_headers')->count())->toBe(0)
+        // Kopfzeilen und Struktur kommen weiterhin jedes Mal vom Server.
+        ->and(abfragenMit($zweiter, 'kopf'))->toHaveCount(1)
+        ->and(abfragenMit($zweiter, 'struktur'))->toHaveCount(1);
+});
+
+it('trennt die Konten — ein Verzeichnis ist nicht gemeinsam', function () {
+    [$fenster, $detail] = seitenBestand(5, 5);
+
+    seitenKlient(seitenOrdner($fenster, $detail), konto: 1)->page('INBOX', 1, 25);
+
+    $anderes = seitenOrdner($fenster, $detail);
+    seitenKlient($anderes, konto: 2)->page('INBOX', 1, 25);
+
+    // Dieselben Kennungen, anderes Konto: Es muss neu geholt werden.
+    expect(abfragenMit($anderes, 'kopf'))->toHaveCount(1)
+        ->and(DB::table('mailbox_headers')->distinct()->count('account_id'))->toBe(2);
+});
+
+it('vergisst das Verzeichnis, wenn die Gueltigkeit des Ordners wechselt', function () {
+    [$fenster, $detail] = seitenBestand(5, 5);
+
+    seitenKlient(seitenOrdner($fenster, $detail))->page('INBOX', 1, 25);
+
+    // Aus dem Ordner ist ein anderer geworden: dieselben Kennungen, andere Mails.
+    DB::table('mailbox_headers')->update(['uidvalidity' => 13]);
+
+    $zweiter = seitenOrdner($fenster, $detail);
+    seitenKlient($zweiter)->page('INBOX', 1, 25);
+
+    expect(abfragenMit($zweiter, 'kopf'))->toHaveCount(1)
+        ->and(DB::table('mailbox_headers')->where('uidvalidity', 13)->count())->toBe(0)
+        ->and(DB::table('mailbox_headers')->where('uidvalidity', 14)->count())->toBe(5);
+});
+
+it('laeuft weiter, wenn die Tabelle fehlt — ein Release liegt vor der Migration', function () {
+    /*
+     * Ein Paket-Release liegt immer VOR der Migration der vier Produkte. In dem
+     * Fenster dazwischen muss die Mailliste laufen, nicht abstuerzen.
+     */
+    DB::statement('DROP TABLE mailbox_headers');
+
+    [$fenster, $detail] = seitenBestand(5, 5);
+
+    $ordner = seitenOrdner($fenster, $detail);
+    [$zeilen] = seitenKlient($ordner)->page('INBOX', 1, 25);
+
+    expect($zeilen)->toHaveCount(5)
+        ->and($zeilen[0]['attachment_count'])->toBe(2)
+        ->and(abfragenMit($ordner, 'kopf'))->toHaveCount(1);
 });

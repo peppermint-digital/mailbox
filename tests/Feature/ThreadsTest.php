@@ -102,7 +102,20 @@ function kettenNachricht(int $uid, string $betreff, string $datum, ?string $mess
     };
 }
 
-/** Zählt mit, wie oft überhaupt formatiert wurde — das ist hier der Messwert. */
+/**
+ * Zählt mit, wie oft überhaupt formatiert wurde — das ist hier der Messwert.
+ *
+ * ## Warum BEIDE Methoden gezählt werden
+ *
+ * Seit dem Kopfzeilen-Verzeichnis (#6119) gibt es zwei Wege zu einer Zeile:
+ * `summary()` aus einer Nachricht vom Server (Ketten, Suche, Kopfzeilen) und
+ * `zeile()` aus Skalaren (die Listenseite). Wer nur den alten zählt, misst an
+ * der Listenseite ab sofort NULL und hält Bug #877 für behoben, weil der
+ * Zähler nicht mehr hinsieht.
+ *
+ * Doppelt gezählt wird nichts: `summary()` ruft hier nicht die Elternmethode
+ * auf, also auch nicht `zeile()`.
+ */
 function zaehlenderFormatierer(object $zaehler): MessageFormatter
 {
     return new class($zaehler) extends MessageFormatter
@@ -114,6 +127,13 @@ function zaehlenderFormatierer(object $zaehler): MessageFormatter
             $this->zaehler->anzahl++;
 
             return ['uid' => $message->uid(), 'subject' => $message->subject(), 'preview' => 'formatiert'];
+        }
+
+        public function zeile(array $felder): array
+        {
+            $this->zaehler->anzahl++;
+
+            return ['uid' => $felder['uid'], 'subject' => $felder['subject'] ?? null, 'preview' => 'formatiert'];
         }
     };
 }
