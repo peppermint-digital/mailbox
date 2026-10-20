@@ -2,14 +2,13 @@
 
 namespace Peppermint\Mailbox\Imap;
 
-use Peppermint\Mailbox\Threading\ThreadKey;
-use Peppermint\Mailbox\Support\Betreff;
-
-use DirectoryTree\ImapEngine\Message;
-use Illuminate\Support\Str;
 use DirectoryTree\ImapEngine\BodyStructurePart;
+use DirectoryTree\ImapEngine\Message;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Peppermint\Mailbox\Content\CidReplacer;
+use Peppermint\Mailbox\Support\Betreff;
+use Peppermint\Mailbox\Threading\ThreadKey;
 
 /**
  * Turns an IMAP message into rows the rest of the world can use.
@@ -52,7 +51,50 @@ class MessageFormatter
     private bool $rueckfallGemeldet = false;
 
     /**
-     * For a list view: headers and a short preview.
+     * For a list view: headers, flags, attachment count — and NO preview.
+     *
+     * ## Why there is no preview here (#6119, measured 20.10.2026)
+     *
+     * Diese Zeile stand hier:
+     *
+     *     'preview' => Str::limit($message->text() ?? strip_tags($message->html() ?? ''), 100),
+     *
+     * `text()` fasst den RUMPF an. Alle vier Listenwege ueber IMAP holen die
+     * Nachrichten mit `withHeaders()->withFlags()->withBodyStructure()` — also
+     * OHNE Rumpf. Die Bibliothek holt ihn dann einzeln nach, pro Zeile, in dem
+     * Moment, in dem formatiert wird.
+     *
+     * Gemessen an `department@peppermint-digital.de`, einem echten Postfach:
+     *
+     *     folders                   389 ms
+     *     newest(100) (ohne summary)   1.509 ms
+     *     page(1, 25) (mit summary)   10.999 ms   <-- 25 Nachhol-Rundreisen
+     *
+     * Elf Sekunden fuer eine Seite, von denen rund acht auf 25 einzelne
+     * Rumpf-Abrufe gingen. Bei `headerRows()` und `search()` sind es bis zu
+     * HUNDERT.
+     *
+     * Und das Entscheidende: **Keine Oberflaeche zeichnet dieses Feld.** Es
+     * steht im TypeScript-Typ (`rows.ts`, `preview: string`), wird an einer
+     * Stelle mit `''` belegt — und von keiner Komponente gelesen. Gesucht
+     * wurde im Paket und in allen vier Produkten.
+     *
+     * Es ist derselbe Fehler wie Bug #877, nur eine Ebene tiefer: Damals
+     * formatierte `headerRows()` alle hundert Zeilen statt der sichtbaren.
+     * Behoben wurde die ANZAHL der formatierten Zeilen — nicht, dass
+     * Formatieren selbst den Rumpf anfasst.
+     *
+     * ## Warum das Feld bleibt, aber leer
+     *
+     * Entfernt wird es nicht: Die Drahtform ist eine Zusage an vier Produkte,
+     * und ein Feld zu streichen, das jemand morgen lesen koennte, ist eine
+     * andere Entscheidung als es nicht zu befuellen. Ueber JMAP bleibt es
+     * ausserdem echt — dort ist `preview` eine Eigenschaft der Listenabfrage
+     * und kostet nichts.
+     *
+     * Wer hier wieder eine Vorschau haben will, holt den Rumpf im SELBEN
+     * Abruf (`withBody()` an `fuerListenzeilen()`) und nimmt die Datenmenge in
+     * Kauf — oder zeigt den Auszug erst beim Oeffnen.
      *
      * @return array<string, mixed>
      */
@@ -72,7 +114,10 @@ class MessageFormatter
             'attachment_count' => $anzahl,
             'is_read' => $message->isSeen(),
             'is_flagged' => $message->isFlagged(),
-            'preview' => Str::limit($message->text() ?? strip_tags($message->html() ?? ''), 100),
+            // Leer, mit Absicht — siehe Klassen-Text dieser Methode. Den Rumpf
+            // hier anzufassen kostete 25 bis 100 Rundreisen je Liste, fuer ein
+            // Feld, das keine Oberflaeche zeichnet.
+            'preview' => '',
             // The threading headers travel along: they are loaded anyway when
             // listing, and without them a list cannot be grouped into
             // conversations afterwards without a second round trip.

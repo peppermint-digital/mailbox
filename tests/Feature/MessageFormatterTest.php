@@ -2,12 +2,12 @@
 
 use Carbon\Carbon;
 use DirectoryTree\ImapEngine\Address;
-use DirectoryTree\ImapEngine\Message;
 use DirectoryTree\ImapEngine\BodyStructureCollection;
-use Illuminate\Support\Facades\Log;
 use DirectoryTree\ImapEngine\BodyStructurePart;
 use DirectoryTree\ImapEngine\ContentDisposition;
 use DirectoryTree\ImapEngine\Enums\ContentDispositionType;
+use DirectoryTree\ImapEngine\Message;
+use Illuminate\Support\Facades\Log;
 use Peppermint\Mailbox\Imap\MessageFormatter;
 use ZBateson\MailMimeParser\Header\IHeader;
 
@@ -142,16 +142,52 @@ it('leaves a message without a subject unnamed', function () {
     expect((new MessageFormatter)->summary(nachricht(['subject' => null]))['subject'])->toBeNull();
 });
 
-it('shortens the preview and falls back to the html body', function () {
-    $zeile = (new MessageFormatter)->summary(nachricht([
-        'text' => null,
-        'html' => '<p>'.str_repeat('sehr lang ', 40).'</p>',
-    ]));
+it('fasst fuer eine Listenzeile den RUMPF NICHT an (#6119)', function () {
+    /*
+     * Der teuerste Fehler dieses Formatierers, gemessen am 20.10.2026 an
+     * `department@peppermint-digital.de`:
+     *
+     *     newest(100), ohne summary()      1.509 ms
+     *     page(1, 25),  mit  summary()    10.999 ms
+     *
+     * Hier stand eine Vorschau aus `$message->text()`. Alle vier Listenwege
+     * holen die Nachrichten OHNE Rumpf (`withHeaders`/`withFlags`/
+     * `withBodyStructure`) — die Bibliothek holt ihn also beim Formatieren
+     * einzeln nach, pro Zeile. 25 Rundreisen fuer eine Seite, bis zu hundert
+     * fuer `headerRows()` und `search()`.
+     *
+     * Und das Feld zeichnet keine Oberflaeche. Gesucht im Paket und in allen
+     * vier Produkten: `preview` steht im TypeScript-Typ und wird nirgends
+     * gelesen.
+     *
+     * Dieser Test prueft nicht das Ergebnis, sondern den WEG: Die Attrappe
+     * laesst `text()` und `html()` werfen. Ein Formatierer, der sie anfasst,
+     * faellt hier um — ein Test auf `preview === ''` waere schon gruen, wenn
+     * der Rumpf geholt und das Ergebnis weggeworfen wuerde.
+     */
+    $message = Mockery::mock(Message::class);
+    $message->shouldReceive('uid')->andReturn(42);
+    $message->shouldReceive('messageId')->andReturn('<a@x>');
+    $message->shouldReceive('subject')->andReturn('Angebot');
+    $message->shouldReceive('from')->andReturn(null);
+    $message->shouldReceive('date')->andReturn(Carbon::parse('2026-09-01T10:00:00+00:00'));
+    $message->shouldReceive('isSeen')->andReturn(true);
+    $message->shouldReceive('isFlagged')->andReturn(false);
+    $message->shouldReceive('bodyStructure')->andReturn(null);
+    $message->shouldReceive('attachments')->andReturn([]);
+    $message->shouldReceive('hasAttachments')->andReturn(false);
+    $message->shouldReceive('attachmentCount')->andReturn(0);
+    $message->shouldReceive('headers')->andReturn(null);
+    $message->shouldReceive('header')->andReturn(null);
+    $message->shouldReceive('text')->andThrow(new RuntimeException('summary() hat den RUMPF angefasst — das kostet eine Rundreise je Zeile'));
+    $message->shouldReceive('html')->andThrow(new RuntimeException('summary() hat den RUMPF angefasst — das kostet eine Rundreise je Zeile'));
 
-    // Str::limit haengt „..." an, die Grenze gilt fuer den Inhalt davor.
-    expect(mb_strlen($zeile['preview']))->toBeLessThanOrEqual(103)
-        ->and($zeile['preview'])->toEndWith('...')
-        ->and($zeile['preview'])->not->toContain('<p>');
+    $zeile = (new MessageFormatter)->summary($message);
+
+    expect($zeile['preview'])->toBe('')
+        // Die Kopfzeilen sind trotzdem da — es faellt nur der Rumpf weg.
+        ->and($zeile['subject'])->toBe('Angebot')
+        ->and($zeile['uid'])->toBe(42);
 });
 
 it('resolves an inline image into the body', function () {

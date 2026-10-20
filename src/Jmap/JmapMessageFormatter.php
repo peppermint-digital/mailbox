@@ -2,13 +2,11 @@
 
 namespace Peppermint\Mailbox\Jmap;
 
-use Peppermint\Mailbox\Threading\ThreadKey;
-use Peppermint\Mailbox\Support\Betreff;
-
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Str;
 use Peppermint\Mailbox\Content\CidReplacer;
 use Peppermint\Mailbox\Imap\MessageFormatter;
+use Peppermint\Mailbox\Support\Betreff;
+use Peppermint\Mailbox\Threading\ThreadKey;
 
 /**
  * A JMAP message, in the rows the rest of the package already speaks.
@@ -75,7 +73,25 @@ class JmapMessageFormatter
             // JMAP delivers a preview the server already cut. Cutting it again
             // to the same length is what keeps the two transports comparable:
             // a list must not change its line length when a mailbox moves.
-            'preview' => Str::limit((string) ($email['preview'] ?? ''), 100),
+            /*
+             * Leer, obwohl JMAP die Vorschau GRATIS mitliefert (#6119).
+             *
+             * Das ist die Regel, die der Vertragstest fuer die billige
+             * Dreiergruppe schon festhaelt: „also gibt die Dreiergruppe die
+             * Schnittmenge heraus, nicht das Maximum." Fuer die Listenzeile
+             * galt sie nur nie.
+             *
+             * Ueber IMAP kostet eine Vorschau einen Rumpfabruf PRO ZEILE — an
+             * einem echten Postfach gemessen 25 Rundreisen und knapp acht
+             * Sekunden je Seite. Hier das Feld zu fuellen und dort nicht hiesse:
+             * Ein Produkt, das es zeichnet, zeigt Vorschauen nur an
+             * JMAP-Postfaechern. Eine halb vorhandene Spalte ist schlechter als
+             * keine — man sieht ihr nicht an, dass sie vom Protokoll abhaengt.
+             *
+             * Wer Vorschauen will, holt sie auf BEIDEN Wegen: ueber IMAP mit
+             * einem gebuendelten Rumpfabruf fuer die sichtbare Seite.
+             */
+            'preview' => '',
             'in_reply_to' => $this->firstMessageId($email['inReplyTo'] ?? null),
             'references' => $this->joined($email['references'] ?? null),
         ];
