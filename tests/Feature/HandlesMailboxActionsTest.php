@@ -2,8 +2,13 @@
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 use Peppermint\Mailbox\Contracts\Mailbox;
+use Peppermint\Mailbox\Folders\Ordnerliste;
 use Peppermint\Mailbox\Http\HandlesMailboxActions;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * Die Aktionen am Postfach, als geteilter Baustein (22.09.2026).
@@ -29,6 +34,12 @@ class TestControllerFuerAktionen
     protected function mailboxFailure(callable $work): JsonResponse
     {
         return response()->json($work());
+    }
+
+    /** `ordnerliste()` ist geschuetzt — ein Produkt ruft es, ein Test braucht einen Weg. */
+    public function ordnerlisteFuerTest(int $account): array
+    {
+        return $this->ordnerliste($account);
     }
 }
 
@@ -146,7 +157,7 @@ it('weist eine unbekannte Aktion ab, statt still nichts zu tun', function () {
 
     expect(fn () => (new TestControllerFuerAktionen($postfach))
         ->bulk(anfrage(['folder' => 'INBOX', 'action' => 'verbrennen', 'uids' => [1]]), 1))
-        ->toThrow(Illuminate\Validation\ValidationException::class);
+        ->toThrow(ValidationException::class);
 });
 
 it('verlangt ein Ziel, bevor es verschiebt', function () {
@@ -155,7 +166,7 @@ it('verlangt ein Ziel, bevor es verschiebt', function () {
 
     expect(fn () => (new TestControllerFuerAktionen($postfach))
         ->bulk(anfrage(['folder' => 'INBOX', 'action' => 'move', 'uids' => [1]]), 1))
-        ->toThrow(Illuminate\Validation\ValidationException::class);
+        ->toThrow(ValidationException::class);
 });
 
 it('nimmt keine leere Auswahl an', function () {
@@ -166,7 +177,7 @@ it('nimmt keine leere Auswahl an', function () {
 
     expect(fn () => (new TestControllerFuerAktionen($postfach))
         ->bulk(anfrage(['folder' => 'INBOX', 'action' => 'delete', 'uids' => []]), 1))
-        ->toThrow(Illuminate\Validation\ValidationException::class);
+        ->toThrow(ValidationException::class);
 });
 
 it('zaehlt einen glatten Durchlauf vollstaendig', function () {
@@ -207,7 +218,7 @@ it('laesst den Posteingang nicht loeschen', function () {
     $postfach->shouldReceive('deleteFolder')->never();
 
     expect(fn () => (new TestControllerFuerAktionen($postfach))->deleteFolder(anfrage(['path' => 'INBOX']), 1))
-        ->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class);
+        ->toThrow(HttpException::class);
 });
 
 it('laesst auch die Standardordner in Ruhe', function () {
@@ -220,7 +231,7 @@ it('laesst auch die Standardordner in Ruhe', function () {
 
     foreach (['Gesendete Elemente', 'Papierkorb', 'Entwürfe', 'Archiv'] as $ordner) {
         expect(fn () => (new TestControllerFuerAktionen($postfach))->deleteFolder(anfrage(['path' => $ordner]), 1))
-            ->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class, '', "loeschbar: {$ordner}");
+            ->toThrow(HttpException::class, '', "loeschbar: {$ordner}");
     }
 });
 
@@ -234,7 +245,7 @@ it('glaubt den Marken des Servers mehr als dem Namen', function () {
     $postfach->shouldReceive('deleteFolder')->never();
 
     expect(fn () => (new TestControllerFuerAktionen($postfach))->deleteFolder(anfrage(['path' => 'Zeug']), 1))
-        ->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class);
+        ->toThrow(HttpException::class);
 });
 
 it('laesst einen gewoehnlichen Ordner loeschen', function () {
@@ -258,7 +269,7 @@ it('schuetzt auch beim Umbenennen, nicht nur beim Loeschen', function () {
     $postfach->shouldReceive('renameFolder')->never();
 
     expect(fn () => (new TestControllerFuerAktionen($postfach))->renameFolder(anfrage(['path' => 'INBOX', 'name' => 'Posteingang']), 1))
-        ->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class);
+        ->toThrow(HttpException::class);
 });
 
 /**
@@ -355,7 +366,7 @@ it('haelt jede nicht gefundene Nachricht einer Massenaktion fest', function () {
      * WELCHE. Im Projekt-Manager stand das Protokollieren seit dem 13.09.2026
      * als Einzelloesung; seit dem 19.10.2026 tut es das Paket fuer alle.
      */
-    Illuminate\Support\Facades\Log::shouldReceive('warning')
+    Log::shouldReceive('warning')
         ->twice()
         ->withArgs(fn (string $satz, array $zusatz): bool => str_contains($satz, 'nicht gefunden')
             && $zusatz['folder'] === 'INBOX'
@@ -430,7 +441,7 @@ it('weist eine Auswahl ab, die groesser ist als der Riegel', function () {
 
     expect(fn () => (new TestControllerFuerAktionen($postfach))
         ->bulk(anfrage(['folder' => 'INBOX', 'action' => 'read', 'uids' => range(1, 201)]), 1))
-        ->toThrow(Illuminate\Validation\ValidationException::class);
+        ->toThrow(ValidationException::class);
 });
 
 it('nimmt 200 noch an — der Riegel sitzt nicht darunter', function () {
@@ -458,4 +469,55 @@ it('laesst eine Zeichenketten-Kennung durch den Riegel — JMAP zaehlt nicht in 
         ->getData(true);
 
     expect($daten['processed'])->toBe(2);
+});
+
+it('leert den Ordner-Zwischenspeicher, sobald sich Ordner aendern', function () {
+    /*
+     * Die Gegenprobe zum Zwischenspeicher aus #6119. Er spart 485 ms je
+     * Ordnerabfrage — und richtet Schaden an, wenn er nach einer Aenderung
+     * stehenbleibt: Der neue Ordner taucht nicht auf, also legt jemand ihn
+     * noch einmal an.
+     *
+     * Deshalb liegt das Leeren im PAKET, an den Wegen, die Ordner aendern, und
+     * nicht beim Produkt. Ein Produkt kann einen vergessen; ein Paket, das
+     * drei Wege hat, vergisst sie an einer Stelle gemeinsam.
+     */
+    $vorher = [['name' => 'INBOX', 'path' => 'INBOX', 'flags' => []]];
+
+    foreach (['createFolder', 'renameFolder', 'deleteFolder'] as $weg) {
+        Cache::put(Ordnerliste::PRAEFIX.'1', $vorher, 600);
+
+        $postfach = Mockery::mock(Mailbox::class);
+        $postfach->shouldReceive('folders')->andReturn($vorher);
+        $postfach->shouldReceive('createFolder')->andReturnNull();
+        $postfach->shouldReceive('renameFolder')->andReturn('Neu');
+        $postfach->shouldReceive('deleteFolder')->andReturnNull();
+
+        (new TestControllerFuerAktionen($postfach))->{$weg}(
+            anfrage(['path' => 'Kunden/2026', 'name' => 'Neu']),
+            1,
+        );
+
+        expect(Cache::has(Ordnerliste::PRAEFIX.'1'))->toBeFalse("{$weg} hat den Zwischenspeicher nicht geleert");
+    }
+});
+
+it('holt die Ordnerliste beim zweiten Mal nicht erneut', function () {
+    // Der eigentliche Gewinn: Gemessen am 23.09.2026 kostete jede Abfrage
+    // 485 ms, und der zweite Aufruf war so teuer wie der erste.
+    Cache::flush();
+
+    $postfach = Mockery::mock(Mailbox::class);
+    $postfach->shouldReceive('folders')->once()->andReturn([
+        ['name' => 'INBOX', 'path' => 'INBOX', 'flags' => []],
+    ]);
+
+    $controller = new TestControllerFuerAktionen($postfach);
+
+    $erste = $controller->ordnerlisteFuerTest(1);
+    $zweite = $controller->ordnerlisteFuerTest(1);
+
+    // `once()` oben ist die Behauptung: Ein zweiter Aufruf am Postfach waere
+    // ein Fehlschlag der Attrappe.
+    expect($zweite)->toBe($erste);
 });

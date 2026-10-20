@@ -5,9 +5,10 @@ namespace Peppermint\Mailbox\Http;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Folders\FolderNames;
+use Peppermint\Mailbox\Folders\Ordnerliste;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Die Aktionen, die an den Nachrichten eines Postfachs vorgenommen werden:
@@ -198,6 +199,26 @@ trait HandlesMailboxActions
     }
 
     /**
+     * Die Ordnerliste dieses Postfachs — gemerkt, statt jedes Mal geholt.
+     *
+     * Der Weg, auf dem ein Produkt seine Ordner holt. Gemessen am 23.09.2026:
+     * 485 ms je Abfrage, beim zweiten Mal 525 ms — es gab keinen
+     * Zwischenspeicher, und jede Ordnerumschaltung baute eine frische
+     * IMAP-Sitzung auf (Aufgabe #6119).
+     *
+     * Geleert wird er im Paket, bei jedem Weg, der Ordner aendert. Ein Produkt
+     * mit einem EIGENEN solchen Weg muss {@see Ordnerliste::vergessen()}
+     * selbst rufen — sonst legt jemand denselben Ordner zweimal an, weil der
+     * erste nicht auftaucht.
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function ordnerliste(int $account): array
+    {
+        return Ordnerliste::fuer($account, fn (): array => $this->mailboxFor($account)->folders());
+    }
+
+    /**
      * Einen Ordner anlegen.
      *
      * Ein Unterordner entsteht ueber den Pfad: „Kunden/2026".
@@ -211,6 +232,7 @@ trait HandlesMailboxActions
 
             // Die Ordnerliste hat sich geaendert — ohne diese Meldung zeigt ein
             // Produkt mit Zwischenspeicher den neuen Ordner erst spaeter.
+            Ordnerliste::vergessen($account);
             $this->afterMailboxChange($account, [$daten['path']]);
 
             return ['success' => true];
@@ -233,6 +255,7 @@ trait HandlesMailboxActions
             $neu = $this->mailboxFor($account)->renameFolder($daten['path'], $daten['name']);
 
             // Beide Namen: der alte verschwindet, der neue kommt.
+            Ordnerliste::vergessen($account);
             $this->afterMailboxChange($account, [$daten['path'], $neu]);
 
             return ['success' => true, 'path' => $neu];
@@ -251,6 +274,7 @@ trait HandlesMailboxActions
         return $this->mailboxFailure(function () use ($daten, $account): array {
             $this->mailboxFor($account)->deleteFolder($daten['path']);
 
+            Ordnerliste::vergessen($account);
             $this->afterMailboxChange($account, [$daten['path']]);
 
             return ['success' => true];

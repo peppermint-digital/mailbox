@@ -216,11 +216,20 @@ class PersonZuordnen implements LiefertFelder, NurHier, Vorgangswerkzeug
             return Ergebnis::gescheitert('Die Zuständigkeit konnte nicht festgehalten werden.');
         }
 
-        $satz = str_replace(':name', $treffer['name'], $this->zustandMuster);
-
-        // Der Zustand ausdruecklich MIT Wort: Sonst laedt der Knopf weiter
-        // zum Zuweisen ein, obwohl gerade jemand zustaendig geworden ist.
-        return Ergebnis::gelungen($satz, zustandWort: $satz);
+        /*
+         * OHNE Zustand in der Antwort — und das ist dieselbe Entscheidung wie
+         * in {@see zustand()}.
+         *
+         * Hier stand zuerst `zustandWort: $satz`. Das war ein Widerspruch in
+         * sich: Die Antwort behauptete einen Zustand, und die Auflistung, die
+         * unmittelbar danach neu geladen wird, liefert keinen. Zwei Aussagen
+         * zur selben Sache, von denen die zweite die erste aufhebt.
+         *
+         * Der Satz steht als RUECKMELDUNG da („Zustaendig: Anna Meier") und
+         * ist damit, was er ist: die Quittung fuer einen Vorgang, nicht der
+         * neue Zustand des Verbs.
+         */
+        return Ergebnis::gelungen(str_replace(':name', $treffer['name'], $this->zustandMuster));
     }
 
     /**

@@ -75,6 +75,18 @@ return [
     'cache_ttl' => (int) env('MAILBOX_CACHE_TTL', 900),
 
     /*
+    | How long a mailbox's FOLDER LIST is kept. Measured 23.09.2026: 485 ms per
+    | call, and the second call cost the same as the first — there was no cache
+    | at all. Folders change almost never, which is why this one list is worth
+    | keeping and message lists are not: a minute-old message list means "the
+    | mail that just arrived is missing".
+    |
+    | The cache is cleared explicitly whenever a folder is created, renamed or
+    | deleted, so a new folder shows up at once. `0` switches it off.
+    */
+    'folders_cache_ttl' => (int) env('MAILBOX_FOLDERS_CACHE_TTL', 600),
+
+    /*
     |--------------------------------------------------------------------------
     | Adoption — so a grown product can join
     |--------------------------------------------------------------------------
