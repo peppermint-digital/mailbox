@@ -363,7 +363,7 @@ export function MailWerkzeugleiste({
                     );
 
                     return (
-                        <span key={kennung} className="flex items-center gap-1">
+                        <span key={kennung} className="flex flex-wrap items-center gap-1">
                             {felder.map((feld) => (
                                 <select
                                     key={feld.name}
@@ -376,7 +376,7 @@ export function MailWerkzeugleiste({
                                             [kennung]: { ...(vorher[kennung] ?? {}), [feld.name]: e.target.value },
                                         }))
                                     }
-                                    className="h-7 rounded-md border bg-background px-1.5 text-xs"
+                                    className="h-7 max-w-[12rem] rounded-md border bg-background px-1.5 text-xs"
                                 >
                                     <option value="">{texte.bitteWaehlen}</option>
                                     {(feld.options ?? []).map((wahl) => (

@@ -180,12 +180,33 @@ class PersonZuordnen implements LiefertFelder, NurHier, Vorgangswerkzeug
             return Ergebnis::gescheitert('Diese Person kann in diesem Postfach nicht zuständig sein.');
         }
 
+        /*
+         * Adresse UND Nummer, und das ist keine Gruendlichkeit.
+         *
+         * Der zentrale Speicher braucht die Adresse — eine Nummer steht in der
+         * Mitte fuer jemand anderen. Der ORTSEIGENE Speicher braucht die
+         * Nummer und WEIST OHNE SIE AB, mit guter Begruendung: Seine Tabelle
+         * fuehrt Nummern, und eine erfundene waere „die Art Fehler, die man
+         * erst am falschen Namen im Abzeichen bemerkt".
+         *
+         * Der erste Entwurf schickte nur die Adresse. In den drei Produkten
+         * auf `store: brain` lief das; im AI Brain, das selbst die Mitte ist
+         * und oertlich speichert, scheiterte JEDE Zuweisung mit „Die
+         * Zustaendigkeit konnte nicht festgehalten werden." Gefunden am
+         * 20.10.2026 im Browser — kein Test hatte es gesehen, weil die
+         * Attrappen `nummer` nicht verlangen. Dagegen laeuft jetzt ein Test
+         * gegen den ECHTEN ortseigenen Speicher.
+         */
         $zuweisung = app(Zuweisungsspeicher::class)->zuweisen(
             $konto,
             $vorgang->nachricht,
             $vorgang->kette,
-            new Person(adresse: mb_strtolower($treffer['email']), name: $treffer['name']),
-            $this->handelnde($person),
+            new Person(
+                adresse: mb_strtolower($treffer['email']),
+                nummer: (int) $treffer['id'],
+                name: $treffer['name'],
+            ),
+            $this->handelnde($konto, $person),
         );
 
         if ($zuweisung === null) {
@@ -203,21 +224,27 @@ class PersonZuordnen implements LiefertFelder, NurHier, Vorgangswerkzeug
     }
 
     /**
-     * Wer zuweist — als Person, nicht als Nummer.
+     * Wer zuweist — mit Adresse UND Nummer.
      *
-     * `null`, wenn die handelnde Person keine Adresse fuehrt. Dann wird sie
-     * nicht genannt, statt eine falsche zu behaupten.
+     * `null` nur, wenn beides fehlt. Dann wird niemand genannt, statt den
+     * Falschen zu behaupten.
      */
-    private function handelnde(Model $person): ?Person
+    private function handelnde(int $konto, Model $person): ?Person
     {
         $adresse = mb_strtolower(trim((string) $person->getAttribute('email')));
+        $nummer = $person->getKey() === null ? null : (int) $person->getKey();
 
-        if ($adresse === '') {
+        if ($adresse === '' && $nummer === null) {
             return null;
         }
 
         return new Person(
             adresse: $adresse,
+            // Auch hier beide Formen: Der ortseigene Speicher schreibt die
+            // Nummer in `assigned_by_user_id`, die Mitte die Adresse. Fehlt
+            // die Nummer, steht dort hinterher niemand — und „wer hat
+            // zugewiesen" ist dann fuer immer verloren.
+            nummer: $nummer,
             name: (string) ($person->getAttribute('name') ?? $adresse),
         );
     }

@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Schema;
 use Peppermint\Mailbox\Contracts\Zuweisbare;
 use Peppermint\Mailbox\Contracts\Zuweisungsspeicher;
 use Peppermint\Mailbox\Models\MailAccount;
+use Peppermint\Mailbox\Models\MailAssignment;
+use Peppermint\Mailbox\Stores\LokalerZuweisungsspeicher;
 use Peppermint\Mailbox\Werkzeuge\PersonZuordnen;
 use Peppermint\Mailbox\Werkzeuge\Vorgang;
 use Peppermint\Mailbox\Werkzeuge\Werkzeug;
@@ -111,7 +113,7 @@ beforeEach(function () {
 
     $this->anna = ZuordnenNutzer::create(['name' => 'Anna Meier', 'email' => 'anna@example.test']);
 
-    MailAccount::create([
+    $this->konto = MailAccount::create([
         'label' => 'Abteilung',
         'email' => 'department@example.test',
         'imap_host' => 'mail.example.test',
@@ -120,7 +122,7 @@ beforeEach(function () {
         'username' => 'department',
         'password' => 'geheim',
         'is_active' => true,
-    ]);
+    ])->id;
 
     $this->mitte = new ZuordnenMitte;
     app()->instance(Zuweisungsspeicher::class, $this->mitte);
@@ -413,4 +415,63 @@ it('traegt die Vorbelegung durch die Drahtform — in beide Richtungen', functio
 
     expect($draht['fields'][0]['value'])->toBe('bodo@example.test')
         ->and(Werkzeug::aus($draht)->felder[0]['wert'])->toBe('bodo@example.test');
+});
+
+it('weist auch mit dem ECHTEN ortseigenen Speicher zu — Attrappen verlangen keine Nummer', function () {
+    /*
+     * Der Fund vom 20.10.2026, und er ist der teuerste dieser Reihe: Im AI
+     * Brain scheiterte JEDE Zuweisung über die Leiste mit „Die Zuständigkeit
+     * konnte nicht festgehalten werden."
+     *
+     * Grund: Das Brain IST die Mitte und speichert deshalb ortseigen.
+     * `LokalerZuweisungsspeicher::zuweisen()` weist eine Person ohne `nummer`
+     * ab — zu Recht, seine Tabelle führt Nummern, und eine erfundene wäre
+     * „die Art Fehler, die man erst am falschen Namen im Abzeichen bemerkt".
+     * Das Werkzeug schickte nur die Adresse.
+     *
+     * Elf Tests waren grün. Alle liefen gegen eine Attrappe, die `nummer`
+     * nicht verlangt — und genau darin lag der Fehler. Deshalb läuft dieser
+     * Test gegen die ECHTE Umsetzung.
+     */
+    app()->instance(Zuweisungsspeicher::class, new LokalerZuweisungsspeicher(
+        adresse: fn (int $konto): ?string => 'department@example.test',
+    ));
+
+    $ergebnis = (new PersonZuordnen)->ausfuehren(
+        $this->vorgang,
+        ['person' => 'bodo@example.test'],
+        $this->anna,
+    );
+
+    expect($ergebnis->gelungen)->toBeTrue();
+
+    $zeile = MailAssignment::query()->where('thread_id', 'kette-1')->firstOrFail();
+
+    expect((int) $zeile->assigned_to_user_id)->toBe(2)
+        // Und die handelnde Person als Zuweisende — auch sie braucht die
+        // Nummer, sonst steht in `assigned_by_user_id` hinterher niemand.
+        ->and((int) $zeile->assigned_by_user_id)->toBe((int) $this->anna->id);
+});
+
+it('zeigt mit dem ECHTEN ortseigenen Speicher die zustaendige Person vorbelegt', function () {
+    /*
+     * Die zweite Hälfte desselben Falles. Der ortseigene Speicher gibt eine
+     * Person NUR mit Nummer heraus, ohne Adresse und ohne Namen — in der
+     * Leiste stand deshalb zuerst „Zuständig:" ohne Namen, und mit der
+     * Attrappe war das nicht zu sehen.
+     */
+    app()->instance(Zuweisungsspeicher::class, $speicher = new LokalerZuweisungsspeicher(
+        adresse: fn (int $konto): ?string => 'department@example.test',
+    ));
+
+    MailAssignment::create([
+        'email_account_id' => $this->konto,
+        'message_id' => '<a@example.test>',
+        'thread_id' => 'kette-1',
+        'assigned_to_user_id' => 2,
+        'status' => MailAssignment::STATUS_OPEN,
+    ]);
+
+    expect((new PersonZuordnen)->felder($this->vorgang, $this->anna)[0]['wert'])
+        ->toBe('bodo@example.test');
 });
