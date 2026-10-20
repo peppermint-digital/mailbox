@@ -71,9 +71,13 @@ class Werkzeugverzeichnis
     /**
      * Die eigenen Verben fuer diesen Vorgang, mit Zustand.
      *
+     * @param  bool  $fuerFremdeSysteme  Gefragt von draussen? Dann bleiben
+     *                                   {@see NurHier}-Verben hier. Siehe dort,
+     *                                   warum: Ein Verb, das jedes System
+     *                                   selbst hat, kaeme sonst vierfach.
      * @return array{werkzeuge: array<int, Werkzeug>, failed: array<int, string>}
      */
-    public function sammeln(Vorgang $vorgang, Model $person): array
+    public function sammeln(Vorgang $vorgang, Model $person, bool $fuerFremdeSysteme = false): array
     {
         $gefunden = [];
         $gescheitert = [];
@@ -81,6 +85,10 @@ class Werkzeugverzeichnis
 
         foreach ($this->alle() as $werkzeug) {
             try {
+                if ($fuerFremdeSysteme && $werkzeug instanceof NurHier) {
+                    continue;
+                }
+
                 $form = $werkzeug->werkzeug();
 
                 if (isset($gesehen[$form->schluessel])) {
@@ -103,11 +111,21 @@ class Werkzeugverzeichnis
                     continue;
                 }
 
-                $gefunden[] = $form
+                $fertig = $form
                     ->mitZustand($werkzeug->zustand($vorgang, $person))
                     // Die Adresse haengt am Vorgang, nicht an der Form —
                     // deshalb erst hier und nicht beim Anmelden.
                     ->mitVerweis($werkzeug->verweis($vorgang, $person));
+
+                // Felder nur, wenn das Verb sie ueberhaupt fuehrt. `instanceof`
+                // statt einer vierten Pflichtmethode: Die drei vorhandenen
+                // Produkt-Werkzeuge sollen vom naechsten Paket-Update nicht
+                // brechen, siehe {@see LiefertFelder}.
+                if ($werkzeug instanceof LiefertFelder) {
+                    $fertig = $fertig->mitFeldern($werkzeug->felder($vorgang, $person));
+                }
+
+                $gefunden[] = $fertig;
             } catch (\Throwable $fehler) {
                 $gescheitert[] = $this->namen($werkzeug);
 

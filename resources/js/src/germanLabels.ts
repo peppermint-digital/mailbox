@@ -197,6 +197,11 @@ const werkzeuge: MailWerkzeugleisteLabels = {
             : `${verben.length} Werkzeuge konnten nicht geladen werden: ${verben.join(', ')}.`,
     nichtGefragt: 'Die Werkzeuge konnten nicht abgefragt werden.',
     laeuft: 'Wird ausgeführt …',
+    nichtZeichenbar: (verben) =>
+        verben.length === 1
+            ? `„${verben[0]}" braucht eine Angabe, die diese Ansicht nicht erfassen kann.`
+            : `${verben.length} Werkzeuge brauchen Angaben, die diese Ansicht nicht erfassen kann: ${verben.join(', ')}.`,
+    bitteWaehlen: 'Bitte wählen …',
 };
 
 /**

@@ -8,6 +8,7 @@ import {
     Ticket,
     TriangleAlert,
     User,
+    UserCheck,
     Wrench,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -71,6 +72,15 @@ export interface MailWerkzeugleisteLabels {
     gescheitert: (verben: string[]) => string;
     nichtGefragt: string;
     laeuft: string;
+    /**
+     * `(verben) => …` — Verben, deren Eingabe diese Ansicht nicht zeichnen kann.
+     *
+     * Kein toter Knopf und kein stilles Weglassen: Das eine scheitert
+     * zuverlässig, das andere sieht aus wie „gibt es nicht".
+     */
+    nichtZeichenbar: (verben: string[]) => string;
+    /** Was in einer leeren Auswahl steht, solange niemand gewählt hat. */
+    bitteWaehlen: string;
 }
 
 export const WERKZEUGLEISTE_VORGABEN: MailWerkzeugleisteLabels = {
@@ -87,6 +97,11 @@ export const WERKZEUGLEISTE_VORGABEN: MailWerkzeugleisteLabels = {
             : `${verben.length} Werkzeuge konnten nicht geladen werden: ${verben.join(', ')}.`,
     nichtGefragt: 'Die Werkzeuge konnten nicht abgefragt werden.',
     laeuft: 'Wird ausgeführt …',
+    nichtZeichenbar: (verben) =>
+        verben.length === 1
+            ? `„${verben[0]}" braucht eine Angabe, die diese Ansicht nicht erfassen kann.`
+            : `${verben.length} Werkzeuge brauchen Angaben, die diese Ansicht nicht erfassen kann: ${verben.join(', ')}.`,
+    bitteWaehlen: 'Bitte wählen …',
 };
 
 /**
@@ -103,6 +118,7 @@ const SYMBOLE: Record<string, typeof Wrench> = {
     'file-text': FileText,
     'list-checks': ListChecks,
     user: User,
+    'user-check': UserCheck,
     wrench: Wrench,
 };
 
@@ -113,7 +129,7 @@ export interface MailWerkzeugleisteProps {
     laedt: boolean;
     leerAberVollstaendig: boolean;
     erreicht: boolean | null;
-    ausloesen: (werkzeug: MailWerkzeug) => Promise<{ ok: boolean; message: string }>;
+    ausloesen: (werkzeug: MailWerkzeug, eingabe?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>;
     /** Wird nach einem ausgelösten Verb mit dem Satz des Systems gerufen. */
     onMeldung?: (meldung: string, gelungen: boolean) => void;
     /** Inertia-Anwendungen reichen hier ihren Router herein. */
@@ -156,7 +172,28 @@ export function MailWerkzeugleiste({
     const texte = { ...WERKZEUGLEISTE_VORGABEN, ...labels };
     const [laufend, setLaufend] = useState<string | null>(null);
 
+    /**
+     * Was in den Feldern steht, je Werkzeug.
+     *
+     * Nach Kennung (Schlüssel + System) und nicht nach Schlüssel allein:
+     * „Aufgabe anhängen" gibt es in zwei Systemen, und das sind zwei Verben.
+     */
+    const [eingaben, setEingaben] = useState<Record<string, Record<string, string>>>({});
+
     const sichtbar = verbergen ? werkzeuge.filter((w) => !verbergen(w)) : werkzeuge;
+
+    /*
+     * Verben, deren Pflichteingabe diese Ansicht nicht erfassen kann.
+     *
+     * Sie werden NICHT als Knopf angeboten — ein Verb, das seine Angabe nicht
+     * einsammeln kann, scheitert drüben zuverlässig. Aber sie werden auch
+     * nicht verschwiegen: Ein stilles Weglassen sieht aus wie „gibt es nicht",
+     * und dann sucht jemand den Fehler bei sich.
+     */
+    const zeichenbar = (werkzeug: MailWerkzeug): boolean =>
+        (werkzeug.fields ?? []).every((feld) => feld.type === 'select');
+
+    const nichtZeichenbar = sichtbar.filter((w) => !w.url && !w.state && !zeichenbar(w));
 
     /*
      * `leerAberVollstaendig` bleibt die Auskunft des Hakens und wird NICHT
@@ -178,11 +215,26 @@ export function MailWerkzeugleiste({
             return;
         }
 
-        setLaufend(werkzeug.key + (werkzeug.system ?? ''));
+        const kennung = werkzeug.key + (werkzeug.system ?? '');
+
+        setLaufend(kennung);
 
         try {
-            const ergebnis = await ausloesen(werkzeug);
+            const ergebnis = await ausloesen(werkzeug, eingaben[kennung] ?? {});
             onMeldung?.(ergebnis.message, ergebnis.ok);
+
+            if (ergebnis.ok) {
+                // Nach einem gelungenen Verb die Auswahl zurücksetzen. Eine
+                // stehengebliebene Auswahl liest sich wie „das ist der
+                // aktuelle Stand" — der steht aber im Zustand, den der Server
+                // neu schickt.
+                setEingaben((vorher) => {
+                    const naechste = { ...vorher };
+                    delete naechste[kennung];
+
+                    return naechste;
+                });
+            }
         } finally {
             setLaufend(null);
         }
@@ -266,20 +318,64 @@ export function MailWerkzeugleiste({
                         );
                     }
 
+                    // Eine Angabe, die diese Ansicht nicht erfassen kann:
+                    // kein Knopf. Gesagt wird es unten in einer eigenen
+                    // Zeile, damit es nicht wie „gibt es nicht" aussieht.
+                    if (!zeichenbar(werkzeug)) {
+                        return null;
+                    }
+
+                    const felder = werkzeug.fields ?? [];
+                    const werte = eingaben[kennung] ?? {};
+
+                    /*
+                     * Fehlt eine Pflichtangabe, ist der Knopf aus — nicht
+                     * verborgen. Verborgen hiesse „das Verb gibt es hier
+                     * nicht"; aus heisst „es fehlt noch etwas", und daneben
+                     * steht, was.
+                     */
+                    const fehltPflicht = felder.some(
+                        (feld) => feld.required && (werte[feld.name] ?? '') === '',
+                    );
+
                     return (
-                        <Button
-                            key={kennung}
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={beschaeftigt}
-                            onClick={() => void klick(werkzeug)}
-                            className="h-7 gap-1 px-2 text-xs"
-                        >
-                            {beschaeftigt ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Symbol className="h-3.5 w-3.5" />}
-                            {beschaeftigt ? texte.laeuft : werkzeug.label}
-                            {werkzeug.system_label && <Badge variant="outline">{werkzeug.system_label}</Badge>}
-                        </Button>
+                        <span key={kennung} className="flex items-center gap-1">
+                            {felder.map((feld) => (
+                                <select
+                                    key={feld.name}
+                                    aria-label={feld.label}
+                                    value={werte[feld.name] ?? ''}
+                                    disabled={beschaeftigt}
+                                    onChange={(e) =>
+                                        setEingaben((vorher) => ({
+                                            ...vorher,
+                                            [kennung]: { ...(vorher[kennung] ?? {}), [feld.name]: e.target.value },
+                                        }))
+                                    }
+                                    className="h-7 rounded-md border bg-background px-1.5 text-xs"
+                                >
+                                    <option value="">{texte.bitteWaehlen}</option>
+                                    {(feld.options ?? []).map((wahl) => (
+                                        <option key={wahl.value} value={wahl.value}>
+                                            {wahl.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            ))}
+
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={beschaeftigt || fehltPflicht}
+                                onClick={() => void klick(werkzeug)}
+                                className="h-7 gap-1 px-2 text-xs"
+                            >
+                                {beschaeftigt ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Symbol className="h-3.5 w-3.5" />}
+                                {beschaeftigt ? texte.laeuft : werkzeug.label}
+                                {werkzeug.system_label && <Badge variant="outline">{werkzeug.system_label}</Badge>}
+                            </Button>
+                        </span>
                     );
                 })}
 
@@ -311,6 +407,20 @@ export function MailWerkzeugleiste({
                 <p className="flex items-start gap-1 text-xs text-amber-700 dark:text-amber-500">
                     <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     {texte.unerreichbar(unerreichbar)}
+                </p>
+            )}
+
+            {/*
+             * Die dritte Lage, und sie ist von den beiden anderen zu
+             * unterscheiden: Das System hat geantwortet, das Verb ist in
+             * Ordnung — nur DIESE Ansicht kann seine Angabe nicht erfassen.
+             * Abwarten hilft nicht, nachsehen auch nicht; es ist eine fehlende
+             * Oberfläche, und das gehört gesagt statt verschwiegen.
+             */}
+            {nichtZeichenbar.length > 0 && (
+                <p className="flex items-start gap-1 text-xs text-muted-foreground">
+                    <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    {texte.nichtZeichenbar(nichtZeichenbar.map((w) => w.label))}
                 </p>
             )}
 

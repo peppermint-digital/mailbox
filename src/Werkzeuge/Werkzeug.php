@@ -38,10 +38,10 @@ final class Werkzeug
 {
     /**
      * @param  string  $schluessel  Eindeutig INNERHALB eines Systems. Zwei Systeme duerfen denselben tragen.
-     * @param  string  $wort        Was auf dem Knopf steht. Vom Produkt, in seiner Sprache.
-     * @param  string  $symbol      Name eines Lucide-Symbols.
-     * @param  int     $reihenfolge Kleiner steht weiter vorne.
-     * @param  string|null  $gruppe Verben derselben Gruppe stehen in der Leiste beieinander.
+     * @param  string  $wort  Was auf dem Knopf steht. Vom Produkt, in seiner Sprache.
+     * @param  string  $symbol  Name eines Lucide-Symbols.
+     * @param  int  $reihenfolge  Kleiner steht weiter vorne.
+     * @param  string|null  $gruppe  Verben derselben Gruppe stehen in der Leiste beieinander.
      * @param  array<int, array<string, mixed>>  $felder  Was vor dem Ausloesen gefragt wird. Leer = sofort ausloesen.
      * @param  string|null  $rueckfrage  Gesetzt = Sicherheitsfrage mit diesem Satz.
      * @param  array{wort: string, verweis?: string|null}|null  $zustand  Gibt es die Sache schon?
@@ -133,6 +133,35 @@ final class Werkzeug
     }
 
     /**
+     * Dasselbe Werkzeug mit seinen Eingabefeldern.
+     *
+     * Wie {@see mitZustand()} getrennt vom Anmelden, und aus demselben Grund:
+     * Welche Personen zur Auswahl stehen, haengt am POSTFACH — wer an `info@`
+     * zuweisen darf, ist eine andere Menge als bei `buchhaltung@`. In
+     * `werkzeug()` koennte das nur geraten werden.
+     *
+     * Siehe {@see LiefertFelder} fuer die Form eines Feldes.
+     *
+     * @param  array<int, array<string, mixed>>  $felder
+     */
+    public function mitFeldern(array $felder): self
+    {
+        return new self(
+            schluessel: $this->schluessel,
+            wort: $this->wort,
+            symbol: $this->symbol,
+            reihenfolge: $this->reihenfolge,
+            gruppe: $this->gruppe,
+            felder: $felder,
+            rueckfrage: $this->rueckfrage,
+            zustand: $this->zustand,
+            verweis: $this->verweis,
+            system: $this->system,
+            systemWort: $this->systemWort,
+        );
+    }
+
+    /**
      * Dasselbe Werkzeug mit seiner Adresse.
      *
      * Wie {@see mitZustand()} getrennt vom Anmelden: Die Adresse haengt am
@@ -176,7 +205,7 @@ final class Werkzeug
             symbol: (string) ($roh['icon'] ?? 'wrench'),
             reihenfolge: (int) ($roh['order'] ?? 100),
             gruppe: is_string($roh['group'] ?? null) && $roh['group'] !== '' ? $roh['group'] : null,
-            felder: is_array($roh['fields'] ?? null) ? array_values($roh['fields']) : [],
+            felder: is_array($roh['fields'] ?? null) ? array_map(self::feldAus(...), array_values($roh['fields'])) : [],
             rueckfrage: is_string($roh['confirm'] ?? null) && $roh['confirm'] !== '' ? $roh['confirm'] : null,
             zustand: self::zustandAus($roh['state'] ?? null),
             verweis: is_string($roh['url'] ?? null) && $roh['url'] !== '' ? $roh['url'] : null,
@@ -192,7 +221,12 @@ final class Werkzeug
             'icon' => $this->symbol,
             'order' => $this->reihenfolge,
             'group' => $this->gruppe,
-            'fields' => $this->felder,
+            // Uebersetzt, nicht durchgereicht — dieselbe Regel wie beim
+            // Zustand gleich darunter. Ein Feld, dessen Wort als `wort`
+            // hinausgeht und drueben als `label` gelesen wird, ist ein Feld
+            // ohne Beschriftung, und das faellt erst auf, wenn jemand davor
+            // sitzt.
+            'fields' => array_map(self::feldHinaus(...), $this->felder),
             'confirm' => $this->rueckfrage,
             // Zurueck in die Drahtform, NICHT die inneren Namen hinaus. Sonst
             // schickt dieses System `wort`/`verweis`, das naechste liest
@@ -225,7 +259,59 @@ final class Werkzeug
     }
 
     /**
-     * @param  mixed  $roh
+     * Ein Feld in die Drahtform.
+     *
+     * @param  array<string, mixed>  $feld
+     * @return array<string, mixed>
+     */
+    private static function feldHinaus(array $feld): array
+    {
+        $hinaus = [
+            'name' => (string) ($feld['name'] ?? ''),
+            'label' => (string) ($feld['wort'] ?? ''),
+            'type' => (string) ($feld['art'] ?? ''),
+            'required' => (bool) ($feld['pflicht'] ?? false),
+        ];
+
+        if (is_array($feld['auswahl'] ?? null)) {
+            $hinaus['options'] = array_map(static fn (array $w): array => [
+                'value' => (string) ($w['wert'] ?? ''),
+                'label' => (string) ($w['wort'] ?? ''),
+            ], array_values($feld['auswahl']));
+        }
+
+        return $hinaus;
+    }
+
+    /**
+     * Ein Feld aus der Drahtform.
+     *
+     * @return array<string, mixed>
+     */
+    private static function feldAus(mixed $roh): array
+    {
+        if (! is_array($roh)) {
+            return [];
+        }
+
+        $feld = [
+            'name' => (string) ($roh['name'] ?? ''),
+            'wort' => (string) ($roh['label'] ?? ''),
+            'art' => (string) ($roh['type'] ?? ''),
+            'pflicht' => (bool) ($roh['required'] ?? false),
+        ];
+
+        if (is_array($roh['options'] ?? null)) {
+            $feld['auswahl'] = array_map(static fn (mixed $w): array => [
+                'wert' => (string) (is_array($w) ? ($w['value'] ?? '') : ''),
+                'wort' => (string) (is_array($w) ? ($w['label'] ?? '') : ''),
+            ], array_values($roh['options']));
+        }
+
+        return $feld;
+    }
+
+    /**
      * @return array{wort: string, verweis?: string|null}|null
      */
     private static function zustandAus(mixed $roh): ?array

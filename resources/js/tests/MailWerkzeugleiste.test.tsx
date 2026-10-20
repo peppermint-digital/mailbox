@@ -35,7 +35,7 @@ interface LeisteOptionen {
     laedt?: boolean;
     leerAberVollstaendig?: boolean;
     erreicht?: boolean | null;
-    ausloesen?: (w: MailWerkzeug) => Promise<{ ok: boolean; message: string }>;
+    ausloesen?: (w: MailWerkzeug, eingabe?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>;
     onNavigate?: (href: string) => void;
     onMeldung?: (m: string, ok: boolean) => void;
 }
@@ -314,5 +314,153 @@ describe('ein Produkt, das sein eigenes Verb schon selbst zeichnet', () => {
 
         expect(container.textContent).not.toContain('nichts zu tun');
         unmount();
+    });
+});
+
+describe('Felder — die Zusage, hinter der bis zum 20.10.2026 nichts stand', () => {
+    /**
+     * `fields` reiste seit dem ersten Tag in der Drahtform mit und wurde von
+     * dieser Leiste NICHT gezeichnet. Aufgefallen ist es erst, als „Zuständig"
+     * als erstes Verb eine Pflichtangabe brauchte — vorher waren alle drei
+     * Verben Verweis-Verben.
+     *
+     * Ein Werkzeug mit Pflichtfeld wäre also ohne Eingaben ausgelöst worden,
+     * und der Server hätte „es wurde niemand ausgewählt" geantwortet. Ein
+     * Knopf, der zuverlässig scheitert.
+     */
+
+    function mitAuswahl(teil: Partial<MailWerkzeug> = {}): MailWerkzeug {
+        return werkzeug({
+            key: 'person',
+            label: 'Zuständig',
+            icon: 'user-check',
+            fields: [
+                {
+                    name: 'person',
+                    label: 'Person',
+                    type: 'select',
+                    required: true,
+                    options: [
+                        { value: 'anna@example.test', label: 'Anna Meier' },
+                        { value: 'bodo@example.test', label: 'Bodo Brecht' },
+                    ],
+                },
+            ],
+            ...teil,
+        });
+    }
+
+    it('zeichnet die Auswahl und hält den Knopf aus, solange die Pflichtangabe fehlt', () => {
+        const { container, unmount } = leiste({ werkzeuge: [mitAuswahl()] });
+
+        const auswahl = container.querySelector('select');
+        const knopf = container.querySelector('button');
+
+        expect(auswahl).not.toBeNull();
+        expect(auswahl?.querySelectorAll('option')).toHaveLength(3); // „bitte wählen" + zwei
+        // AUS und nicht verborgen: Verborgen hiesse „das Verb gibt es hier
+        // nicht", aus heisst „es fehlt noch etwas".
+        expect(knopf?.disabled).toBe(true);
+
+        unmount();
+    });
+
+    it('schickt den gewählten Wert mit — nicht nur den Schlüssel des Verbs', async () => {
+        const gesehen: unknown[] = [];
+
+        const { container, unmount } = leiste({
+            werkzeuge: [mitAuswahl()],
+            ausloesen: async (w, eingabe) => {
+                gesehen.push([w.key, eingabe]);
+
+                return { ok: true, message: 'Zuständig: Bodo Brecht' };
+            },
+        });
+
+        const auswahl = container.querySelector('select')!;
+        const knopf = container.querySelector('button')!;
+
+        auswahl.value = 'bodo@example.test';
+        auswahl.dispatchEvent(new Event('change', { bubbles: true }));
+
+        await vi.waitFor(() => expect(knopf.disabled).toBe(false));
+
+        knopf.click();
+
+        await vi.waitFor(() => expect(gesehen).toHaveLength(1));
+
+        expect(gesehen[0]).toEqual(['person', { person: 'bodo@example.test' }]);
+
+        unmount();
+    });
+
+    it('bietet ein Verb NICHT als Knopf an, wenn es eine Angabe braucht, die hier niemand erfassen kann', () => {
+        /*
+         * Die dritte Lage neben „unerreichbar" und „gescheitert": Das System
+         * hat geantwortet, das Verb ist in Ordnung — nur DIESE Ansicht kann
+         * seine Angabe nicht erfassen. Abwarten hilft nicht, nachsehen auch
+         * nicht.
+         *
+         * Dass daneben eine Zeile steht, ist der Punkt: Ein stilles Weglassen
+         * sieht aus wie „gibt es nicht", und dann sucht jemand den Fehler bei
+         * sich.
+         */
+        const { container, unmount } = leiste({
+            werkzeuge: [
+                mitAuswahl({
+                    fields: [{ name: 'notiz', label: 'Notiz', type: 'freitext', required: true }],
+                }),
+            ],
+        });
+
+        expect(container.querySelector('button')).toBeNull();
+        expect(container.textContent).toContain('nicht erfassen');
+
+        unmount();
+    });
+
+    it('sagt bei einem unzeichenbaren Verb NICHT „nichts zu tun"', () => {
+        // Die Gegenprobe. „Für diese Nachricht ist nichts zu tun" wäre hier
+        // die Unwahrheit — es ist etwas zu tun, nur nicht von hier aus.
+        const { container, unmount } = leiste({
+            leerAberVollstaendig: true,
+            werkzeuge: [
+                mitAuswahl({
+                    fields: [{ name: 'notiz', label: 'Notiz', type: 'freitext', required: true }],
+                }),
+            ],
+        });
+
+        expect(container.textContent).not.toContain('nichts zu tun');
+
+        unmount();
+    });
+
+    it('setzt die Auswahl nach einem gelungenen Verb zurück', () => {
+        /*
+         * Eine stehengebliebene Auswahl liest sich wie „das ist der aktuelle
+         * Stand". Der steht aber im Zustand, den der Server neu schickt — und
+         * die beiden können auseinanderliegen, sobald jemand anders zuweist.
+         */
+        const { container, unmount } = leiste({
+            werkzeuge: [mitAuswahl()],
+            ausloesen: async () => ({ ok: true, message: 'getan' }),
+        });
+
+        const auswahl = container.querySelector('select')!;
+
+        auswahl.value = 'bodo@example.test';
+        auswahl.dispatchEvent(new Event('change', { bubbles: true }));
+
+        const knopf = container.querySelector('button')!;
+
+        return vi
+            .waitFor(() => expect(knopf.disabled).toBe(false))
+            .then(() => {
+                knopf.click();
+
+                return vi.waitFor(() => expect(container.querySelector('select')!.value).toBe(''));
+            })
+            .then(() => unmount());
     });
 });

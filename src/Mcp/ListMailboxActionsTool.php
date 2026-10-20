@@ -6,6 +6,7 @@ use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Tool;
+use Peppermint\Mailbox\Werkzeuge\GesamtWerkzeuge;
 use Peppermint\Mailbox\Werkzeuge\Vorgang;
 use Peppermint\Mailbox\Werkzeuge\Werkzeug;
 use Peppermint\Mailbox\Werkzeuge\Werkzeugverzeichnis;
@@ -20,7 +21,7 @@ use Peppermint\Mailbox\Werkzeuge\Werkzeugverzeichnis;
  * ## Nur die eigenen, nie die geholten
  *
  * Bewusst das {@see Werkzeugverzeichnis} und nicht
- * {@see \Peppermint\Mailbox\Werkzeuge\GesamtWerkzeuge}: Letzteres wuerde
+ * {@see GesamtWerkzeuge}: Letzteres wuerde
  * seinerseits die anderen Systeme befragen. Vier Systeme, die sich gegenseitig
  * nach ihrer Gesamtleiste fragen, ergeben keine Leiste, sondern eine Schleife.
  *
@@ -61,7 +62,11 @@ class ListMailboxActionsTool extends Tool
             return Response::json(['tools' => [], 'failed' => []]);
         }
 
-        $gesammelt = $verzeichnis->sammeln($vorgang, $person);
+        // `fuerFremdeSysteme: true` — hier fragt ein anderes System. Verben,
+        // die JEDES System selbst mitbringt (Marker {@see \Peppermint\Mailbox\Werkzeuge\NurHier}),
+        // bleiben deshalb hier: Sie kaemen sonst vierfach in jeder Leiste an,
+        // einmal eigen und dreimal geholt.
+        $gesammelt = $verzeichnis->sammeln($vorgang, $person, fuerFremdeSysteme: true);
 
         return Response::json([
             'tools' => array_map(fn (Werkzeug $w): array => $w->toArray(), $gesammelt['werkzeuge']),

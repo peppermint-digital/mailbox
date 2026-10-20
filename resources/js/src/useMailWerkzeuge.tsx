@@ -27,6 +27,33 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * niemand fehlt, darf die Oberfläche „keine Werkzeuge" sagen.
  */
 
+/** Eine Auswahlmöglichkeit in einem Feld. */
+export interface MailWerkzeugFeldOption {
+    value: string;
+    label: string;
+}
+
+/**
+ * Eine Eingabe, die ein Verb vor dem Auslösen braucht.
+ *
+ * `type` ist die Angabe, welche Art von Eingabe gemeint ist — heute gibt es
+ * genau eine, `select`. Was die Leiste nicht zeichnen kann, bietet sie nicht
+ * als Knopf an: Ein Verb, das seine Pflichtangabe nicht einsammeln kann, ist
+ * ein Knopf, der zuverlässig scheitert.
+ *
+ * Diese Form stand bis zum 20.10.2026 als `Record<string, unknown>` hier —
+ * der Server schickt aber eine LISTE. Das fiel nicht auf, weil kein Werkzeug
+ * Felder benutzte und die Leiste sie gar nicht zeichnete: eine Zusage in der
+ * Drahtform, hinter der nichts stand.
+ */
+export interface MailWerkzeugFeld {
+    name: string;
+    label: string;
+    type: string;
+    required: boolean;
+    options?: MailWerkzeugFeldOption[];
+}
+
 /** Ein Verb, so wie der Server es schickt (siehe `Werkzeug::toArray()`). */
 export interface MailWerkzeug {
     key: string;
@@ -35,7 +62,7 @@ export interface MailWerkzeug {
     order: number;
     group: string | null;
     /** Eingaben, die das Verb braucht. Leer heißt: ein Klick genügt. */
-    fields: Record<string, unknown> | null;
+    fields: MailWerkzeugFeld[] | null;
     /** Rückfrage vor dem Auslösen, als Satz. */
     confirm: string | null;
     /** Was es schon gibt — „Ticket #123", mit Verweis dorthin. */
