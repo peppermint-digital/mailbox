@@ -334,7 +334,8 @@ it('holt beim ersten Mal die Kopfzeilen des Fensters und die Struktur nur fuer d
 it('fragt beim zweiten Mal weder Kopfzeilen noch Struktur — nur noch Belegung und Flags', function () {
     /*
      * Das ist der ganze Zweck des Verzeichnisses. Gemessen an einem echten
-     * Postfach: 2.045 ms auf 448 ms.
+     * Postfach: 2.045 ms auf 520–605 ms. Dabei kam ueber 25 Zeilen und 13
+     * Felder KEIN einziges abweichendes Feld heraus — kalt gegen warm.
      */
     // Alle mit Anhang, damit die sichtbare Seite welche enthaelt: Sortiert
     // wird nach Datum, und die drei aeltesten liegen gar nicht auf Seite eins.

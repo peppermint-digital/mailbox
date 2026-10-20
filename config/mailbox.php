@@ -96,11 +96,16 @@ return [
     | mehr aendern kann. Lesemarken stehen NICHT darin.
     |
     | Gemessen am 20.10.2026 an `department@peppermint-digital.de`, einer Seite
-    | von 25 aus 54 Nachrichten:
+    | von 25 aus 56 Nachrichten, am laufenden Brain:
     |
     |     ohne Verzeichnis      2.045 ms
-    |     kalter Ordner         1.740 ms   (einmal je Nachricht)
-    |     warmer Ordner           448 ms
+    |     kalter Ordner         2.168 ms   (einmal je Nachricht)
+    |     warmer Ordner       520–605 ms
+    |
+    | Der kalte Fall ist NICHT besser: Er zahlt einen UID-Abruf und einen
+    | Flags-Abruf mehr und spart nur den teureren `count()`. Das Verzeichnis
+    | macht keinen Aufruf schneller, den es noch nicht gesehen hat — es macht
+    | jeden zweiten schneller.
     |
     | Abgeschaltet verhaelt sich die Liste wie bei einem Ordner, den sie zum
     | ersten Mal sieht — also wie vor dem Verzeichnis. Der Schalter ist fuer den

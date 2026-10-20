@@ -279,12 +279,12 @@ class MailboxClient implements Mailbox
      *
      * ## Was hier gegen den Server geht, und was nicht
      *
-     * Gemessen am 20.10.2026 an `department@peppermint-digital.de`, 54
-     * Nachrichten, eine Seite von 25:
+     * Gemessen am 20.10.2026 an `department@peppermint-digital.de`, 56
+     * Nachrichten, eine Seite von 25, am laufenden Brain:
      *
      *     ohne Verzeichnis      2.045 ms
-     *     kalter Ordner         1.740 ms
-     *     warmer Ordner           448 ms
+     *     kalter Ordner         2.168 ms
+     *     warmer Ordner       520–605 ms
      *
      * Vom Server kommen IMMER: die Belegung (welche Kennungen liegen im
      * Ordner) und die Flags der sichtbaren Zeilen. Aus dem Verzeichnis kommt
