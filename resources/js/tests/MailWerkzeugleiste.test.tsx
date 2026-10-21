@@ -38,6 +38,8 @@ interface LeisteOptionen {
     ausloesen?: (w: MailWerkzeug, eingabe?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>;
     onNavigate?: (href: string) => void;
     onMeldung?: (m: string, ok: boolean) => void;
+    eigene?: Record<string, () => void>;
+    verbergen?: (w: MailWerkzeug) => boolean;
 }
 
 function leiste(optionen: LeisteOptionen = {}) {
@@ -65,6 +67,8 @@ function leiste(optionen: LeisteOptionen = {}) {
             ausloesen={optionen.ausloesen ?? (async () => ({ ok: true, message: 'getan' }))}
             onNavigate={optionen.onNavigate}
             onMeldung={optionen.onMeldung}
+            eigene={optionen.eigene}
+            verbergen={optionen.verbergen}
         />,
     );
 }
@@ -562,6 +566,102 @@ describe('Vorbelegung: den Stand zeigen UND änderbar lassen', () => {
         expect(container.querySelector('select')?.value).toBe('');
         expect(container.querySelector('button')?.disabled).toBe(true);
 
+        unmount();
+    });
+});
+
+describe('ein Verb, das das Produkt selbst bedient (#8434)', () => {
+    /** Den Knopf zu einem Verb finden — die Leiste hat mehrere Knoepfe. */
+    function knopfMit(container: HTMLElement, text: string): HTMLButtonElement {
+        const treffer = [...container.querySelectorAll('button')].find((k) => (k.textContent ?? '').includes(text));
+
+        if (!treffer) {
+            throw new Error(`Kein Knopf mit „${text}" — vorhanden: ${[...container.querySelectorAll('button')].map((k) => k.textContent).join(' | ')}`);
+        }
+
+        return treffer as HTMLButtonElement;
+    }
+
+    it('ruft den eigenen Weg und fragt den Server NICHT', () => {
+        /*
+         * Der Fall: Der Manager hat für „Aufgabe anhängen" einen Dialog mit
+         * Suche und Anhangwahl. Bisher blendete er das Verb deshalb aus und
+         * setzte einen eigenen Knopf neben den Betreff — dieselbe Sache
+         * zweimal im Bild, unter zwei Namen, und die Werkzeugleiste war nicht
+         * mehr der Ort, an dem Werkzeuge stehen.
+         */
+        const ausloesen = vi.fn(async () => ({ ok: true, message: 'getan' }));
+        const eigenerWeg = vi.fn();
+
+        const { container, unmount } = leiste({
+            werkzeuge: [werkzeug({ key: 'aufgabe', label: 'Aufgabe anhängen' })],
+            ausloesen,
+            eigene: { aufgabe: eigenerWeg },
+        });
+
+        knopfMit(container, 'Aufgabe anhängen').click();
+
+        expect(eigenerWeg).toHaveBeenCalledOnce();
+        expect(ausloesen).not.toHaveBeenCalled();
+        unmount();
+    });
+
+    it('zeigt den Namen aus dem Verzeichnis, nicht einen eigenen', () => {
+        // Damit das Verb im eigenen System genauso heisst wie bei den Nachbarn.
+        const { container, unmount } = leiste({
+            werkzeuge: [werkzeug({ key: 'aufgabe', label: 'Aufgabe anhängen' })],
+            eigene: { aufgabe: () => {} },
+        });
+
+        expect(container.textContent).toContain('Aufgabe anhängen');
+        unmount();
+    });
+
+    it('beansprucht NUR das genannte Verb', async () => {
+        const ausloesen = vi.fn(async () => ({ ok: true, message: 'getan' }));
+        const eigenerWeg = vi.fn();
+
+        const { container, unmount } = leiste({
+            werkzeuge: [werkzeug({ key: 'ticket', label: 'Ticket anlegen' })],
+            ausloesen,
+            eigene: { aufgabe: eigenerWeg },
+        });
+
+        knopfMit(container, 'Ticket anlegen').click();
+
+        await vi.waitFor(() => expect(ausloesen).toHaveBeenCalledOnce());
+        expect(eigenerWeg).not.toHaveBeenCalled();
+        unmount();
+    });
+
+    it('markiert den beanspruchten Knopf nicht als laufend', () => {
+        /*
+         * Ein Knopf, der sich beim Öffnen eines Dialogs als „wird ausgeführt"
+         * markiert und dann nie fertig wird, sieht aus wie ein Hänger.
+         */
+        const { container, unmount } = leiste({
+            werkzeuge: [werkzeug({ key: 'aufgabe', label: 'Aufgabe anhängen' })],
+            eigene: { aufgabe: () => {} },
+        });
+
+        knopfMit(container, 'Aufgabe anhängen').click();
+
+        expect(container.textContent).not.toContain('Wird ausgeführt');
+        unmount();
+    });
+
+    it('fragt den Server weiterhin, wenn das Produkt nichts beansprucht', async () => {
+        // Die Gegenprobe: Ohne `eigene` bleibt alles, wie es war.
+        const ausloesen = vi.fn(async () => ({ ok: true, message: 'getan' }));
+
+        const { container, unmount } = leiste({
+            werkzeuge: [werkzeug({ key: 'aufgabe', label: 'Aufgabe anhängen' })],
+            ausloesen,
+        });
+
+        knopfMit(container, 'Aufgabe anhängen').click();
+
+        await vi.waitFor(() => expect(ausloesen).toHaveBeenCalledOnce());
         unmount();
     });
 });

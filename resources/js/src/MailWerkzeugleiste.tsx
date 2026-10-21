@@ -151,6 +151,29 @@ export interface MailWerkzeugleisteProps {
      * weiter — hier verschwindet nur der doppelte Knopf.
      */
     verbergen?: (werkzeug: MailWerkzeug) => boolean;
+    /**
+     * Verben, die dieses Produkt selbst BEDIENT — Schlüssel → Handler.
+     *
+     * Der Unterschied zu `verbergen` ist der Punkt: Verbergen heisst „ich
+     * zeichne das woanders", Beanspruchen heisst „der Knopf bleibt hier, aber
+     * er öffnet meinen Dialog".
+     *
+     * Der Fall, für den es gebaut ist (#8434): Der Manager hat für „Aufgabe
+     * anhängen" einen Dialog mit Suche und Anhangwahl — den kann ein fremdes
+     * System nicht zeichnen. Bisher blendete er das Verb deshalb aus und setzte
+     * einen EIGENEN Knopf neben den Betreff. Damit stand dieselbe Sache zweimal
+     * im Bild, unter zwei Namen („Aufgabe anhängen" in der Leiste der Nachbarn,
+     * „Aufgabe zuordnen" am Titel), und die Werkzeugleiste war nicht mehr der
+     * Ort, an dem Werkzeuge stehen.
+     *
+     * Der Nutzer hat genau das gemeldet: „Das wäre ja auch wieder eine
+     * Werkzeugaktion und keine Aktion im E-Mail-Feld."
+     *
+     * Beansprucht wird nur das Auslösen. Das Verb bleibt angemeldet, trägt
+     * seinen Namen, seine Reihenfolge und sein Symbol aus dem Verzeichnis —
+     * damit es im eigenen System genauso heisst wie bei den Nachbarn.
+     */
+    eigene?: Record<string, () => void>;
     labels?: Partial<MailWerkzeugleisteLabels>;
     className?: string;
 }
@@ -166,6 +189,7 @@ export function MailWerkzeugleiste({
     onMeldung,
     onNavigate,
     verbergen,
+    eigene,
     labels,
     className,
 }: MailWerkzeugleisteProps) {
@@ -236,6 +260,24 @@ export function MailWerkzeugleiste({
 
     async function klick(werkzeug: MailWerkzeug) {
         if (werkzeug.confirm && !globalThis.confirm?.(werkzeug.confirm)) {
+            return;
+        }
+
+        /*
+         * Beansprucht dieses Produkt das Verb, übernimmt es hier — ohne
+         * Serveraufruf und ohne Laufanzeige. Was danach passiert, weiss nur
+         * das Produkt: Der Manager öffnet einen Dialog, und ob der zu etwas
+         * führt, entscheidet sich dort.
+         *
+         * VOR der Laufanzeige, nicht danach: Ein Knopf, der sich beim Öffnen
+         * eines Dialogs als „wird ausgeführt" markiert und dann nie fertig
+         * wird, sieht aus wie ein Hänger.
+         */
+        const eigenerWeg = eigene?.[werkzeug.key];
+
+        if (eigenerWeg) {
+            eigenerWeg();
+
             return;
         }
 
