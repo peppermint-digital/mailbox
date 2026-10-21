@@ -367,3 +367,47 @@ describe('der Sortierschlüssel für SQL (#8440)', function () {
         expect(dasVerzeichnis()->bekannt(1, 'INBOX', 14, [1])['1'])->not->toHaveKey('date_at');
     });
 });
+
+describe('die Gueltigkeit wird nachgezogen (#8440)', function () {
+    it('fuellt eine Zeile ohne Gueltigkeit beim naechsten Schreiben nach', function () {
+        /*
+         * Der Fehler, den erst der Blick in Produktion gezeigt hat: Nach dem
+         * Umzug von 88.307 Zeilen aus einer Tabelle OHNE diese Spalte stand
+         * nach einem vollstaendigen Durchlauf noch bei KEINER eine Gueltigkeit.
+         *
+         * Der Grund: Beim Einfuegen kommt sie mit, in der Aktualisierungsliste
+         * des Upserts stand sie nicht — und nach einem Umzug sind alle
+         * Schreibvorgaenge Aktualisierungen.
+         *
+         * Eine Zeile ohne Gueltigkeit gilt der Listenseite unter JEDER als
+         * lesbar. Sie nie zu fuellen heisst also, den Riegel dauerhaft offen zu
+         * lassen.
+         */
+        DB::table('mailbox_headers')->insert([
+            'account_id' => 1, 'folder' => 'INBOX', 'uid' => '1', 'uidvalidity' => null,
+            'subject' => 'umgezogen', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        dasVerzeichnis()->merkenDurchlauf(1, 'INBOX', 14, [verzeichneteZeile(1)]);
+
+        expect((int) DB::table('mailbox_headers')->where('uid', '1')->value('uidvalidity'))->toBe(14);
+    });
+
+    it('zieht auch eine GEAENDERTE Gueltigkeit nach — zusammen mit frischen Daten', function () {
+        /*
+         * Das sieht gefaehrlich aus und ist richtig: Gefaehrlich waere, die
+         * Gueltigkeit zu erneuern OHNE die Daten. Beide Schreibwege holen die
+         * Daten in demselben Zug vom Server, die Zeile gehoert also wirklich
+         * zur neuen Gueltigkeit.
+         */
+        dasVerzeichnis()->merkenKopf(1, 'INBOX', 14, [verzeichneteZeile(1, 'alter Betreff')]);
+        dasVerzeichnis()->merkenKopf(1, 'INBOX', 20, [verzeichneteZeile(1, 'frisch geholt')]);
+
+        $roh = DB::table('mailbox_headers')->where('uid', '1')->first();
+
+        expect((int) $roh->uidvalidity)->toBe(20)
+            ->and($roh->subject)->toBe('frisch geholt')
+            // Und unter der alten ist sie nicht mehr lesbar.
+            ->and(dasVerzeichnis()->bekannt(1, 'INBOX', 14, [1]))->toBe([]);
+    });
+});

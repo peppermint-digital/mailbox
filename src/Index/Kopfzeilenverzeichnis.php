@@ -181,6 +181,25 @@ final class Kopfzeilenverzeichnis
             },
             $zeilen,
         ), [
+            /*
+             * `uidvalidity` wird MITGESCHRIEBEN, und das ist richtig, obwohl es
+             * zunaechst gefaehrlich aussieht (#8440).
+             *
+             * Der gefaehrliche Fall waere, die Gueltigkeit einer Zeile zu
+             * erneuern, OHNE ihre Daten zu erneuern: Dann gaelte eine veraltete
+             * Kopfzeile unter der neuen Gueltigkeit als frisch. Beide
+             * Schreibwege hier holen die Daten aber in demselben Zug vom
+             * Server — die Zeile gehoert also wirklich zu der Gueltigkeit, die
+             * daneben steht.
+             *
+             * Ohne das bleibt eine Zeile fuer immer auf der Gueltigkeit ihres
+             * ersten Einfuegens stehen. Bei einem Bestand, der aus einer
+             * Tabelle OHNE diese Spalte umgezogen ist, ist das dauerhaft
+             * `null` — also unter JEDER Gueltigkeit lesbar. Am 21.10.2026 in
+             * Produktion genau so gemessen: 88.307 Zeilen, davon 0 mit
+             * Gueltigkeit, nach einem vollstaendigen Durchlauf.
+             */
+            'uidvalidity',
             'message_id', 'subject', 'from_address', 'from_name', 'date', 'date_at',
             'in_reply_to', 'mail_references', 'updated_at',
         ]);
@@ -232,6 +251,8 @@ final class Kopfzeilenverzeichnis
             },
             $zeilen,
         ), [
+            // Mitgeschrieben, siehe die Begruendung in `merkenKopf()`.
+            'uidvalidity',
             'message_id', 'thread_id', 'subject', 'from_address', 'from_name', 'date', 'date_at',
             'in_reply_to', 'mail_references', 'is_seen', 'is_flagged', 'indexed_at', 'updated_at',
         ]);
