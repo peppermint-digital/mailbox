@@ -75,8 +75,6 @@ return new class extends Migration
             // Die Frage der Konversationen: „was gehoert zu dieser Kette".
             $table->index(['account_id', 'thread_id'], 'mailbox_headers_konto_kette');
 
-            // Die Frage der Suche: „die neuesten Treffer zuerst".
-            $table->index(['account_id', 'date'], 'mailbox_headers_konto_datum');
         });
     }
 
@@ -88,7 +86,6 @@ return new class extends Migration
 
         Schema::table('mailbox_headers', function (Blueprint $table): void {
             $table->dropIndex('mailbox_headers_konto_kette');
-            $table->dropIndex('mailbox_headers_konto_datum');
             $table->dropColumn(['thread_id', 'is_seen', 'is_flagged', 'indexed_at']);
         });
     }

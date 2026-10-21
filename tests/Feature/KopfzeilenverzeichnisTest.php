@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Peppermint\Mailbox\Index\Kopfzeilenverzeichnis;
 
@@ -278,5 +279,91 @@ describe('zwei Leseverträge in einer Tabelle (#8440)', function () {
         expect($zeile['subject'])->toBe('Angebot Meier')
             ->and($zeile['thread_id'])->toBe('kette-7')
             ->and($zeile['references'])->toBe('<a@x> <b@x>');
+    });
+});
+
+describe('der Sortierschlüssel für SQL (#8440)', function () {
+    it('leitet date_at aus dem Datum ab, in UTC', function () {
+        /*
+         * `date` ist die Drahtform mit dem Versatz des Absenders, `date_at` der
+         * Sortierschlüssel. Auf der Zeichenkette wäre `orderByDesc('date')`
+         * lexikalisch — und damit falsch, sobald Versätze gemischt sind.
+         */
+        dasVerzeichnis()->merkenKopf(1, 'INBOX', 14, [array_merge(verzeichneteZeile(1), [
+            'date' => '2026-01-01T23:00:00+02:00',
+        ])]);
+
+        $roh = DB::table('mailbox_headers')->where('uid', '1')->first();
+
+        expect($roh->date)->toBe('2026-01-01T23:00:00+02:00')
+            ->and(Carbon::parse($roh->date_at)->toIso8601String())->toBe('2026-01-01T21:00:00+00:00');
+    });
+
+    it('sortiert ueber date_at richtig, wo die Zeichenkette es falsch machen wuerde', function () {
+        /*
+         * Die Probe, die den ganzen Zweck zeigt: Dieselben zwei Augenblicke,
+         * einmal als Zeichenkette und einmal als Zeitpunkt sortiert, kommen
+         * in VERSCHIEDENER Reihenfolge heraus.
+         */
+        dasVerzeichnis()->merkenKopf(1, 'INBOX', 14, [
+            array_merge(verzeichneteZeile(1, 'frueher'), ['date' => '2026-01-01T23:00:00+02:00']),
+            array_merge(verzeichneteZeile(2, 'spaeter'), ['date' => '2026-01-01T22:00:00+00:00']),
+        ]);
+
+        // Nach der Zeichenkette: die 23-Uhr-Zeile zuerst — falsch.
+        expect(DB::table('mailbox_headers')->orderByDesc('date')->pluck('subject')->all())
+            ->toBe(['frueher', 'spaeter']);
+
+        // Nach dem Zeitpunkt: die 22-Uhr-UTC-Zeile ist wirklich die spaetere.
+        expect(DB::table('mailbox_headers')->orderByDesc('date_at')->pluck('subject')->all())
+            ->toBe(['spaeter', 'frueher']);
+    });
+
+    it('verliert eine Zeile nicht, wenn ihr Datum unlesbar ist', function () {
+        // Ein unlesbares Datum ist kein Grund, die Kopfzeile zu verlieren. Sie
+        // wird dann nur nicht einsortiert.
+        dasVerzeichnis()->merkenKopf(1, 'INBOX', 14, [array_merge(verzeichneteZeile(1), [
+            'date' => 'kein Datum',
+        ])]);
+
+        $roh = DB::table('mailbox_headers')->where('uid', '1')->first();
+
+        expect($roh)->not->toBeNull()
+            ->and($roh->date_at)->toBeNull()
+            ->and($roh->subject)->toBe('Angebot');
+    });
+
+    it('zieht den Sortierschluessel bei einem ZWEITEN Schreiben nach', function () {
+        /*
+         * Eine Mutationsprobe hat das erzwungen: Beim ERSTEN Schreiben kommt
+         * `date_at` ueber den Insert mit, egal ob es in der
+         * Aktualisierungsliste steht. Nur ein zweites Schreiben derselben Zeile
+         * sieht den Unterschied.
+         *
+         * Die Listenseite ruft `merkenKopf()` nur fuer unbekannte Kennungen,
+         * trifft den Fall also nicht — aber die Methode ist oeffentlich, und
+         * ein Datum, das sich aendert, ohne dass der Sortierschluessel
+         * mitgeht, waere eine Liste, die nach einem alten Augenblick sortiert.
+         */
+        dasVerzeichnis()->merkenKopf(1, 'INBOX', 14, [array_merge(verzeichneteZeile(1), [
+            'date' => '2026-01-01T10:00:00+00:00',
+        ])]);
+
+        dasVerzeichnis()->merkenKopf(1, 'INBOX', 14, [array_merge(verzeichneteZeile(1), [
+            'date' => '2026-06-01T10:00:00+02:00',
+        ])]);
+
+        $roh = DB::table('mailbox_headers')->where('uid', '1')->first();
+
+        expect($roh->date)->toBe('2026-06-01T10:00:00+02:00')
+            ->and(Carbon::parse($roh->date_at)->toIso8601String())->toBe('2026-06-01T08:00:00+00:00');
+    });
+
+    it('gibt den Sortierschluessel nicht an die Liste heraus', function () {
+        // Ein zweites Datum in der Zeile waere eine Einladung, mal das eine und
+        // mal das andere zu nehmen. Die Liste sortiert in PHP ueber `date`.
+        dasVerzeichnis()->merkenKopf(1, 'INBOX', 14, [verzeichneteZeile(1)]);
+
+        expect(dasVerzeichnis()->bekannt(1, 'INBOX', 14, [1])['1'])->not->toHaveKey('date_at');
     });
 });

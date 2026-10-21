@@ -2,6 +2,7 @@
 
 namespace Peppermint\Mailbox\Index;
 
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -149,6 +150,13 @@ final class Kopfzeilenverzeichnis
              */
             unset($satz['is_seen'], $satz['is_flagged'], $satz['indexed_at']);
 
+            /*
+             * Und der Sortierschluessel auch nicht: Die Liste sortiert in PHP
+             * ueber `date`, und ein zweites Datum in der Zeile waere eine
+             * Einladung, mal das eine und mal das andere zu nehmen.
+             */
+            unset($satz['date_at']);
+
             $nach[(string) $zeile->uid] = $satz;
         }
 
@@ -173,7 +181,7 @@ final class Kopfzeilenverzeichnis
             },
             $zeilen,
         ), [
-            'message_id', 'subject', 'from_address', 'from_name', 'date',
+            'message_id', 'subject', 'from_address', 'from_name', 'date', 'date_at',
             'in_reply_to', 'mail_references', 'updated_at',
         ]);
     }
@@ -224,7 +232,7 @@ final class Kopfzeilenverzeichnis
             },
             $zeilen,
         ), [
-            'message_id', 'thread_id', 'subject', 'from_address', 'from_name', 'date',
+            'message_id', 'thread_id', 'subject', 'from_address', 'from_name', 'date', 'date_at',
             'in_reply_to', 'mail_references', 'is_seen', 'is_flagged', 'indexed_at', 'updated_at',
         ]);
     }
@@ -379,6 +387,42 @@ final class Kopfzeilenverzeichnis
 
         $jetzt = now();
 
+        /*
+         * `date_at` wird HIER aus `date` abgeleitet und nicht vom Aufrufer
+         * gesetzt — sonst koennten die beiden auseinanderlaufen.
+         *
+         * `date` ist die Drahtform (die Zeichenkette mit dem Versatz des
+         * Absenders, Byte fuer Byte wie vom Server). `date_at` ist der
+         * Sortierschluessel fuer SQL: Auf der Zeichenkette waere
+         * `orderByDesc('date')` lexikalisch und damit falsch, sobald Versaetze
+         * gemischt sind — und bei Mail-Kopfzeilen sind sie das immer.
+         */
+        $alsZeitpunkt = static function (array $zeile): array {
+            if (! array_key_exists('date', $zeile)) {
+                return $zeile;
+            }
+
+            $roh = $zeile['date'];
+
+            if ($roh === null || $roh === '') {
+                $zeile['date_at'] = null;
+
+                return $zeile;
+            }
+
+            try {
+                $zeile['date_at'] = Carbon::parse((string) $roh)->utc();
+            } catch (\Throwable) {
+                // Ein unlesbares Datum ist kein Grund, die Zeile zu verlieren.
+                // Sie wird dann nur nicht einsortiert.
+                $zeile['date_at'] = null;
+            }
+
+            return $zeile;
+        };
+
+        $zeilen = array_map($alsZeitpunkt, $zeilen);
+
         $satz = array_map(static fn (array $zeile): array => array_merge([
             'account_id' => $konto,
             'folder' => $ordner,
@@ -388,6 +432,7 @@ final class Kopfzeilenverzeichnis
             'from_address' => null,
             'from_name' => null,
             'date' => null,
+            'date_at' => null,
             'attachment_count' => null,
             'in_reply_to' => null,
             'mail_references' => null,
