@@ -38,7 +38,7 @@ use Illuminate\Support\Facades\Schema;
  * die beiden Fehler, die ein Listen-Zwischenspeicher sonst STILL macht.
  *
  * Das ist auch der Unterschied zum Verzeichnis des Managers (`email_headers`,
- * seit 07.08.2026, 102.264 Zeilen): Das wird stündlich gefüllt und bedient
+ * seit 07.08.2026, 87.742 Zeilen am 21.10.): Das wird alle 15 Minuten gefüllt und bedient
  * Suche und Konversationen. Für eine Suche ist eine Stunde Rückstand belanglos,
  * für eine Mailliste ist sie ein Fehler. Dieselbe Tabelle, anderer Vertrag.
  *
@@ -65,7 +65,7 @@ use Illuminate\Support\Facades\Schema;
  *
  * Weil der Manager dieselbe Spalte am 21.09.2026 verbreitern musste: JMAP
  * vergibt Kennungen wie `cqiaaaaus`, und der Verzeichnis-Lauf scheiterte für
- * dieses Postfach stündlich mit „Incorrect integer value". Dieses Verzeichnis
+ * dieses Postfach bei jedem Durchgang mit „Incorrect integer value". Dieses Verzeichnis
  * bedient heute nur IMAP — die Spalte ist trotzdem von Anfang an breit, weil
  * die Lehre schon bezahlt ist.
  *

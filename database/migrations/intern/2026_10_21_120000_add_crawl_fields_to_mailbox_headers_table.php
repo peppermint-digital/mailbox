@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Schema;
  * ## Warum dieselbe Tabelle zwei Verträge bedient
  *
  * Im Manager standen zwei Kopfzeilen-Verzeichnisse in derselben Datenbank:
- * `email_headers` seit dem 07.08.2026 (102.264 Zeilen, stündlich gefüllt, für
+ * `email_headers` seit dem 07.08.2026 (87.742 Zeilen, alle 15 Minuten gefüllt, für
  * Suche und Konversationen) und `mailbox_headers` seit dem 20.10.2026 (bei
  * jedem Seitenaufruf gefüllt, für die Liste). Dieselbe Tatsache an zwei Orten.
  *
