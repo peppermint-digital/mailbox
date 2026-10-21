@@ -432,6 +432,129 @@ it('holt die Kopfzeilen nur fuer die NEUEN Kennungen, nicht fuer alle', function
         ->and(array_map('intval', $kopf[0]['kennungen']))->toEqualCanonicalizing([6, 7]);
 });
 
+it('raeumt verzeichnete Kennungen weg, die der Server nicht mehr nennt', function () {
+    /*
+     * Gelesen werden die Toten nie — die Belegung kommt immer vom Server.
+     * Gemessen am 21.10.2026 an `department@` wuchsen sie aber fuer immer: 65
+     * verzeichnete Zeilen fuer 30 vorhandene Nachrichten.
+     */
+    [$fenster, $detail] = seitenBestand(5, 0);
+
+    seitenKlient(seitenOrdner($fenster, $detail))->page('INBOX', 1, 25);
+
+    expect(DB::table('mailbox_headers')->count())->toBe(5);
+
+    // Zwei sind weg (3 und 4), eine kam dazu (6).
+    $nachher = [
+        seitenNachricht(6, 'neu', '2026-09-20T10:00:00+00:00'),
+        seitenNachricht(5, 'Mail 5', '2026-09-05T10:00:00+00:00'),
+        seitenNachricht(2, 'Mail 2', '2026-09-02T10:00:00+00:00'),
+        seitenNachricht(1, 'Mail 1', '2026-09-01T10:00:00+00:00'),
+    ];
+
+    [$zeilen] = seitenKlient(seitenOrdner($nachher, $nachher))->page('INBOX', 1, 25);
+
+    expect($zeilen)->toHaveCount(4)
+        ->and(DB::table('mailbox_headers')->orderBy('uid')->pluck('uid')->all())->toBe(['1', '2', '5', '6']);
+});
+
+it('raeumt NICHTS weg, was aelter ist als das Fenster', function () {
+    /*
+     * Der gefaehrliche Fall. Das Fenster umfasst die hundert jungsten
+     * Kennungen; was darunter liegt, ist nicht tot, sondern nur ausserhalb.
+     * Eine Regel „loesche, was nicht im Fenster steht" wuerde bei jedem Blick
+     * in einen grossen Ordner das Verzeichnis aller aelteren Nachrichten
+     * leeren — und damit genau den Gewinn vernichten, den es bringen soll.
+     */
+    DB::table('mailbox_headers')->insert([
+        'account_id' => 1, 'folder' => 'INBOX', 'uid' => '7', 'uidvalidity' => 14,
+        'subject' => 'lange her', 'date' => '2026-01-01T10:00:00+00:00',
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    /*
+     * Das Fenster muss VOLL sein, damit es ein Fenster ist: Hundert Kennungen
+     * (100 bis 199), und die 7 liegt weit darunter. Waeren es weniger als
+     * hundert, waere das Fenster die ganze Belegung — dann gibt es kein
+     * „darunter", und die 7 waere zu Recht tot.
+     */
+    $fenster = [];
+    $detail = [];
+
+    for ($uid = 199; $uid >= 100; $uid--) {
+        $datum = sprintf('2026-09-%02dT10:00:00+00:00', ($uid % 28) + 1);
+        $fenster[] = seitenNachricht($uid, "Mail {$uid}", $datum);
+        $detail[] = seitenNachricht($uid, "Mail {$uid}", $datum);
+    }
+
+    expect($fenster)->toHaveCount(100);
+
+    seitenKlient(seitenOrdner($fenster, $detail))->page('INBOX', 1, 25);
+
+    expect(DB::table('mailbox_headers')->where('uid', '7')->count())->toBe(1);
+});
+
+it('vergleicht die Kennungen als Zahl und nicht als Text', function () {
+    /*
+     * `'100' < '30'` ist als Text wahr und als Nummer falsch. Mit einem
+     * Textvergleich waere die 30 „aelter als das Fenster" und bliebe als
+     * Leiche stehen, obwohl der Server sie nicht mehr nennt.
+     */
+    $erst = [];
+    $detail = [];
+
+    foreach ([100, 30] as $uid) {
+        $erst[] = seitenNachricht($uid, "Mail {$uid}", '2026-09-0'.($uid === 100 ? '2' : '1').'T10:00:00+00:00');
+        $detail[] = seitenNachricht($uid, "Mail {$uid}", '2026-09-0'.($uid === 100 ? '2' : '1').'T10:00:00+00:00');
+    }
+
+    seitenKlient(seitenOrdner($erst, $detail))->page('INBOX', 1, 25);
+
+    expect(DB::table('mailbox_headers')->orderBy('uid')->pluck('uid')->all())->toBe(['100', '30']);
+
+    // Die 30 verschwindet, die 101 kommt.
+    $dann = [
+        seitenNachricht(101, 'neu', '2026-09-03T10:00:00+00:00'),
+        seitenNachricht(100, 'Mail 100', '2026-09-02T10:00:00+00:00'),
+    ];
+
+    seitenKlient(seitenOrdner($dann, $dann))->page('INBOX', 1, 25);
+
+    expect(DB::table('mailbox_headers')->orderBy('uid')->pluck('uid')->all())->toBe(['100', '101']);
+});
+
+it('raeumt eine Kennung, die keine Zahl ist, niemals weg', function () {
+    /*
+     * IMAP zaehlt, JMAP vergibt Zeichenketten wie `cqiaaaaus`. Dieses
+     * Verzeichnis bedient heute nur IMAP, die Spalte ist aber breit — und dann
+     * muss auch der Vergleich sie ertragen.
+     *
+     * Ohne den Cast auf `int` vergleicht PHP 8 sie als Text mit der
+     * Untergrenze: `'cqiaaaaus' < '100'` ist falsch, die Zeile gaelte als tot
+     * und waere weg. Mit dem Cast wird sie zu 0, liegt immer unter der Grenze
+     * und bleibt stehen.
+     */
+    DB::table('mailbox_headers')->insert([
+        'account_id' => 1, 'folder' => 'INBOX', 'uid' => 'cqiaaaaus', 'uidvalidity' => 14,
+        'subject' => 'aus einem JMAP-Postfach', 'date' => '2026-01-01T10:00:00+00:00',
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    // Volles Fenster, damit die Untergrenze ueberhaupt gilt.
+    $fenster = [];
+    $detail = [];
+
+    for ($uid = 199; $uid >= 100; $uid--) {
+        $datum = sprintf('2026-09-%02dT10:00:00+00:00', ($uid % 28) + 1);
+        $fenster[] = seitenNachricht($uid, "Mail {$uid}", $datum);
+        $detail[] = seitenNachricht($uid, "Mail {$uid}", $datum);
+    }
+
+    seitenKlient(seitenOrdner($fenster, $detail))->page('INBOX', 1, 25);
+
+    expect(DB::table('mailbox_headers')->where('uid', 'cqiaaaaus')->count())->toBe(1);
+});
+
 it('nimmt die Lesemarke IMMER vom Server, nie aus dem Verzeichnis', function () {
     /*
      * Flags aendert jeder andere Client jederzeit. Eine verzeichnete Lesemarke

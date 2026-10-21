@@ -173,6 +173,78 @@ final class Kopfzeilenverzeichnis
     }
 
     /**
+     * Die verzeichneten Kennungen eines Ordners — nur die Kennungen.
+     *
+     * Für den Abgleich mit der Belegung des Servers. Eine Spalte, keine
+     * Zeilen: Ein Ordner kann tausende verzeichnete Nachrichten haben, und
+     * gebraucht wird hier nur die Nummer.
+     *
+     * @return list<string>
+     */
+    public function kennungen(int $konto, string $ordner, ?int $gueltigkeit): array
+    {
+        if (! $this->an() || $gueltigkeit === null) {
+            return [];
+        }
+
+        try {
+            return DB::table(self::TABELLE)
+                ->where('account_id', $konto)
+                ->where('folder', $ordner)
+                ->where('uidvalidity', $gueltigkeit)
+                ->pluck('uid')
+                ->map(fn ($uid): string => (string) $uid)
+                ->all();
+        } catch (\Throwable $fehler) {
+            $this->abschalten('Kennungen lesen', $fehler);
+
+            return [];
+        }
+    }
+
+    /**
+     * Karteileichen wegräumen — genannte Kennungen, nicht eine Regel.
+     *
+     * ## Warum der Aufrufer die Toten nennt und nicht dieses Verzeichnis
+     *
+     * Weil nur er weiß, für welchen BEREICH seine Liste maßgeblich ist. Das
+     * Fenster der Listenseite umfasst die hundert jüngsten Kennungen; was
+     * darunter liegt, ist nicht tot, sondern nur außerhalb. Eine Regel „lösche,
+     * was nicht in dieser Liste steht" würde bei jedem Blick in einen großen
+     * Ordner das Verzeichnis aller älteren Nachrichten leeren.
+     *
+     * Gemessen am 21.10.2026 an `department@`: 65 verzeichnete Zeilen für 30
+     * vorhandene Nachrichten. Gelesen werden die 35 Toten nie — die Belegung
+     * kommt vom Server —, aber sie wachsen für immer.
+     *
+     * @param  list<int|string>  $tote
+     */
+    public function vergessenKennungen(int $konto, string $ordner, array $tote): int
+    {
+        if ($tote === [] || ! $this->an()) {
+            return 0;
+        }
+
+        $weg = 0;
+
+        try {
+            // In Bloecken: Die Liste der Toten ist im Regelfall kurz, kann nach
+            // einer Aufraeumaktion im Postfach aber hunderte Nummern umfassen.
+            foreach (array_chunk(array_map('strval', $tote), 500) as $block) {
+                $weg += DB::table(self::TABELLE)
+                    ->where('account_id', $konto)
+                    ->where('folder', $ordner)
+                    ->whereIn('uid', $block)
+                    ->delete();
+            }
+        } catch (\Throwable $fehler) {
+            $this->abschalten('Karteileichen entfernen', $fehler);
+        }
+
+        return $weg;
+    }
+
+    /**
      * Zeilen einer ANDEREN Gültigkeit wegräumen.
      *
      * Wechselt die `UIDVALIDITY`, zeigen alle verzeichneten Kennungen dieses

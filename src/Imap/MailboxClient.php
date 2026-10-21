@@ -420,6 +420,8 @@ class MailboxClient implements Mailbox
             foreach ($frisch as $zeile) {
                 $bekannt[(string) $zeile['uid']] = $zeile;
             }
+
+            $this->karteileichen($konto, $pfad, $gueltigkeit, $kennungen);
         }
 
         $zeilen = [];
@@ -445,6 +447,97 @@ class MailboxClient implements Mailbox
         }
 
         return $zeilen;
+    }
+
+    /**
+     * Verzeichnete Kennungen wegräumen, die der Server nicht mehr nennt.
+     *
+     * ## Nur im Bereich des Fensters, und das ist der ganze Trick
+     *
+     * Das Fenster umfasst die hundert jüngsten Kennungen. Für DIESEN Bereich
+     * ist es maßgeblich: Was der Server hier nicht nennt, gibt es nicht mehr.
+     * Was darunter liegt, ist nicht tot, sondern nur außerhalb — eine Regel
+     * „lösche, was nicht im Fenster steht" würde bei jedem Blick in einen
+     * großen Ordner das Verzeichnis aller älteren Nachrichten leeren.
+     *
+     * Gemessen am 21.10.2026 an `department@`: 65 verzeichnete Zeilen für 30
+     * vorhandene Nachrichten. Gelesen werden die Toten nie — die Belegung kommt
+     * immer vom Server —, aber sie wachsen für immer.
+     *
+     * ## Warum nur, wenn etwas Neues dazukam
+     *
+     * Der Aufrufer ruft das hier nur, wenn Kennungen FEHLTEN. Dann hat sich der
+     * Ordner seit dem letzten Blick verändert, und nur dann lohnt die zusätzliche
+     * Abfrage. Eine Löschung ohne Zugang hinterlässt damit ihre Leiche bis zur
+     * nächsten neuen Nachricht — das ist der Preis für eine Abfrage, die im
+     * Regelfall ausbleibt.
+     *
+     * ## Warum der Vergleich in PHP steht und was der Cast wirklich tut
+     *
+     * In PHP, weil die Spalte `varchar` ist (JMAP vergibt Zeichenketten) und
+     * ein numerischer Vergleich in SQL ein `CAST` bräuchte, das in SQLite und
+     * MySQL verschieden heißt.
+     *
+     * Der Cast auf `int` ist NICHT dafür da, zwei Zahlen-Zeichenketten richtig
+     * zu ordnen — das tut PHP 8 von selbst (`'7' < 100` ist numerisch). Eine
+     * Mutationsprobe hat das gezeigt: Den Cast zu entfernen liess keinen Test
+     * umfallen, und mein Kommentar behauptete hier zuerst das Gegenteil.
+     *
+     * Was er wirklich leistet: Eine NICHT-numerische Kennung (`cqiaaaaus`)
+     * wird zu 0 und liegt damit immer unter der Untergrenze — sie wird also
+     * nie weggeräumt. Ohne den Cast verglichen PHP 8 sie als Text mit `'100'`,
+     * `'cqiaaaaus' < '100'` ist falsch, und die Zeile waere gelöscht worden.
+     * Dieses Verzeichnis bedient heute nur IMAP; die Spalte ist trotzdem breit,
+     * und dann muss auch der Vergleich sie ertragen.
+     *
+     * @param  list<int|string>  $kennungen  die Belegung des Fensters
+     */
+    private function karteileichen(int $konto, string $pfad, ?int $gueltigkeit, array $kennungen): void
+    {
+        $zahlen = array_map('intval', $kennungen);
+
+        if ($zahlen === []) {
+            return;
+        }
+
+        /*
+         * Ist das Fenster NICHT voll, ist es die ganze Belegung des Ordners —
+         * dann gibt es kein „aelter als das Fenster", und alles, was der Server
+         * nicht nennt, ist tot. Das ist der Regelfall: Die meisten Ordner haben
+         * weniger als hundert Nachrichten.
+         *
+         * Ein Test hat diese Unterscheidung erzwungen. Ohne sie blieb eine
+         * Kennung stehen, die kleiner war als die kleinste des Fensters,
+         * obwohl der Server sie nicht mehr nannte und das Fenster vollstaendig
+         * war.
+         */
+        $vollesFenster = count($kennungen) >= MessagePage::FETCH_LIMIT;
+        $untergrenze = $vollesFenster ? min($zahlen) : 0;
+        $lebende = array_map('strval', $kennungen);
+
+        $tote = [];
+
+        foreach ($this->verzeichnis->kennungen($konto, $pfad, $gueltigkeit) as $verzeichnet) {
+            if ($vollesFenster && (int) $verzeichnet < $untergrenze) {
+                // Aelter als das Fenster — darueber sagt ein VOLLES Fenster
+                // nichts.
+                continue;
+            }
+
+            if (! in_array($verzeichnet, $lebende, true)) {
+                $tote[] = $verzeichnet;
+            }
+        }
+
+        if ($tote === []) {
+            return;
+        }
+
+        $weg = $this->verzeichnis->vergessenKennungen($konto, $pfad, $tote);
+
+        if ($weg > 0) {
+            Log::info("Mailbox: {$weg} verzeichnete Kennungen weggeraeumt, die der Server nicht mehr nennt ({$pfad}).");
+        }
     }
 
     /**
