@@ -187,3 +187,96 @@ it('schreibt in Bloecken, damit ein Fenster nicht als eine Anweisung geht', func
 
     expect(DB::table('mailbox_headers')->count())->toBe(250);
 });
+
+describe('zwei Leseverträge in einer Tabelle (#8440)', function () {
+    it('gibt die Lesemarken eines Durchlaufs NICHT an die Liste heraus', function () {
+        /*
+         * Der Kern der Zusammenlegung. Die Suche darf Lesemarken aus dem
+         * Verzeichnis lesen (als Stand des letzten Durchlaufs, Entscheidung des
+         * Nutzers vom 21.10.2026) — die LISTE nicht, nie.
+         *
+         * Weggelassen und nicht ueberschrieben: Die Spalte `is_flagged` heisst
+         * genauso wie das Feld der Drahtform. Ein Ueberschreiben ist eine
+         * Reihenfolge, kein Riegel.
+         */
+        dasVerzeichnis()->merkenDurchlauf(1, 'INBOX', 14, [array_merge(verzeichneteZeile(1), [
+            'thread_id' => 'kette-1',
+            'is_seen' => true,
+            'is_flagged' => true,
+        ])]);
+
+        $zeile = dasVerzeichnis()->bekannt(1, 'INBOX', 14, [1])['1'];
+
+        expect($zeile)->not->toHaveKey('is_seen')
+            ->and($zeile)->not->toHaveKey('is_flagged')
+            ->and($zeile)->not->toHaveKey('indexed_at')
+            // Die Kette dagegen ist unveraenderlich und darf mit.
+            ->and($zeile['thread_id'])->toBe('kette-1');
+    });
+
+    it('schreibt die Lesemarken trotzdem in die Tabelle — fuer die Suche', function () {
+        dasVerzeichnis()->merkenDurchlauf(1, 'INBOX', 14, [array_merge(verzeichneteZeile(1), [
+            'is_seen' => false,
+            'is_flagged' => true,
+        ])]);
+
+        $roh = DB::table('mailbox_headers')->where('uid', '1')->first();
+
+        expect((bool) $roh->is_flagged)->toBeTrue()
+            ->and((bool) $roh->is_seen)->toBeFalse()
+            // Ohne Datum waere „Stand des letzten Durchlaufs" nicht pruefbar.
+            ->and($roh->indexed_at)->not->toBeNull();
+    });
+
+    it('zieht die Kette bei einem ZWEITEN Durchlauf nach', function () {
+        /*
+         * Ein Kettenschluessel kann sich aendern: Er wird aus Message-ID,
+         * In-Reply-To und References gebildet, und erst wenn mehr von der Kette
+         * bekannt ist, loest er sich besser auf — der Manager hat dafuer einen
+         * eigenen Nachtrags-Befehl.
+         *
+         * Eine Mutationsprobe hat gezeigt, dass das ungeprueft war: Beim ERSTEN
+         * Schreiben kommt die Kette ueber den Insert mit, egal ob sie in der
+         * Aktualisierungsliste steht. Nur ein zweiter Durchlauf sieht den
+         * Unterschied.
+         */
+        dasVerzeichnis()->merkenDurchlauf(1, 'INBOX', 14, [array_merge(verzeichneteZeile(1), [
+            'thread_id' => 'erst-allein',
+        ])]);
+
+        dasVerzeichnis()->merkenDurchlauf(1, 'INBOX', 14, [array_merge(verzeichneteZeile(1), [
+            'thread_id' => 'jetzt-in-der-kette',
+            'is_seen' => true,
+        ])]);
+
+        $zeile = dasVerzeichnis()->bekannt(1, 'INBOX', 14, [1])['1'];
+
+        expect($zeile['thread_id'])->toBe('jetzt-in-der-kette');
+    });
+
+    it('laesst die Anhangzahl von einem Durchlauf unangetastet', function () {
+        // Ein Durchlauf holt keine BODYSTRUCTURE. Sie mitzuschreiben hiesse,
+        // den teuersten Wert bei jedem Lauf auf NULL zurueckzusetzen.
+        dasVerzeichnis()->merkenKopf(1, 'INBOX', 14, [verzeichneteZeile(1)]);
+        dasVerzeichnis()->merkenAnhangzahl(1, 'INBOX', 14, [1 => 4]);
+
+        dasVerzeichnis()->merkenDurchlauf(1, 'INBOX', 14, [array_merge(verzeichneteZeile(1), [
+            'is_seen' => true,
+        ])]);
+
+        expect(dasVerzeichnis()->bekannt(1, 'INBOX', 14, [1])['1']['attachment_count'])->toBe(4);
+    });
+
+    it('merkt sich die Kette eines Durchlaufs ohne die Kopfzeilen zu verlieren', function () {
+        dasVerzeichnis()->merkenDurchlauf(1, 'INBOX', 14, [array_merge(verzeichneteZeile(1, 'Angebot Meier'), [
+            'thread_id' => 'kette-7',
+            'references' => '<a@x> <b@x>',
+        ])]);
+
+        $zeile = dasVerzeichnis()->bekannt(1, 'INBOX', 14, [1])['1'];
+
+        expect($zeile['subject'])->toBe('Angebot Meier')
+            ->and($zeile['thread_id'])->toBe('kette-7')
+            ->and($zeile['references'])->toBe('<a@x> <b@x>');
+    });
+});

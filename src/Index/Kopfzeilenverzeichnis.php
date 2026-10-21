@@ -127,6 +127,28 @@ final class Kopfzeilenverzeichnis
             $satz['references'] = $satz['mail_references'] ?? null;
             unset($satz['mail_references']);
 
+            /*
+             * Die Felder eines DURCHLAUFS gehen hier NICHT hinaus (#8440).
+             *
+             * `bekannt()` bedient die Listenseite, und fuer die sind Lesemarken
+             * tabu — sie aendert jeder andere Client jederzeit. Die Suche liest
+             * sie, aber die fragt die Tabelle selbst.
+             *
+             * ## Warum das Weglassen und nicht ein Ueberschreiben
+             *
+             * Weil die Spalte `is_flagged` genauso heisst wie das Feld der
+             * Drahtform. Die Listenseite setzt beide Flags aus der
+             * Serverantwort und ueberschreibt damit heute, was aus der
+             * Datenbank kaeme — das ist aber eine REIHENFOLGE und keine
+             * Sicherung. Wer sie je vertauscht oder den einen Zweig anders
+             * schreibt, bekommt eine Liste, die Lesemarken aus dem Verzeichnis
+             * zeigt. Und das ist der Fehler, den niemand als Fehler erkennt:
+             * Die Liste sieht richtig aus und ist falsch.
+             *
+             * Was nicht herauskommt, kann nicht durchrutschen.
+             */
+            unset($satz['is_seen'], $satz['is_flagged'], $satz['indexed_at']);
+
             $nach[(string) $zeile->uid] = $satz;
         }
 
@@ -153,6 +175,57 @@ final class Kopfzeilenverzeichnis
         ), [
             'message_id', 'subject', 'from_address', 'from_name', 'date',
             'in_reply_to', 'mail_references', 'updated_at',
+        ]);
+    }
+
+    /**
+     * Was ein DURCHLAUF weiß — Kopfzeilen, Kette und der Stand der Lesemarken.
+     *
+     * ## Der zweite Schreibweg, und warum es ein dritter ist
+     *
+     * `merkenKopf()` schreibt, was eine Listenseite sieht: die unveränderlichen
+     * Felder. Ein Durchlauf (für Suche und Konversationen) sieht mehr — die
+     * Kette und die Flags — und er sieht ALLES, nicht nur Gezeigtes.
+     *
+     * Die Flags sind hier ausdrücklich erlaubt und für die Liste ausdrücklich
+     * verboten. Das ist kein Widerspruch, sondern der Unterschied der beiden
+     * Leseverträge (#8440, Entscheidung des Nutzers vom 21.10.2026):
+     *
+     *   Liste   braucht Aktualität, kommt mit Teilwissen aus
+     *           -> Flags IMMER vom Server
+     *   Suche   braucht Vollständigkeit, verträgt Rückstand
+     *           -> Flags aus dem Verzeichnis, mit `indexed_at` daneben
+     *
+     * `indexed_at` ist deshalb nicht Zierde: Ohne das Datum wäre „Stand des
+     * letzten Durchlaufs" eine Behauptung, die man nicht prüfen kann.
+     *
+     * ## Die Anhangzahl bleibt unangetastet
+     *
+     * Aus demselben Grund wie bei `merkenKopf()`: Sie ist der teuerste Wert
+     * (BODYSTRUCTURE, gemessen 2,2 bis 13 s für 54 Zeilen), und ein Durchlauf
+     * holt sie nicht. Sie hier mitzuschreiben hieße, sie bei jedem Lauf auf
+     * NULL zurückzusetzen — der Zwischenspeicher würde sich selbst leeren, und
+     * zwar unauffällig.
+     *
+     * @param  list<array<string, mixed>>  $zeilen  je mit `uid`
+     */
+    public function merkenDurchlauf(int $konto, string $ordner, ?int $gueltigkeit, array $zeilen): void
+    {
+        $this->schreiben($konto, $ordner, $gueltigkeit, array_map(
+            static function (array $zeile): array {
+                if (array_key_exists('references', $zeile)) {
+                    $zeile['mail_references'] = $zeile['references'];
+                    unset($zeile['references']);
+                }
+
+                $zeile['indexed_at'] = $zeile['indexed_at'] ?? now();
+
+                return $zeile;
+            },
+            $zeilen,
+        ), [
+            'message_id', 'thread_id', 'subject', 'from_address', 'from_name', 'date',
+            'in_reply_to', 'mail_references', 'is_seen', 'is_flagged', 'indexed_at', 'updated_at',
         ]);
     }
 
@@ -318,6 +391,10 @@ final class Kopfzeilenverzeichnis
             'attachment_count' => null,
             'in_reply_to' => null,
             'mail_references' => null,
+            'thread_id' => null,
+            'is_seen' => null,
+            'is_flagged' => null,
+            'indexed_at' => null,
             'created_at' => $jetzt,
             'updated_at' => $jetzt,
         ], $zeile, ['uid' => (string) $zeile['uid']]), $zeilen);
@@ -325,8 +402,8 @@ final class Kopfzeilenverzeichnis
         try {
             /*
              * In Blöcken, weil ein Fenster hundert Zeilen hat und jede Zeile
-             * dreizehn Platzhalter mitbringt. Bei tausend Zeilen wäre das
-             * dreizehntausend Parameter in einer Anweisung — mehr als manche
+             * siebzehn Platzhalter mitbringt. Bei tausend Zeilen wären das
+             * siebzehntausend Parameter in einer Anweisung — mehr als manche
              * Treiber annehmen.
              */
             foreach (array_chunk($satz, 100) as $block) {
