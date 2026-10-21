@@ -188,6 +188,23 @@ class MailAccount extends Model
     }
 
     /**
+     * Ist dieses Postfach in Betrieb?
+     *
+     * ## Warum ein fehlendes Feld „ja" heisst
+     *
+     * Aus demselben Grund wie bei der Leseliste: Eine Gegenstelle, die das Feld
+     * nicht schickt, und eine eigene Tabelle ohne diese Spalte sollen sich
+     * verhalten wie bisher. Die umgekehrte Lesart haette mit dem Einspielen
+     * jedes Postfach abgeschaltet, ohne dass jemand es entschieden hat.
+     */
+    public function istAktiv(): bool
+    {
+        $wert = $this->field('is_active');
+
+        return $wert === null ? true : (bool) $wert;
+    }
+
+    /**
      * Darf diese Person dieses Postfach sehen?
      *
      * ## Warum ueber die Adresse und nicht die Kennung

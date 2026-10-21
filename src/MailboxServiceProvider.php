@@ -2,26 +2,27 @@
 
 namespace Peppermint\Mailbox;
 
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
+use Peppermint\Mailbox\Accounts\SichtbareKonten;
 use Peppermint\Mailbox\Brain\MailboxChat;
 use Peppermint\Mailbox\Console\InstallCommand;
 use Peppermint\Mailbox\Console\ZustandUmziehenCommand;
-use Illuminate\Support\Facades\Event;
 use Peppermint\Mailbox\Contracts\AccountStore;
-use Peppermint\Mailbox\Events\VerlaufVergessen;
-use Peppermint\Mailbox\Contracts\Verlaufsspeicher;
 use Peppermint\Mailbox\Contracts\Schlummerspeicher;
+use Peppermint\Mailbox\Contracts\Verlaufsspeicher;
 use Peppermint\Mailbox\Contracts\Zuweisungsspeicher;
+use Peppermint\Mailbox\Events\VerlaufVergessen;
 use Peppermint\Mailbox\Stores\BrainAccountStore;
-use Peppermint\Mailbox\Stores\BrainVerlaufsspeicher;
 use Peppermint\Mailbox\Stores\BrainSchlummerspeicher;
+use Peppermint\Mailbox\Stores\BrainVerlaufsspeicher;
 use Peppermint\Mailbox\Stores\BrainZuweisungsspeicher;
-use Peppermint\Mailbox\Stores\LokalerSchlummerspeicher;
-use Peppermint\Mailbox\Stores\LokalerZuweisungsspeicher;
-use Peppermint\Mailbox\Stores\LokalerVerlaufsspeicher;
 use Peppermint\Mailbox\Stores\LocalAccountStore;
+use Peppermint\Mailbox\Stores\LokalerSchlummerspeicher;
+use Peppermint\Mailbox\Stores\LokalerVerlaufsspeicher;
+use Peppermint\Mailbox\Stores\LokalerZuweisungsspeicher;
 use Peppermint\Mailbox\Stores\MergedAccountStore;
 use Peppermint\Mailbox\Werkzeuge\BridgeWerkzeugquelle;
 use Peppermint\Mailbox\Werkzeuge\FremdeWerkzeuge;
@@ -43,6 +44,17 @@ class MailboxServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__.'/../config/mailbox.php', 'mailbox');
 
         $this->app->singleton(AccountStore::class, fn (): AccountStore => $this->store());
+
+        /*
+         * Welche Postfaecher eine Person sehen darf — EINE Stelle (#8439).
+         *
+         * Vorher beantworteten vier Produkte dieselbe Frage auf vier Weisen,
+         * und sie kamen auf acht, sechs, sechs und fuenf Postfaecher fuer
+         * dieselbe Person. Siehe den Klassentext von SichtbareKonten.
+         */
+        $this->app->singleton(SichtbareKonten::class, fn (): SichtbareKonten => new SichtbareKonten(
+            $this->app->make(AccountStore::class),
+        ));
         $this->app->singleton(Verlaufsspeicher::class, fn (): Verlaufsspeicher => $this->verlaufsspeicher());
         $this->app->singleton(Zuweisungsspeicher::class, fn (): Zuweisungsspeicher => $this->zuweisungsspeicher());
         $this->app->singleton(Schlummerspeicher::class, fn (): Schlummerspeicher => $this->schlummerspeicher());
