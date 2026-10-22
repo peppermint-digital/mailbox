@@ -26,6 +26,7 @@ function seite(teil: Partial<MailboxSeiteErgebnis> = {}): MailboxSeiteErgebnis {
         fehler: null,
         filterOffen: false,
         konto: { id: 1, email: 'post@beispiel.de', name: 'Post' },
+        melden: vi.fn(),
         liste: {
             load: vi.fn(),
             page: 1,
@@ -215,6 +216,86 @@ describe('Antworten und Weiterleiten', () => {
 
         expect(container.textContent).toContain('Weiterleitenfeld');
         expect(container.textContent).not.toContain('Antwortfeld');
+        unmount();
+    });
+
+    it('baut die Eigenschaften des Weiterleiten-Felds selbst — aus Ordner und Kennung', () => {
+        /*
+         * Der Grund, warum die Flaeche sie baut und nicht das Produkt: Hier
+         * kann ein Fehler STILL sein. Ein falscher `uid` schickt eine andere
+         * Mail weiter, und das Formular sieht dabei genauso aus. Deshalb wird
+         * nicht geprueft, DASS etwas gezeichnet wird, sondern WOMIT.
+         */
+        const gesehen: Record<string, unknown>[] = [];
+
+        const { unmount } = flaeche({
+            seite: seite({
+                weiterleitenOffen: true,
+                ordnerPfad: 'Gesendete Elemente',
+                offeneKennung: () => 46807,
+                offene: { message: nachricht(), loading: false, open: vi.fn(), close: vi.fn() } as never,
+            }),
+            weiterleitenFeld: (eigenschaften: Record<string, unknown>) => {
+                gesehen.push(eigenschaften);
+
+                return <p>Weiterleitenfeld</p>;
+            },
+        });
+
+        expect(gesehen).toHaveLength(1);
+        expect(gesehen[0].source).toEqual({ type: 'imap', folder: 'Gesendete Elemente', uid: 46807 });
+        expect(gesehen[0].endpoints).toEqual({ forward: '/mailbox/1/forward' });
+        expect(gesehen[0].account).toEqual({ id: 1, name: 'Post', email: 'post@beispiel.de' });
+        unmount();
+    });
+
+    it('reicht die Meldung des Produkts an das Weiterleiten-Feld durch', () => {
+        /*
+         * `melden` kommt aus dem Haken, nicht als zweite Eigenschaft der
+         * Flaeche — sonst koennten Antwort und Weiterleitung verschieden
+         * melden. Hier wird genau diese Verdrahtung festgehalten.
+         */
+        const melden = vi.fn();
+        const gesehen: Record<string, unknown>[] = [];
+
+        const { unmount } = flaeche({
+            seite: seite({
+                weiterleitenOffen: true,
+                melden,
+                offene: { message: nachricht(), loading: false, open: vi.fn(), close: vi.fn() } as never,
+            }),
+            weiterleitenFeld: (eigenschaften: Record<string, unknown>) => {
+                gesehen.push(eigenschaften);
+
+                return <p>Weiterleitenfeld</p>;
+            },
+        });
+
+        (gesehen[0].melden as (text: string) => void)('Weitergeleitet.');
+
+        expect(melden).toHaveBeenCalledWith('Weitergeleitet.', true);
+        unmount();
+    });
+
+    it('gibt dem Antwortfeld den Zustand des Hakens mit', () => {
+        const gesehen: Record<string, unknown>[] = [];
+
+        const { unmount } = flaeche({
+            seite: seite({
+                antwortOffen: true,
+                antwortAnAlle: true,
+                sendetAntwort: true,
+                offene: { message: nachricht(), loading: false, open: vi.fn(), close: vi.fn() } as never,
+            }),
+            antwortFeld: (eigenschaften: Record<string, unknown>) => {
+                gesehen.push(eigenschaften);
+
+                return <p>Antwortfeld</p>;
+            },
+        });
+
+        expect(gesehen[0].replyAll).toBe(true);
+        expect(gesehen[0].sending).toBe(true);
         unmount();
     });
 

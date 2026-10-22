@@ -131,7 +131,7 @@ describe('der Haken füllt, was er verspricht', () => {
         unmount();
     });
 
-    it('gibt alle 39 Werte heraus — und keinen als undefined', async () => {
+    it('gibt alle 40 Werte heraus — und keinen als undefined', async () => {
         /*
          * Der Wächter gegen den Fehler, den dieser Umbau am leichtesten macht:
          * einen Namen in der Rückgabe zu vergessen. TypeScript fängt das an
@@ -148,7 +148,7 @@ describe('der Haken füllt, was er verspricht', () => {
         const erwartet = [
             'amGeoeffneten', 'antwortAnAlle', 'antwortOffen', 'antwortSenden', 'archivKennungen',
             'assistent', 'auswahl', 'beschaeftigt', 'chatQuelle', 'csrf', 'fehler', 'filterOffen',
-            'konto', 'liste', 'nachrichtBeschaeftigt', 'offene', 'offeneKennung', 'ordner',
+            'konto', 'liste', 'melden', 'nachrichtBeschaeftigt', 'offene', 'offeneKennung', 'ordner',
             'ordnerPfad', 'ordnerSichtbar', 'ordnerVerwaltung', 'sammelAktion', 'schlummern',
             'sendetAntwort', 'setAntwortAnAlle', 'setAntwortOffen', 'setFehler', 'setFilterOffen',
             'setKonto', 'setOrdnerPfad', 'setOrdnerSichtbar', 'setWeiterleitenOffen',

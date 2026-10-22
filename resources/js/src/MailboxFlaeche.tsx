@@ -1,5 +1,7 @@
-import { type ReactNode } from 'react';
+import { type ComponentType, type ReactNode } from 'react';
 import { germanLabels } from './germanLabels';
+import type { InlineAntwortProps } from './InlineAntwort';
+import type { WeiterleitenFeldProps } from './inertia/WeiterleitenFeld';
 import { MailAssignmentPicker } from './MailAssignmentPicker';
 import { MailboxBrowser } from './MailboxBrowser';
 import { MailboxChat } from './MailboxChat';
@@ -87,10 +89,27 @@ export interface MailboxFlaecheProps {
     zusatzAktionen?: ReactNode;
     /** Dialoge und Ähnliches, die nach der Seite gezeichnet werden. */
     nachDerSeite?: ReactNode;
-    /** Was statt der Leseansicht erscheint, während geantwortet wird. */
-    antwortFeld?: () => ReactNode;
-    /** Dasselbe für das Weiterleiten. */
-    weiterleitenFeld?: () => ReactNode;
+    /**
+     * Das Antwortfeld — als KOMPONENTE, nicht als fertiger Knoten.
+     *
+     * Der Unterschied ist der Punkt: Alle Eigenschaften, die es braucht
+     * (Konto, Nachricht, „allen antworten", Senden, Abbrechen), kommen aus dem
+     * Haken — die Fläche hat sie also schon. Ein Produkt, das den Knoten
+     * selbst baut, müsste fünfzehn Werte durchreichen, die hier daneben
+     * liegen; und das stand bis zum 22.10.2026 dreimal im Bestand.
+     *
+     * Das Paket bringt eines mit ({@link InlineAntwort}). Wer ein anderes
+     * will, gibt es hier.
+     */
+    antwortFeld?: ComponentType<InlineAntwortProps>;
+    /**
+     * Dasselbe für das Weiterleiten.
+     *
+     * Liegt im Inertia-Einstieg des Pakets ({@link WeiterleitenFeld}) und wird
+     * deshalb hereingegeben statt hier importiert: Diese Fläche kennt kein
+     * Inertia, sie nimmt ihren Router als Eigenschaft.
+     */
+    weiterleitenFeld?: ComponentType<WeiterleitenFeldProps>;
     werkzeugeVerbergen?: (werkzeug: MailWerkzeug) => boolean;
     werkzeugeEigene?: Record<string, () => void>;
 }
@@ -105,14 +124,16 @@ export function MailboxFlaeche({
     vorDerAnsicht,
     zusatzAktionen,
     nachDerSeite,
-    antwortFeld,
-    weiterleitenFeld,
+    antwortFeld: AntwortFeld,
+    weiterleitenFeld: WeiterleitenFeld,
     werkzeugeVerbergen,
     werkzeugeEigene,
 }: MailboxFlaecheProps) {
     const {
         amGeoeffneten,
+        antwortAnAlle,
         antwortOffen,
+        antwortSenden,
         archivKennungen,
         assistent,
         auswahl,
@@ -123,6 +144,7 @@ export function MailboxFlaeche({
         filterOffen,
         konto,
         liste,
+        melden,
         nachrichtBeschaeftigt,
         offene,
         offeneKennung,
@@ -131,6 +153,7 @@ export function MailboxFlaeche({
         ordnerSichtbar,
         ordnerVerwaltung,
         sammelAktion,
+        sendetAntwort,
         setAntwortAnAlle,
         setAntwortOffen,
         setFehler,
@@ -149,6 +172,28 @@ export function MailboxFlaeche({
     } = seite;
 
     const zeigtAssistent = chatVerfuegbar && konto !== null && assistent.sichtbar;
+
+    /*
+     * EIN Lesezugriff auf die geoeffnete Nachricht, mit erklaerter Form.
+     *
+     * Der Haken fuehrt sie absichtlich lose (`unknown`-nah): Was ein Rumpf
+     * enthaelt, entscheidet der Server, und die Ansichten unten nehmen
+     * verschiedene Teile davon. Die Felder, die Antworten und Weiterleiten
+     * brauchen, stehen aber fest — die werden hier einmal benannt, statt an
+     * zehn Stellen je einzeln zugesichert.
+     */
+    const nachricht = offene.message as
+        | {
+              subject?: string;
+              from_name?: string | null;
+              from_address?: string;
+              to?: { email: string; name?: string }[];
+              date?: string;
+              body_html?: string | null;
+              body_text?: string | null;
+              attachments?: { filename: string }[];
+          }
+        | null;
 
     return (
         <>
@@ -314,10 +359,42 @@ export function MailboxFlaeche({
                                         }
                                     }}
                                 >
-                                    {weiterleitenOffen && konto && offene.message && weiterleitenFeld ? (
-                                        weiterleitenFeld()
-                                    ) : antwortOffen && konto && offene.message && antwortFeld ? (
-                                        antwortFeld()
+                                    {weiterleitenOffen && konto && nachricht && WeiterleitenFeld ? (
+                                        /*
+                                         * Die Eigenschaften baut die Flaeche, nicht das Produkt
+                                         * — sie liegen alle im Haken. Weiterleiten holt die
+                                         * Anhaenge der Ursprungsnachricht serverseitig; es
+                                         * reicht der Zeiger darauf (Ordner und Kennung), keine
+                                         * Nutzlast. Eine Weiterleitung mit 20 MB Anhang reist
+                                         * damit nicht zweimal durch die Leitung.
+                                         */
+                                        <WeiterleitenFeld
+                                            account={{ id: konto.id, name: konto.name, email: konto.email }}
+                                            source={{ type: 'imap', folder: ordnerPfad, uid: offeneKennung() }}
+                                            subject={nachricht.subject ?? ''}
+                                            fromName={nachricht.from_name ?? null}
+                                            fromAddress={nachricht.from_address ?? ''}
+                                            toAddresses={nachricht.to ?? []}
+                                            date={nachricht.date ?? ''}
+                                            bodyHtml={nachricht.body_html ?? null}
+                                            bodyText={nachricht.body_text ?? null}
+                                            originalAttachments={nachricht.attachments ?? []}
+                                            endpoints={{ forward: `/mailbox/${konto.id}/forward` }}
+                                            melden={(text) => melden(text, true)}
+                                            onSent={() => setWeiterleitenOffen(false)}
+                                            onCancel={() => setWeiterleitenOffen(false)}
+                                        />
+                                    ) : antwortOffen && konto && nachricht && AntwortFeld ? (
+                                        <AntwortFeld
+                                            account={{ id: konto.id, name: konto.name, email: konto.email }}
+                                            message={offene.message as never}
+                                            replyAll={antwortAnAlle}
+                                            sending={sendetAntwort}
+                                            onSend={(rumpf, an, kopie, betreff, anhaenge, zitatHtml) =>
+                                                void antwortSenden(rumpf, an, kopie, betreff, anhaenge, zitatHtml)
+                                            }
+                                            onCancel={() => setAntwortOffen(false)}
+                                        />
                                     ) : (
                                         <MailMessageView
                                             message={offene.message as never}

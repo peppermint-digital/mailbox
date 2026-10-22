@@ -736,6 +736,13 @@ export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxS
         filterOffen,
         konto,
         liste,
+        /*
+         * Wieder heraus, obwohl es hereinkam: Die Flaeche braucht es fuer das
+         * Weiterleiten-Feld. Gaebe das Produkt es ihr ein zweites Mal, koennten
+         * die beiden auseinanderlaufen — und dann meldet die Antwort anders als
+         * die Weiterleitung.
+         */
+        melden,
         nachrichtBeschaeftigt,
         offene,
         offeneKennung,

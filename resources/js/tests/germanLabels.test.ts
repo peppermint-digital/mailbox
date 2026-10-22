@@ -71,20 +71,29 @@ function pruefeWoerter(gruppe: Record<string, unknown>, pfad = ''): void {
 }
 
 describe('germanLabels', () => {
-    it('bringt alle acht Gruppen mit', () => {
+    it('bringt alle vierzehn Gruppen mit', () => {
         // Faellt eine weg, verliert ein Produkt lautlos seine Woerter und
         // zeigt `undefined` — oder gar nichts.
         //
         // Die Liste ist ausdruecklich und nicht gezaehlt: Ein `length === 7`
         // waere auch gruen, wenn jemand eine Gruppe umbenennt.
         expect(gruppen.map(([name]) => name).sort()).toEqual([
+            // Seit dem 22.10.2026 (#8377): Antworten, Weiterleiten und
+            // Verfassen samt Zitat, Rumpf und Editor-Woertern. Dieselben
+            // Saetze standen in drei Produkten, wortgleich.
+            'antwort',
             'conversation',
+            'editor',
             'folders',
             'header',
             'list',
+            'rumpf',
             'toolbar',
+            'verfassen',
             'view',
+            'weiterleiten',
             'werkzeuge',
+            'zitat',
             // Seit dem 22.10.2026 (#8377): Die Woerter der Zustaendigkeit
             // standen als Literal in jedem Produkt, wortgleich.
             'zuweisung',

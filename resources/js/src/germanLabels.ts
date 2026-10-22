@@ -234,4 +234,143 @@ export const germanLabels = {
         noUsers: 'Niemand verfügbar',
     },
 
+    /**
+     * Die Woerter des Zitats — fuer Antwort und Weiterleitung.
+     *
+     * Stand bis zum 22.10.2026 dreimal im Bestand, wortgleich (#8377).
+     */
+    zitat: {
+        labels: {
+            repliedOn: (datum: string, absender: string) => `Am ${datum} schrieb ${absender}:`,
+            forwardHeadline: '---------- Weitergeleitete Nachricht ----------',
+            from: 'Von:',
+            date: 'Datum:',
+            subject: 'Betreff:',
+            to: 'An:',
+        },
+        formatDate: (iso: string) =>
+            new Date(iso).toLocaleString('de-DE', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+            }),
+    },
+
+    /** Der Rumpf einer Nachricht in Antwort, Weiterleitung und Vorschau. */
+    rumpf: {
+        empty: 'Diese E-Mail hat keinen Inhalt.',
+        remoteBlocked: 'Externe Bilder wurden zum Schutz vor Tracking blockiert.',
+        loadImages: 'Bilder laden',
+        frameTitle: 'E-Mail Inhalt',
+    },
+
+    /** Die Woerter des Verfassen-Formulars. */
+    verfassen: {
+        to: 'An',
+        cc: 'Kopie',
+        bcc: 'Blindkopie',
+        subject: 'Betreff',
+        subjectPlaceholder: 'Worum geht es?',
+        message: 'Nachricht',
+        preview: 'Vorschau',
+        attachments: 'Anhänge',
+        signature: 'Signatur',
+        noSignature: 'Keine',
+        defaultSuffix: ' (Standard)',
+        previewEmpty: 'Noch nichts geschrieben.',
+        dropFiles: 'Dateien hier ablegen',
+        addFile: 'Datei hinzufügen',
+        chooseAccount: 'Absender wählen',
+        send: 'Senden',
+        sending: 'Wird gesendet …',
+        saveDraft: 'Als Entwurf sichern',
+        savingDraft: 'Wird gesichert …',
+        toPlaceholder: 'name@firma.de',
+        ccPlaceholder: 'name@firma.de',
+        bccPlaceholder: 'name@firma.de',
+        /**
+         * Woher ein Empfaengervorschlag kommt.
+         *
+         * Die EINZIGE Stelle, an der die drei Produkte sich wirklich
+         * unterschieden: Im CRM heisst `crm` „CRM", im Brain hiess es
+         * „Adressbuch". Deshalb ist die Woerterliste des Formulars
+         * ueberschreibbar — damit die Zusammenlegung nichts still umbenennt.
+         */
+        source: (quelle: string) => {
+            switch (quelle) {
+                case 'colleague':
+                    return 'Kollege';
+                case 'adressbuch':
+                    return 'Adressbuch';
+                case 'crm':
+                    return 'CRM';
+                default:
+                    return 'Verlauf';
+            }
+        },
+        body: {
+            empty: 'Kein Inhalt',
+            remoteBlocked: 'Externe Bilder wurden zum Schutz vor Tracking blockiert.',
+            loadImages: 'Bilder laden',
+            frameTitle: 'Vorschau',
+        },
+    },
+
+    /** Die Woerter des Antwortfeldes im Postfach. */
+    antwort: {
+        reply: 'Antworten',
+        replyAll: 'Allen antworten',
+        allRecipients: 'Allen',
+        senderOnly: 'Absender',
+        quotedText: 'Zitierter Text',
+    },
+
+    /** Die Woerter der Weiterleitung. */
+    weiterleiten: {
+        forward: 'Weiterleiten',
+        from: 'Von',
+        forwardedMessage: 'Weitergeleitete Nachricht',
+        originalAttachments: (anzahl: number, namen: string) =>
+            anzahl === 1
+                ? `Ein Anhang der Ursprungsnachricht geht mit: ${namen}`
+                : `${anzahl} Anhänge der Ursprungsnachricht gehen mit: ${namen}`,
+        forwarded: 'Weitergeleitet.',
+        draftSaved: 'Entwurf gesichert.',
+        draftFailed: (status: number) => `Entwurf nicht gesichert (Fehler ${status}).`,
+        failed: (status: number) => `Nicht weitergeleitet (Fehler ${status}).`,
+        unknownError: 'Unbekannter Fehler.',
+    },
+
+    /** Die Woerter des Editors. */
+    editor: {
+        bold: 'Fett (Strg+B)',
+        italic: 'Kursiv (Strg+I)',
+        underline: 'Unterstrichen (Strg+U)',
+        strikethrough: 'Durchgestrichen',
+        code: 'Code',
+        heading1: 'Überschrift 1',
+        heading2: 'Überschrift 2',
+        heading3: 'Überschrift 3',
+        bulletList: 'Aufzählung',
+        orderedList: 'Nummerierte Liste',
+        blockquote: 'Zitat',
+        horizontalRule: 'Trennlinie',
+        alignLeft: 'Linksbündig',
+        alignCenter: 'Zentriert',
+        alignRight: 'Rechtsbündig',
+        insertLink: 'Link einfügen',
+        removeLink: 'Link entfernen',
+        linkPrompt: 'Adresse eingeben:',
+        insertImage: 'Bild einfügen (oder ablegen bzw. einfügen)',
+        dropImage: 'Bild hier ablegen',
+        textColor: 'Textfarbe',
+        highlight: 'Markieren',
+        insertTable: 'Tabelle einfügen',
+        undo: 'Rückgängig (Strg+Z)',
+        redo: 'Wiederholen (Strg+Y)',
+    },
+
 } as const;

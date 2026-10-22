@@ -49,6 +49,8 @@ export { default as MailboxSidePanel } from './MailboxSidePanel';
 export * from './httpSources';
 export * from './germanLabels';
 export * from './MailButton';
+export * from './VerfassenFeld';
+export * from './InlineAntwort';
 export * from './MailboxFlaeche';
 export * from './useMailboxSeite';
 export * from './useMailWerkzeuge';
