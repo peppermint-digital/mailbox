@@ -71,7 +71,7 @@ function pruefeWoerter(gruppe: Record<string, unknown>, pfad = ''): void {
 }
 
 describe('germanLabels', () => {
-    it('bringt alle sieben Gruppen mit', () => {
+    it('bringt alle acht Gruppen mit', () => {
         // Faellt eine weg, verliert ein Produkt lautlos seine Woerter und
         // zeigt `undefined` — oder gar nichts.
         //
@@ -85,6 +85,9 @@ describe('germanLabels', () => {
             'toolbar',
             'view',
             'werkzeuge',
+            // Seit dem 22.10.2026 (#8377): Die Woerter der Zustaendigkeit
+            // standen als Literal in jedem Produkt, wortgleich.
+            'zuweisung',
         ]);
     });
 

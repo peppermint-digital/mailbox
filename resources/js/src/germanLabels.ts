@@ -219,4 +219,19 @@ export const germanLabels = {
     header,
     toolbar,
     werkzeuge,
+    /**
+     * Die Woerter der Zustaendigkeit.
+     *
+     * Standen bis zum 22.10.2026 als Literal in jedem Produkt — wortgleich, und
+     * damit dreimal zu pflegen. Beim Vergleich der Mailflaechen (#8377) waren
+     * sie eine der Stellen, die sich nur durch das Kopieren unterschieden
+     * haetten.
+     */
+    zuweisung: {
+        assign: 'Jemandem zuweisen',
+        assignedTo: (name: string) => `Zuständig: ${name}`,
+        unassign: 'Zuweisung aufheben',
+        noUsers: 'Niemand verfügbar',
+    },
+
 } as const;

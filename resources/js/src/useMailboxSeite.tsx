@@ -763,3 +763,15 @@ export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxS
         zuweisungen,
     };
 }
+
+/**
+ * Was der Haken herausgibt — abgeleitet, nicht zweitgeschrieben.
+ *
+ * Eine Hand gepflegte Schnittstelle daneben waere eine zweite Wahrheit: Sie
+ * stimmt beim Anlegen und laeuft beim ersten neuen Wert auseinander. `ReturnType`
+ * kann nicht veralten.
+ *
+ * Gebraucht wird der Name von {@link MailboxFlaeche}, die den ganzen Satz als
+ * EINEN Wert annimmt statt als neununddreissig Eigenschaften.
+ */
+export type MailboxSeiteErgebnis = ReturnType<typeof useMailboxSeite>;
