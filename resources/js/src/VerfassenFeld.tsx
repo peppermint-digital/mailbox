@@ -66,15 +66,26 @@ function Editor(eigenschaften: { value: string; onChange: (wert: string) => void
     return <RichTextEditor {...eigenschaften} labels={germanLabels.editor} />;
 }
 
-export type VerfassenFeldProps = Omit<EmailComposerFormProps, 'labels' | 'editor'> &
+export type VerfassenFeldProps = Omit<EmailComposerFormProps, 'labels' | 'editor' | 'recipients' | 'signatureSource'> &
+    /*
+     * Adressquelle und Signaturen sind OPTIONAL, nicht weggenommen: Die Vorgabe
+     * deckt alle vier Produkte, aber ein Produkt mit eigenem Adressvorrat soll
+     * sie ersetzen können, ohne diese Hülle zu umgehen.
+     *
+     * Dass beide hier noch einmal auftauchen müssen, hat einen Grund: Ein
+     * `Omit<…> & Partial<Pick<…>>` ohne das Omit macht sie NICHT optional — der
+     * erste Teil verlangt sie weiter. Genau daran fiel der CRM-Übersetzer
+     * (TS2739, 22.10.2026).
+     */
     Partial<Pick<EmailComposerFormProps, 'recipients' | 'signatureSource'>> & {
         /**
          * Einzelne Wörter überschreiben.
          *
-         * Gebraucht für genau eine Stelle: Im CRM heißt die Quelle `crm`
-         * „CRM", im Brain hieß sie „Adressbuch". Ohne diese Möglichkeit hätte
-         * die Zusammenlegung ein Wort still umbenannt — und das ist der
-         * Unterschied zwischen einer Entdopplung und einer Änderung.
+         * Heute braucht es das kein Produkt — nachgemessen: Nur das CRM gibt
+         * `source: 'crm'` überhaupt aus, in Verwaltung und Brain war ihr
+         * abweichendes Wort toter Code. Die Möglichkeit bleibt trotzdem: Ein
+         * Paket, das Sätze ausliefert, liefert eine Sprache aus, und die muss
+         * ein Produkt ändern können, ohne die Hülle zu umgehen.
          */
         labels?: Partial<EmailComposerFormLabels>;
     };
