@@ -2,6 +2,7 @@
 
 namespace Peppermint\Mailbox;
 
+use Peppermint\Mailbox\Contracts\AccountStore;
 use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Contracts\TokenRefresher;
 use Peppermint\Mailbox\Imap\MailboxClient;
@@ -73,10 +74,42 @@ final class Mailboxes
             return (self::$fake)($account);
         }
 
+        $ablage = self::ablage();
+
         if ($account->usesJmap()) {
-            return new JmapClient(account: $account, refresher: $refresher);
+            return new JmapClient(account: $account, refresher: $refresher, ablage: $ablage);
         }
 
-        return new MailboxClient(account: $account, refresher: $refresher);
+        return new MailboxClient(account: $account, refresher: $refresher, ablage: $ablage);
+    }
+
+    /**
+     * Die Kontenablage der Anwendung, falls es eine gibt.
+     *
+     * Damit bekommt jedes Produkt die Auffrischung nach einer abgelehnten
+     * Anmeldung (#1098), ohne eine einzige Aufrufstelle zu aendern — die
+     * Ablage ist bereits im Behaelter registriert, und sie allein weiss, ob
+     * sie ueberhaupt etwas zwischenspeichert.
+     *
+     * Bewusst defensiv: Diese Klasse wird auch ohne laufende Anwendung
+     * benutzt — in Tests des Pakets und in einem Produkt, das sich seine
+     * Clients selbst baut. Ein `app()` ohne Behaelter waere dort ein Fehler
+     * an einer Stelle, die mit Postfaechern nichts zu tun hat.
+     */
+    private static function ablage(): ?AccountStore
+    {
+        if (! function_exists('app')) {
+            return null;
+        }
+
+        try {
+            $container = app();
+
+            return $container->bound(AccountStore::class)
+                ? $container->make(AccountStore::class)
+                : null;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

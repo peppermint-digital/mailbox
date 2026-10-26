@@ -6,9 +6,12 @@ use DirectoryTree\ImapEngine\Mailbox as ImapEngineMailbox;
 use DirectoryTree\ImapEngine\MailboxInterface;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
+use Peppermint\Mailbox\Accounts\Kontenauffrischung;
 use Peppermint\Mailbox\Content\RohFassung;
+use Peppermint\Mailbox\Contracts\AccountStore;
 use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Contracts\TokenRefresher;
+use Peppermint\Mailbox\Contracts\VerwirftKonten;
 use Peppermint\Mailbox\Folders\FolderNames;
 use Peppermint\Mailbox\Index\Kopfzeilenverzeichnis;
 use Peppermint\Mailbox\Models\MailAccount;
@@ -51,6 +54,15 @@ class MailboxClient implements Mailbox
      */
     private mixed $open = null;
 
+    /**
+     * Das neu gelesene Konto nach einer abgelehnten Anmeldung, oder null.
+     *
+     * Nicht `readonly` und bewusst kein Ersatz für `$account`: Der Client wird
+     * mit einem Konto gebaut, und was danach kommt, ist eine Korrektur dieses
+     * einen Feldes — sichtbar an genau einer Stelle, {@see konto()}.
+     */
+    private ?MailAccount $aufgefrischt = null;
+
     public function __construct(
         private readonly MailAccount $account,
         private readonly ?TokenRefresher $refresher = null,
@@ -75,6 +87,16 @@ class MailboxClient implements Mailbox
          * ein Produkt mit eigener Ablage seine eigene mitbringen kann.
          */
         private readonly Kopfzeilenverzeichnis $verzeichnis = new Kopfzeilenverzeichnis,
+        /**
+         * Woher die Konten kommen — nur gebraucht, wenn sie woanders gepflegt
+         * werden und hier zwischengespeichert liegen (#1098).
+         *
+         * Ohne diese Angabe verhält sich der Client wie bisher: Eine
+         * abgelehnte Anmeldung ist dann endgültig. Mit ihr, und wenn die
+         * Ablage {@see VerwirftKonten} umsetzt, wird der gespeicherte Stand
+         * einmal verworfen und neu gelesen.
+         */
+        private readonly ?AccountStore $ablage = null,
     ) {
         if (! $connector && ! class_exists(ImapEngineMailbox::class)) {
             throw new RuntimeException(
@@ -121,6 +143,53 @@ class MailboxClient implements Mailbox
             return $work($this->open);
         }
 
+        try {
+            return $this->sitzung($work);
+        } catch (\Throwable $fehler) {
+            /*
+             * Eine abgelehnte Anmeldung kann an einem Zugangsstand liegen, den
+             * das Produkt zwischengespeichert hat (#1098). Dann — und nur dann
+             * — wird er verworfen, neu gelesen und GENAU EINMAL wiederholt.
+             *
+             * Der zweite Versuch steht ausserhalb des `try`: Scheitert auch er,
+             * gibt es keinen dritten. Das ist die ganze Begrenzung, und sie
+             * steht hier statt in einem Zaehler, weil ein Zaehler eine Stelle
+             * waere, an der man sich verzaehlen kann.
+             */
+            if ($this->aufgefrischt !== null) {
+                // Schon einmal aufgefrischt. Die Mitte praegt bei JEDEM Lesen
+                // ein neues Token, ein zweiter Durchgang saehe deshalb wieder
+                // eine Aenderung und wuerde weiterlaufen — einmal pro Client
+                // ist die Grenze, nicht einmal pro Anfrage.
+                throw $fehler;
+            }
+
+            $frisch = Kontenauffrischung::nachAblehnung($fehler, $this->ablage, $this->konto());
+
+            if ($frisch === null) {
+                throw $fehler;
+            }
+
+            $this->aufgefrischt = $frisch;
+
+            return $this->sitzung($work);
+        }
+    }
+
+    /**
+     * Eine Sitzung, mit den Wiederholungen der {@see RetryPolicy}.
+     *
+     * Herausgeloest, damit der zweite Versuch nach einer Ablehnung dieselbe
+     * Mechanik bekommt wie der erste — und nicht eine zweite, die daneben
+     * altert.
+     *
+     * @template T
+     *
+     * @param  callable(mixed): T  $work
+     * @return T
+     */
+    private function sitzung(callable $work): mixed
+    {
         $policy = $this->retry ?? new RetryPolicy;
 
         return $policy->run(function () use ($work) {
@@ -134,6 +203,18 @@ class MailboxClient implements Mailbox
                 $mailbox->disconnect();
             }
         }, $this->onRetry);
+    }
+
+    /**
+     * Das Konto, mit dem verbunden wird.
+     *
+     * Nach einer Auffrischung ist das ein anderes Objekt als das, mit dem der
+     * Client gebaut wurde — deshalb darf `$this->account` nirgends direkt für
+     * den Verbindungsaufbau gelesen werden.
+     */
+    private function konto(): MailAccount
+    {
+        return $this->aufgefrischt ?? $this->account;
     }
 
     /**
@@ -1562,11 +1643,13 @@ class MailboxClient implements Mailbox
     {
         // Before connecting, not after failing: an expired token looks exactly
         // like a wrong password from the outside.
-        if ($this->refresher && $this->account->usesOAuth() && $this->account->isTokenExpiringSoon()) {
-            $this->refresher->ensureFresh($this->account);
+        $konto = $this->konto();
+
+        if ($this->refresher && $konto->usesOAuth() && $konto->isTokenExpiringSoon()) {
+            $this->refresher->ensureFresh($konto);
         }
 
-        $settings = ConnectionSettings::for($this->account, $this->timeout)->values;
+        $settings = ConnectionSettings::for($konto, $this->timeout)->values;
 
         return $this->connector ? ($this->connector)($settings) : ImapEngineMailbox::make($settings);
     }

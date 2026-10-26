@@ -6,8 +6,11 @@ use Peppermint\Mailbox\Content\RohFassung;
 use Closure;
 use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
+use Peppermint\Mailbox\Accounts\Kontenauffrischung;
+use Peppermint\Mailbox\Contracts\AccountStore;
 use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Contracts\TokenRefresher;
+use Peppermint\Mailbox\Contracts\VerwirftKonten;
 use Peppermint\Mailbox\Folders\FolderNames;
 use Peppermint\Mailbox\Imap\FolderPaths;
 use Peppermint\Mailbox\Imap\FolderResolver;
@@ -55,6 +58,14 @@ class JmapClient implements Mailbox
 
     private bool $batching = false;
 
+    /**
+     * Das neu gelesene Konto nach einer abgelehnten Anmeldung, oder null.
+     *
+     * Siehe {@see konto()} — der Verbindungsweg liest NUR dort, damit eine
+     * Auffrischung nicht an einer vergessenen Stelle vorbeilaeuft.
+     */
+    private ?MailAccount $aufgefrischt = null;
+
     public function __construct(
         private readonly MailAccount $account,
         private readonly ?TokenRefresher $refresher = null,
@@ -69,6 +80,15 @@ class JmapClient implements Mailbox
         private readonly ?Closure $sender = null,
         private readonly JmapMessageFormatter $formatter = new JmapMessageFormatter,
         private readonly int $timeout = 30,
+        /**
+         * Woher die Konten kommen — nur gebraucht, wenn sie woanders gepflegt
+         * werden und hier zwischengespeichert liegen (#1098).
+         *
+         * Ohne diese Angabe verhaelt sich der Client wie bisher. Mit ihr, und
+         * wenn die Ablage {@see VerwirftKonten} umsetzt, wird der gespeicherte
+         * Stand nach einer abgelehnten Anmeldung einmal verworfen.
+         */
+        private readonly ?AccountStore $ablage = null,
     ) {
         if (! $sender && ! class_exists(Http::class)) {
             throw new RuntimeException('JMAP needs an HTTP client; none is available.');
@@ -926,7 +946,7 @@ class JmapClient implements Mailbox
             throw new RuntimeException("Folder not found: {$folder}");
         }
 
-        $hochgeladen = ($this->sender ?? $this->defaultSender())(
+        $hochgeladen = $this->senden(
             'POST_RAW',
             str_replace('{accountId}', rawurlencode($this->session()->accountId), $this->session()->uploadUrl),
             ['__raw' => $raw, '__type' => 'message/rfc822'],
@@ -1109,7 +1129,7 @@ class JmapClient implements Mailbox
             return null;
         }
 
-        $antwort = ($this->sender ?? $this->defaultSender())(
+        $antwort = $this->senden(
             'GET',
             $this->session()->blobUrl($blobId, $name, $type),
             [],
@@ -1230,7 +1250,7 @@ class JmapClient implements Mailbox
      */
     private function call(array $methodCalls): array
     {
-        $antwort = ($this->sender ?? $this->defaultSender())(
+        $antwort = $this->senden(
             'POST',
             $this->session()->apiUrl,
             [
@@ -1276,13 +1296,15 @@ class JmapClient implements Mailbox
             return $this->session;
         }
 
-        if ($this->refresher && $this->account->usesOAuth() && $this->account->isTokenExpiringSoon()) {
-            $this->refresher->ensureFresh($this->account);
+        $konto = $this->konto();
+
+        if ($this->refresher && $konto->usesOAuth() && $konto->isTokenExpiringSoon()) {
+            $this->refresher->ensureFresh($konto);
         }
 
-        $dokument = ($this->sender ?? $this->defaultSender())(
+        $dokument = $this->senden(
             'GET',
-            JmapSession::urlFor($this->account),
+            JmapSession::urlFor($konto),
             [],
             $this->headers(),
         );
@@ -1291,12 +1313,76 @@ class JmapClient implements Mailbox
     }
 
     /**
+     * Eine HTTP-Anfrage — und nach einer abgelehnten Anmeldung genau eine zweite.
+     *
+     * Alle vier Sendestellen des Clients laufen hier durch (Sitzung, API-Aufruf,
+     * Blob-Abruf, Upload). Das ist Absicht: Haette jede ihre eigene Behandlung,
+     * waere die Auffrischung an drei Stellen richtig und an einer vergessen.
+     *
+     * ## Warum der zweite Versuch ausserhalb des `try` steht
+     *
+     * Weil es damit keinen dritten geben KANN. Ein Zaehler waere die
+     * Alternative, und ein Zaehler ist eine Stelle, an der man sich verzaehlt.
+     *
+     * @param  array<string, mixed>  $payload
+     * @param  array<string, string>  $headers
+     * @return array<string, mixed>
+     */
+    private function senden(string $method, string $url, array $payload, array $headers): array
+    {
+        $sender = $this->sender ?? $this->defaultSender();
+
+        try {
+            return $sender($method, $url, $payload, $headers);
+        } catch (\Throwable $fehler) {
+            if ($this->aufgefrischt !== null) {
+                // Schon einmal aufgefrischt. Die Mitte praegt bei JEDEM Lesen
+                // ein neues Token, ein zweiter Durchgang saehe deshalb wieder
+                // eine Aenderung und wuerde weiterlaufen — einmal pro Client
+                // ist die Grenze, nicht einmal pro Anfrage.
+                throw $fehler;
+            }
+
+            $frisch = Kontenauffrischung::nachAblehnung($fehler, $this->ablage, $this->konto());
+
+            if ($frisch === null) {
+                throw $fehler;
+            }
+
+            $this->aufgefrischt = $frisch;
+
+            /*
+             * Die Sitzung traegt das alte Token in ihren Kopfzeilen und ihre
+             * URLs stammen aus einer Antwort, die mit diesem Token geholt
+             * wurde. Sie zu behalten hiesse, den zweiten Versuch mit den
+             * Zugangsdaten des ersten zu fuehren.
+             */
+            $this->session = null;
+
+            return $sender($method, $url, $payload, $this->headers());
+        }
+    }
+
+    /**
+     * Das Konto, mit dem gesprochen wird.
+     *
+     * Nach einer Auffrischung ein anderes Objekt als das, mit dem der Client
+     * gebaut wurde — deshalb liest der Verbindungsweg nur hier.
+     */
+    private function konto(): MailAccount
+    {
+        return $this->aufgefrischt ?? $this->account;
+    }
+
+    /**
      * @return array<string, string>
      */
     private function headers(): array
     {
-        if ($this->account->usesOAuth()) {
-            $token = $this->account->field('oauth_access_token');
+        $konto = $this->konto();
+
+        if ($konto->usesOAuth()) {
+            $token = $konto->field('oauth_access_token');
 
             if (! is_string($token) || $token === '') {
                 // The same rule as on the IMAP side: a mailbox without a token
@@ -1307,8 +1393,8 @@ class JmapClient implements Mailbox
             return ['Authorization' => 'Bearer '.$token];
         }
 
-        $benutzer = $this->account->field('username') ?: $this->account->field('email');
-        $kennwort = (string) $this->account->field('password');
+        $benutzer = $konto->field('username') ?: $konto->field('email');
+        $kennwort = (string) $konto->field('password');
 
         return ['Authorization' => 'Basic '.base64_encode($benutzer.':'.$kennwort)];
     }
