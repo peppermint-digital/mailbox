@@ -118,3 +118,54 @@ it('behandelt eine Liste aus leeren Einträgen wie keine Liste', function () {
         ->and($mitEchter->sichtbarFuer(''))->toBeFalse()
         ->and($mitEchter->sichtbarFuer('   '))->toBeFalse();
 });
+
+/*
+ * Erklaert statt erraten (#8941).
+ *
+ * Der Test oben — „sperrt niemanden aus, wenn die Gegenstelle den Besitzer gar
+ * nicht nennt" — bleibt unveraendert gueltig und steht bewusst daneben: Ohne
+ * Zusage aendert sich nichts. Die folgenden drei pruefen, was MIT Zusage gilt.
+ */
+
+it('sperrt bei ZUGESAGTER Vollstaendigkeit aus, wenn der Besitzer fehlt', function () {
+    /*
+     * Die eigentliche Lücke: Eine Gegenstelle, die sagt „ich kenne Besitzer und
+     * Leseliste", nennt ein persönliches Postfach ohne Besitzer. Vorher war das
+     * ein Freibrief für jeden Angemeldeten — und genau so fällt ein
+     * persönlicher Posteingang der Belegschaft in die Hände.
+     */
+    $k = sichtbarkeitsKonto(['user_id' => 7, 'sichtbarkeit_verbindlich' => true]);
+
+    expect($k->sichtbarFuer('irgendwer@example.test'))->toBeFalse()
+        ->and($k->sichtbarkeitVerbindlich())->toBeTrue();
+});
+
+it('zeigt bei zugesagter Vollstaendigkeit weiterhin dem Besitzer', function () {
+    // Die Gegenprobe. Eine Regel, die nur noch aussperrt, bestuende den Test
+    // oben auch — und waere kaputt.
+    $k = sichtbarkeitsKonto([
+        'user_id' => 7,
+        'owner_email' => 'chris@example.test',
+        'sichtbarkeit_verbindlich' => true,
+    ]);
+
+    expect($k->sichtbarFuer('chris@example.test'))->toBeTrue()
+        ->and($k->sichtbarFuer('jemand.anderes@example.test'))->toBeFalse();
+});
+
+it('laesst ein Gruppenpostfach ohne Leseliste auch mit Zusage fuer alle offen', function () {
+    /*
+     * Die Zusage verschaerft NUR die Lücke beim Besitzer. „Keine Leseliste
+     * heisst fuer alle" ist kein Loch, sondern eine Aussage — die Mitte
+     * schickt die leere Liste ausdruecklich mit.
+     */
+    $k = sichtbarkeitsKonto(['sichtbarkeit_verbindlich' => true]);
+
+    expect($k->sichtbarFuer('irgendwer@example.test'))->toBeTrue();
+});
+
+it('behandelt eine fehlende Zusage wie ein ausdrueckliches Nein', function () {
+    // Kein Dritter Zustand: Was nicht zugesagt ist, gilt als nicht zugesagt.
+    expect(sichtbarkeitsKonto(['user_id' => 7])->sichtbarkeitVerbindlich())->toBeFalse()
+        ->and(sichtbarkeitsKonto(['user_id' => 7, 'sichtbarkeit_verbindlich' => false])->sichtbarFuer('x@example.test'))->toBeTrue();
+});

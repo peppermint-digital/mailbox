@@ -63,6 +63,36 @@ edits the wrong copy on the next rotation.
 The central store is read-only: changes belong where the truth lives. Ask
 `AccountStore::isWritable()` before offering an edit form.
 
+### Declaring that visibility is complete
+
+A store that really knows who owns a mailbox and who may read it says so, with
+one field in the payload:
+
+```php
+'sichtbarkeit_verbindlich' => true,
+```
+
+It changes what a *gap* means. Without the declaration, a personal mailbox that
+arrives without `owner_email` stays visible — an older counterpart, or a grown
+table, simply does not ship the field, and a product that does not get the
+answer should not silently hide everything. With the declaration, the same gap
+means the opposite: whoever claims to know the owner and then names none has a
+hole in the payload, and a hole is not a licence on someone else's inbox.
+
+The declaration is explicit and absent by default. A store that does not set it
+behaves exactly as before — nothing changes for anyone who does not opt in.
+
+**Why not infer it from the key being present?** The central payload always
+carries `owner_email`, with `null` for group mailboxes. "Does not know" and
+"knows and has a gap" would look identical.
+
+It tightens the owner case only. An empty reader list still means *everyone*:
+that is a statement, not a gap, and the centre sends it deliberately.
+
+**For a product:** only once a store declares this may you rely on the centre
+alone for visibility. Until then, keep whatever local check you have beside it —
+see the two-part check in the manager's mail browser for the shape of that.
+
 ### When the central system is down
 
 The lookup freezes on the last known good state instead of failing. Only

@@ -244,10 +244,42 @@ class MailAccount extends Model
         $besitzer = $this->field('owner_email');
 
         if ($besitzer === null || $besitzer === '') {
-            return true;
+            /*
+             * Hier entscheidet, ob die Gegenstelle sich fuer vollstaendig
+             * ERKLAERT hat — geraten wird nicht mehr (#8941).
+             *
+             * Ohne Zusage bleibt es beim bisherigen Verhalten: sichtbar. Eine
+             * aeltere Gegenstelle und die eigene Tabelle liefern `owner_email`
+             * gar nicht, und ein Produkt, das die Angabe nicht bekommt, soll
+             * nicht stillschweigend alles ausblenden.
+             *
+             * MIT Zusage ist dieselbe Luecke das Gegenteil: Wer sagt, er kenne
+             * Besitzer und Leseliste, und dann keinen Besitzer nennt, hat ein
+             * Loch in der Nutzlast — und ein Loch ist kein Freibrief auf einen
+             * fremden Posteingang.
+             *
+             * Warum nicht an der Anwesenheit des Schluessels erkennbar: Die
+             * Nutzlast der Mitte traegt `owner_email` IMMER, bei
+             * Gruppenpostfaechern mit null. „Weiss es nicht" und „weiss es und
+             * hat eine Luecke" saehen damit gleich aus.
+             */
+            return ! $this->sichtbarkeitVerbindlich();
         }
 
         return $email !== null && mb_strtolower($email) === mb_strtolower((string) $besitzer);
+    }
+
+    /**
+     * Hat die Gegenstelle zugesagt, Besitzer und Leseliste vollstaendig zu kennen?
+     *
+     * Die Zusage ist ausdruecklich und standardmaessig NICHT gegeben: Ein
+     * Speicher, der sie nicht setzt, verhaelt sich wie bisher. Gesetzt wird sie
+     * von einer Quelle, die beides wirklich fuehrt — in AI Brain vom
+     * Postfach-Uebersetzer.
+     */
+    public function sichtbarkeitVerbindlich(): bool
+    {
+        return (bool) $this->field('sichtbarkeit_verbindlich');
     }
 
     /**
