@@ -39,7 +39,7 @@ interface Werkzeugquelle
      * Ein Werkzeug DRUEBEN ausloesen.
      *
      * @param  array<string, mixed>  $daten
-     * @return array<string, mixed>  Rohform von {@see Ergebnis::aus()}
+     * @return array<string, mixed> Rohform von {@see Ergebnis::aus()}
      */
     public function ausloesen(string $slug, string $schluessel, Vorgang $vorgang, array $daten, string $adresse): array;
 }

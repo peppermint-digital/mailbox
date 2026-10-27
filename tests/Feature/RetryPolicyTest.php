@@ -7,7 +7,9 @@ function wiederholung(array &$gewartet, int $maxRetries = 5): RetryPolicy
 {
     return new RetryPolicy(
         maxRetries: $maxRetries,
-        sleeper: function (float $sekunden) use (&$gewartet) { $gewartet[] = $sekunden; },
+        sleeper: function (float $sekunden) use (&$gewartet) {
+            $gewartet[] = $sekunden;
+        },
         jitter: fn () => 0.0,
     );
 }

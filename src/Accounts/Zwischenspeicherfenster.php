@@ -3,6 +3,7 @@
 namespace Peppermint\Mailbox\Accounts;
 
 use Illuminate\Support\Facades\Log;
+use Peppermint\Mailbox\Stores\MergedAccountStore;
 
 /**
  * Wie lange ein Produkt einen Kontenstand aus der Mitte halten darf.
@@ -25,7 +26,7 @@ use Illuminate\Support\Facades\Log;
  *
  * ## Warum hier gedeckelt wird und nicht nur gewarnt
  *
- * {@see \Peppermint\Mailbox\Accounts\Kontenauffrischung} fängt den Fall ab,
+ * {@see Kontenauffrischung} fängt den Fall ab,
  * wenn er eingetreten ist: abgelehnte Anmeldung, Stand wegwerfen, einmal neu
  * lesen. Das ist eine Reparatur, und sie kostet pro Fenster einen sichtbaren
  * Fehlversuch. Der Deckel ist die Vermeidung.
@@ -43,7 +44,7 @@ use Illuminate\Support\Facades\Log;
  * Gesucht war eine Zusicherung („jedes Token gilt mindestens N Minuten"), kein
  * Zeitpunkt. Ein mitgeschickter Ablauf wäre beim Lesen aus dem
  * Zwischenspeicher schon veraltet — genau deshalb setzt die PAIRS-Regel in
- * {@see \Peppermint\Mailbox\Stores\MergedAccountStore} `oauth_token_expires_at`
+ * {@see MergedAccountStore} `oauth_token_expires_at`
  * bewusst auf null. Die Zusicherung ist eine Konstante und steht hier; sie
  * SPIEGELT die der Mitte, sie liest sie nicht. Ändert sich dort die
  * Mindestlaufzeit, muss sie hier nachgezogen werden — ein Paket, das AI Brain

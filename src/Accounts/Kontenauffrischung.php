@@ -5,6 +5,7 @@ namespace Peppermint\Mailbox\Accounts;
 use Peppermint\Mailbox\Contracts\AccountStore;
 use Peppermint\Mailbox\Contracts\VerwirftKonten;
 use Peppermint\Mailbox\Exceptions\AnmeldungAbgelehnt;
+use Peppermint\Mailbox\Exceptions\NichtErreichbar;
 use Peppermint\Mailbox\Models\MailAccount;
 use Throwable;
 
@@ -17,7 +18,7 @@ use Throwable;
  * gleich verhalten. Läge die Entscheidung in beiden Clients, liefe sie
  * auseinander — und zwar still, weil ein Produkt meist nur einen der beiden
  * Transporte benutzt und die Abweichung deshalb niemandem auffällt. Dieselbe
- * Begründung wie bei {@see \Peppermint\Mailbox\Exceptions\NichtErreichbar}.
+ * Begründung wie bei {@see NichtErreichbar}.
  *
  * ## Die drei Bedingungen, und warum jede einzelne nötig ist
  *

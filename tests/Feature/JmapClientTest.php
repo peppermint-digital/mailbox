@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Facades\Http;
 use Peppermint\Mailbox\Jmap\JmapClient;
 use Peppermint\Mailbox\Models\MailAccount;
 
@@ -497,7 +498,7 @@ describe('wenn der Server einen Fehler schickt', function () {
     beforeEach(function () {
         // Kein Aufruf darf hinaus. Ohne diesen Riegel geht eine nicht
         // gematchte Anfrage WIRKLICH ins Netz — gegen den Produktionsserver.
-        Illuminate\Support\Facades\Http::preventStrayRequests();
+        Http::preventStrayRequests();
     });
 
     function jmapEchterKlient(): JmapClient
@@ -510,8 +511,8 @@ describe('wenn der Server einen Fehler schickt', function () {
     }
 
     it('nennt den Grund, den der Server mitgeschickt hat', function () {
-        Illuminate\Support\Facades\Http::fake([
-            '*' => Illuminate\Support\Facades\Http::response(
+        Http::fake([
+            '*' => Http::response(
                 '{"type":"urn:ietf:params:jmap:error:unknownCapability","status":400,"detail":"Das Postfach kennt die Faehigkeit nicht."}',
                 400,
             ),
@@ -524,8 +525,8 @@ describe('wenn der Server einen Fehler schickt', function () {
     it('sagt es ausdruecklich, wenn der Server GAR keinen Grund mitschickt', function () {
         // Sonst steht da „Antwort:" und nichts dahinter, und man sucht an der
         // falschen Stelle weiter.
-        Illuminate\Support\Facades\Http::fake([
-            '*' => Illuminate\Support\Facades\Http::response('', 400),
+        Http::fake([
+            '*' => Http::response('', 400),
         ]);
 
         expect(fn () => jmapEchterKlient()->folders())
@@ -533,8 +534,8 @@ describe('wenn der Server einen Fehler schickt', function () {
     });
 
     it('kuerzt eine ausufernde Antwort, statt die Meldung zu sprengen', function () {
-        Illuminate\Support\Facades\Http::fake([
-            '*' => Illuminate\Support\Facades\Http::response(str_repeat('x', 5000), 400),
+        Http::fake([
+            '*' => Http::response(str_repeat('x', 5000), 400),
         ]);
 
         try {

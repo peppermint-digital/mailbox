@@ -2,6 +2,8 @@
 
 namespace Peppermint\Mailbox\Werkzeuge;
 
+use Peppermint\Mailbox\Http\HandlesAssignments;
+
 /**
  * Die Mail, an der ein Werkzeug ansetzt — so benannt, dass JEDES System sie
  * wiedererkennt.
@@ -50,7 +52,7 @@ final class Vorgang
      * Aus dem, was die Oberflaeche mitschickt.
      *
      * Die Kette wird NICHT hier aus den Kopfzeilen errechnet. Das tut
-     * {@see \Peppermint\Mailbox\Http\HandlesAssignments::threadKeyFor()} — mit
+     * {@see HandlesAssignments::threadKeyFor()} — mit
      * dem Wissen des Produkts, das mehr sein kann als das des Pakets (der
      * Projekt-Manager fuehrt ein Kopfzeilen-Verzeichnis und findet die Wurzel
      * auch ohne `In-Reply-To`). Zwei Stellen, die dieselbe Entscheidung

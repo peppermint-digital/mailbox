@@ -2,6 +2,9 @@
 
 namespace Peppermint\Mailbox\Contracts;
 
+use Peppermint\Mailbox\Stores\BrainVerlaufsspeicher;
+use Peppermint\Mailbox\Stores\LokalerVerlaufsspeicher;
+
 /**
  * Woher der Gespraechsverlauf kommt.
  *
@@ -15,8 +18,8 @@ namespace Peppermint\Mailbox\Contracts;
  * wie bei {@see AccountStore}: Wer ihn selbst fuehrt, liest lokal; wer nicht,
  * fragt die Mitte.
  *
- * - {@see \Peppermint\Mailbox\Stores\LokalerVerlaufsspeicher} — eigene Tabellen
- * - {@see \Peppermint\Mailbox\Stores\BrainVerlaufsspeicher} — ueber die Bridge
+ * - {@see LokalerVerlaufsspeicher} — eigene Tabellen
+ * - {@see BrainVerlaufsspeicher} — ueber die Bridge
  *
  * ## Warum nicht einfach die Tabellen mitliefern
  *

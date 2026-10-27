@@ -2,6 +2,7 @@
 
 namespace Peppermint\Mailbox\Imap;
 
+use Peppermint\Mailbox\Contracts\TokenRefresher;
 use Peppermint\Mailbox\Exceptions\MissingAccessToken;
 use Peppermint\Mailbox\Models\MailAccount;
 
@@ -32,7 +33,7 @@ class ConnectionSettings
      * Builds the settings for an account.
      *
      * Expects any OAuth refresh to have happened already — see
-     * {@see \Peppermint\Mailbox\Contracts\TokenRefresher}.
+     * {@see TokenRefresher}.
      */
     public static function for(MailAccount $account, int $timeout = 120): self
     {

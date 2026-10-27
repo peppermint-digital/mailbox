@@ -2,6 +2,7 @@
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
+
 uses(RefreshDatabase::class);
 
 it('legt das Verzeichnis an, auch wenn die Paket-Migrationen abgeschaltet sind', function () {

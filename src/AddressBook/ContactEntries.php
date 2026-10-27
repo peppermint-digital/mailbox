@@ -2,7 +2,6 @@
 
 namespace Peppermint\Mailbox\AddressBook;
 
-
 /**
  * Der Teil des Adressbuchs, den alle Produkte gemeinsam haben: der gepflegte
  * Kontaktbestand aus `peppermint/contacts`.

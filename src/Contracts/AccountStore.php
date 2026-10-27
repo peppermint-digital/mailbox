@@ -4,6 +4,8 @@ namespace Peppermint\Mailbox\Contracts;
 
 use Illuminate\Support\Collection;
 use Peppermint\Mailbox\Models\MailAccount;
+use Peppermint\Mailbox\Stores\BrainAccountStore;
+use Peppermint\Mailbox\Stores\LocalAccountStore;
 
 /**
  * Where mailbox settings come from.
@@ -18,9 +20,9 @@ use Peppermint\Mailbox\Models\MailAccount;
  *
  * ## The two implementations
  *
- * - {@see \Peppermint\Mailbox\Stores\LocalAccountStore} — own table. The
+ * - {@see LocalAccountStore} — own table. The
  *   default; runs standalone.
- * - {@see \Peppermint\Mailbox\Stores\BrainAccountStore} — read centrally from
+ * - {@see BrainAccountStore} — read centrally from
  *   AI Brain, cached locally on the last known good state.
  *
  * The Brain store is an offer, never a requirement: this package is meant to

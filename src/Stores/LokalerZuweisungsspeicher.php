@@ -2,7 +2,9 @@
 
 namespace Peppermint\Mailbox\Stores;
 
+use Illuminate\Database\Eloquent\Builder;
 use Peppermint\Mailbox\Contracts\Zuweisungsspeicher;
+use Peppermint\Mailbox\Http\HandlesAssignments;
 use Peppermint\Mailbox\Models\MailAssignment;
 use Peppermint\Mailbox\Zustand\Person;
 use Peppermint\Mailbox\Zustand\Zuweisung;
@@ -12,7 +14,7 @@ use Peppermint\Mailbox\Zustand\Zuweisungsliste;
  * Zuweisungen in der eigenen Tabelle.
  *
  * Das ist genau das Verhalten, das bis zum 19.10.2026 direkt in
- * {@see \Peppermint\Mailbox\Http\HandlesAssignments} stand — unveraendert
+ * {@see HandlesAssignments} stand — unveraendert
  * hierher gezogen, damit die Umstellung auf den Vertrag an keiner Stelle
  * etwas anderes TUT. Wer den Speicher nicht umschaltet, merkt von diesem
  * Umbau nichts.
@@ -113,7 +115,7 @@ class LokalerZuweisungsspeicher implements Zuweisungsspeicher
      * Die Suche nach der Nachricht bleibt neben der Kette stehen, damit auch
      * Zuweisungen ohne Kettenkennung gefunden werden.
      *
-     * @return \Illuminate\Database\Eloquent\Builder<MailAssignment>
+     * @return Builder<MailAssignment>
      */
     private function frage(int $konto, string $nachricht, ?string $kette)
     {

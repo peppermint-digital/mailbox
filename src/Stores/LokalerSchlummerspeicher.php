@@ -5,6 +5,7 @@ namespace Peppermint\Mailbox\Stores;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Peppermint\Mailbox\Contracts\Schlummerspeicher;
+use Peppermint\Mailbox\Http\HandlesSnoozes;
 use Peppermint\Mailbox\Models\MailSnooze;
 use Peppermint\Mailbox\Zustand\Person;
 use Peppermint\Mailbox\Zustand\Schlummer;
@@ -14,7 +15,7 @@ use Peppermint\Mailbox\Zustand\Schlummerliste;
  * Geschlummertes in der eigenen Tabelle.
  *
  * Das Verhalten, das bis zum 19.10.2026 direkt in
- * {@see \Peppermint\Mailbox\Http\HandlesSnoozes} stand — unveraendert
+ * {@see HandlesSnoozes} stand — unveraendert
  * hierher gezogen, damit die Umstellung auf den Vertrag nichts anderes TUT.
  */
 class LokalerSchlummerspeicher implements Schlummerspeicher

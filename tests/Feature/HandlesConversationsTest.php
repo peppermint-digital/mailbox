@@ -1,7 +1,10 @@
 <?php
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
+use Peppermint\Mailbox\Archive\Ablage;
 use Peppermint\Mailbox\Archive\Erfassung;
+use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Database\ArchiveTables;
 use Peppermint\Mailbox\Http\HandlesConversations;
 use Peppermint\Mailbox\Models\MailMessage;
@@ -113,7 +116,7 @@ it('erkennt die Wurzel an der normalisierten Kennung, nicht an den spitzen Klamm
     // Message-ID nicht (`<abc@x>`). Ein direkter Vergleich waere NIE wahr —
     // und der Verlauf saehe nicht kaputt aus, sondern wie „es gibt eben noch
     // keine vollstaendige Kette".
-    $ablage = new class implements Peppermint\Mailbox\Archive\Ablage
+    $ablage = new class implements Ablage
     {
         public function ablegen(string $pfad, string $bytes): void {}
 
@@ -133,7 +136,7 @@ it('erkennt die Wurzel an der normalisierten Kennung, nicht an den spitzen Klamm
         }
     };
 
-    $postfach = Mockery::mock(Peppermint\Mailbox\Contracts\Mailbox::class);
+    $postfach = Mockery::mock(Mailbox::class);
     $postfach->shouldReceive('message')->andReturn([
         'message_id' => '<wurzel@example.test>',
         'subject' => 'Ohne Vorgaenger',
@@ -157,14 +160,14 @@ it('holt den Kettenschluessel aus der Abfrage, nicht aus dem Pfad', function () 
     // nicht ein Parameter, sondern drei — und die Route griffe nicht mehr.
     kette('a/b@example.test');
 
-    $anfrage = Illuminate\Http\Request::create('/mailbox/1/conversation', 'GET', ['thread' => 'a/b@example.test']);
+    $anfrage = Request::create('/mailbox/1/conversation', 'GET', ['thread' => 'a/b@example.test']);
 
     expect(verlauf()->conversationAvailableFor($anfrage, 1)->getData(true)['available'])->toBeTrue()
         ->and(verlauf()->conversationFor($anfrage, 1)->getStatusCode())->toBe(200);
 });
 
 it('nimmt eine fehlende Kette als „kein Verlauf", nicht als Ausnahme', function () {
-    $anfrage = Illuminate\Http\Request::create('/mailbox/1/conversation-available', 'GET');
+    $anfrage = Request::create('/mailbox/1/conversation-available', 'GET');
 
     expect(verlauf()->conversationAvailableFor($anfrage, 1)->getData(true)['available'])->toBeFalse();
 });

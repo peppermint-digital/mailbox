@@ -22,7 +22,7 @@ class SystemFolders
     public const SPECIAL_USE = ['sent', 'drafts', 'trash', 'archive', 'junk', 'all', 'important', 'flagged'];
 
     /**
-     * @param  list<string>  $flags the folder's IMAP flags
+     * @param  list<string>  $flags  the folder's IMAP flags
      */
     public static function isProtected(string $path, string $name, array $flags): bool
     {

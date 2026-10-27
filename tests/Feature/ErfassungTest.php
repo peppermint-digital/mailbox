@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Peppermint\Mailbox\Archive\Ablage;
 use Peppermint\Mailbox\Archive\Erfassung;
+use Peppermint\Mailbox\Contracts\Gespraechsveredler;
 use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Database\ArchiveTables;
 use Peppermint\Mailbox\Models\MailFolderState;
@@ -91,7 +92,6 @@ function testPostfach(array $nachrichten, ?int $uidvalidity = 7): Mailbox
 
         return array_map(static fn ($u): array => ['uid' => $u], array_values($neuer));
     });
-
 
     $postfach->shouldReceive('raw')->andReturnUsing(function ($ordner, $uid) use ($nachrichten) {
         $n = $nachrichten[$uid] ?? null;
@@ -554,9 +554,9 @@ it('ersetzt eine abgelegte Datei, deren Inhalt nicht mehr stimmt', function () {
 /**
  * Ein Modell, das tut, als koennte es lesen.
  */
-function testVeredler(?string $antwort, bool $wirft = false): Peppermint\Mailbox\Contracts\Gespraechsveredler
+function testVeredler(?string $antwort, bool $wirft = false): Gespraechsveredler
 {
-    return new class($antwort, $wirft) implements Peppermint\Mailbox\Contracts\Gespraechsveredler
+    return new class($antwort, $wirft) implements Gespraechsveredler
     {
         public function __construct(private ?string $antwort, private bool $wirft) {}
 

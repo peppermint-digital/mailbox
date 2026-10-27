@@ -2,6 +2,7 @@
 
 use Peppermint\Mailbox\Exceptions\MissingAccessToken;
 use Peppermint\Mailbox\Exceptions\NichtErreichbar;
+use Peppermint\Mailbox\Imap\RetryPolicy;
 
 /**
  * „Nicht erreichbar" von „geht so nicht" trennen (20.10.2026).
@@ -100,7 +101,7 @@ test('es benutzt dieselbe Grundlage wie die Wiederholung', function () {
      *
      * Dieser Test faellt, sobald jemand eine eigene Liste daneben baut.
      */
-    foreach (Peppermint\Mailbox\Imap\RetryPolicy::TRANSIENT as $begriff) {
+    foreach (RetryPolicy::TRANSIENT as $begriff) {
         expect(NichtErreichbar::trifftZu(new RuntimeException("irgendwas {$begriff} irgendwas")))
             ->toBeTrue("Gilt fuer die Wiederholung, aber nicht hier: {$begriff}");
     }

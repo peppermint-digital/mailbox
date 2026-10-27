@@ -2,6 +2,7 @@
 
 namespace Peppermint\Mailbox\Archive;
 
+use Carbon\Carbon;
 use Peppermint\Mailbox\Content\Gespraechstext;
 use Peppermint\Mailbox\Contracts\Gespraechsveredler;
 use Peppermint\Mailbox\Contracts\Mailbox;
@@ -388,7 +389,7 @@ class Erfassung
     private function nachrichtAnlegen(string $messageId, ?array $kopf, array $roh, Ergebnis $ergebnis): MailMessage
     {
         $hash = MailMessage::hash($messageId);
-        $gesendet = isset($kopf['date']) ? \Carbon\Carbon::parse($kopf['date']) : null;
+        $gesendet = isset($kopf['date']) ? Carbon::parse($kopf['date']) : null;
         $anhaenge = count((array) ($kopf['attachments'] ?? []));
         $kette = ThreadKey::fromHeaders(
             $messageId,

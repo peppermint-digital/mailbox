@@ -2,12 +2,14 @@
 
 namespace Peppermint\Mailbox\Contracts;
 
+use Peppermint\Mailbox\Content\Gespraechstext;
+
 /**
  * Macht aus einer Nachricht das, was ein Mensch daraus lesen wuerde.
  *
  * ## Warum es dafuer eine Schnittstelle braucht
  *
- * {@see \Peppermint\Mailbox\Content\Gespraechstext} trennt Zitat, Signatur und
+ * {@see Gespraechstext} trennt Zitat, Signatur und
  * Fusszeile ab — mit Regeln, und Regeln reichen weit. Sie reichen nicht bis
  * hierhin:
  *

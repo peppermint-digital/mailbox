@@ -144,7 +144,6 @@ describe('woran OAuth erkannt wird', function () {
     });
 });
 
-
 describe('ein OAuth-Postfach ohne Token', function () {
     it('bricht ab, statt mit leerem Passwort zu verbinden', function () {
         // Sonst schickt der Client ein leeres Kennwort, der Server lehnt die

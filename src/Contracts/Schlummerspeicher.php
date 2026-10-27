@@ -3,6 +3,8 @@
 namespace Peppermint\Mailbox\Contracts;
 
 use DateTimeInterface;
+use Peppermint\Mailbox\Stores\BrainSchlummerspeicher;
+use Peppermint\Mailbox\Stores\LokalerSchlummerspeicher;
 use Peppermint\Mailbox\Zustand\Person;
 use Peppermint\Mailbox\Zustand\Schlummerliste;
 
@@ -13,8 +15,8 @@ use Peppermint\Mailbox\Zustand\Schlummerliste;
  * zentral: „Ich habe diese Unterhaltung weggelegt" ist eine Aussage ueber
  * mich und die Sache — in jedem System dieselbe.
  *
- * - {@see \Peppermint\Mailbox\Stores\LokalerSchlummerspeicher} — eigene Tabelle
- * - {@see \Peppermint\Mailbox\Stores\BrainSchlummerspeicher} — ueber die Bridge
+ * - {@see LokalerSchlummerspeicher} — eigene Tabelle
+ * - {@see BrainSchlummerspeicher} — ueber die Bridge
  *
  * ## Die Kette ist Pflicht, nicht die Nachricht
  *

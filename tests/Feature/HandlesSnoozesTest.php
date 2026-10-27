@@ -2,9 +2,11 @@
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Peppermint\Mailbox\Database\SnoozesTable;
 use Peppermint\Mailbox\Http\HandlesSnoozes;
 use Peppermint\Mailbox\Models\MailSnooze;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * Schlummern (22.09.2026).
@@ -96,7 +98,7 @@ it('nimmt keine Zeit in der Vergangenheit an', function () {
         'message_id' => '<a@example.test>',
         'in_reply_to' => '<wurzel@example.test>',
         'until' => now()->subHour()->toIso8601String(),
-    ]), 1))->toThrow(Illuminate\Validation\ValidationException::class);
+    ]), 1))->toThrow(ValidationException::class);
 });
 
 it('verschiebt eine bestehende Schlummerzeit, statt sie zu verdoppeln', function () {
@@ -133,6 +135,6 @@ it('laesst das Produkt einen Riegel vor alle Wege setzen', function () {
         fn () => $streng->snooze(schlummerAnfrage(['message_id' => '<a@b.test>', 'until' => now()->addDay()->toIso8601String()]), 1),
         fn () => $streng->unsnooze(schlummerAnfrage(['message_id' => '<a@b.test>']), 1),
     ] as $i => $weg) {
-        expect($weg)->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class, '', "Weg {$i} ungeschuetzt");
+        expect($weg)->toThrow(HttpException::class, '', "Weg {$i} ungeschuetzt");
     }
 });

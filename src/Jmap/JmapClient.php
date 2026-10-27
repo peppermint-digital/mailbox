@@ -2,11 +2,11 @@
 
 namespace Peppermint\Mailbox\Jmap;
 
-use Peppermint\Mailbox\Content\RohFassung;
 use Closure;
 use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 use Peppermint\Mailbox\Accounts\Kontenauffrischung;
+use Peppermint\Mailbox\Content\RohFassung;
 use Peppermint\Mailbox\Contracts\AccountStore;
 use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Contracts\TokenRefresher;

@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Storage;
 use Peppermint\Mailbox\Archive\PlattenAblage;
 
@@ -34,7 +35,7 @@ it('schreibt nicht neu, wenn dieselben Bytes schon daliegen', function () {
     $geschrieben = 0;
     $inhalt = 'INHALT';
 
-    $platte = Mockery::mock(Illuminate\Contracts\Filesystem\Filesystem::class);
+    $platte = Mockery::mock(Filesystem::class);
     // Gewoehnliche Closures mit Referenz: Eine Pfeilfunktion faengt den Wert
     // beim DEFINIEREN ein und saehe hier immer 0.
     $platte->shouldReceive('exists')->andReturnUsing(function () use (&$geschrieben): bool {

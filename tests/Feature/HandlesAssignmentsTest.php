@@ -4,6 +4,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Peppermint\Mailbox\Http\HandlesAssignments;
 use Peppermint\Mailbox\Models\MailAssignment;
+use Peppermint\Mailbox\Zustand\Zuweisung;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * Wer sich um welche Unterhaltung kuemmert (22.09.2026).
@@ -165,7 +167,7 @@ it('laesst das Produkt einen Riegel vor ALLE Wege setzen', function () {
         fn () => $streng->assign(zuweisungsAnfrage(['message_id' => '<a@b.test>', 'assigned_to_user_id' => 3]), 1),
         fn () => $streng->unassign(zuweisungsAnfrage(['message_id' => '<a@b.test>']), 1),
     ] as $i => $weg) {
-        expect($weg)->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class, '', "Weg {$i} ungeschuetzt");
+        expect($weg)->toThrow(HttpException::class, '', "Weg {$i} ungeschuetzt");
     }
 
     expect(MailAssignment::count())->toBe(0);
@@ -188,7 +190,7 @@ it('sagt beim Zuweisen, WER es vorher war', function () use ($personen) {
             parent::__construct($personen);
         }
 
-        protected function afterAssign(Peppermint\Mailbox\Zustand\Zuweisung $zuweisung, ?int $vorher, array $daten): void
+        protected function afterAssign(Zuweisung $zuweisung, ?int $vorher, array $daten): void
         {
             $this->gesehen[] = [$vorher, $zuweisung->an->nummer];
         }

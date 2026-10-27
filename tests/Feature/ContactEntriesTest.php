@@ -1,5 +1,6 @@
 <?php
 
+use Peppermint\Contacts\Contracts\ContactStore;
 use Peppermint\Mailbox\AddressBook\ContactEntries;
 
 /**
@@ -29,7 +30,7 @@ function kontakt(string $name, array $adressen, ?string $firma = null): object
 
 function ablage(callable $antwort): void
 {
-    app()->bind('Peppermint\Contacts\Contracts\ContactStore', fn () => new class($antwort) implements Peppermint\Contacts\Contracts\ContactStore
+    app()->bind('Peppermint\Contacts\Contracts\ContactStore', fn () => new class($antwort) implements ContactStore
     {
         public function __construct(private $antwort) {}
 

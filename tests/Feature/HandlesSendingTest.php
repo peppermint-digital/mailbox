@@ -1,6 +1,9 @@
 <?php
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Validation\ValidationException;
 use Peppermint\Mailbox\Http\HandlesSending;
 use Peppermint\Mailbox\Models\MailAccount;
 use Peppermint\Mailbox\Sending\Outgoing;
@@ -80,7 +83,7 @@ it('verlangt mindestens einen Empfaenger', function () {
         'to' => [],
         'subject' => 'x',
         'body_html' => '<p>x</p>',
-    ]), 1))->toThrow(Illuminate\Validation\ValidationException::class);
+    ]), 1))->toThrow(ValidationException::class);
 });
 
 it('weist eine unbrauchbare Adresse ab, bevor irgendetwas hinausgeht', function () {
@@ -88,7 +91,7 @@ it('weist eine unbrauchbare Adresse ab, bevor irgendetwas hinausgeht', function 
         'to' => [['email' => 'kein-at-zeichen']],
         'subject' => 'x',
         'body_html' => '<p>x</p>',
-    ]), 1))->toThrow(Illuminate\Validation\ValidationException::class);
+    ]), 1))->toThrow(ValidationException::class);
 });
 
 /**
@@ -183,7 +186,7 @@ it('verlangt Ordner und Kennung, wenn die Quelle ein Postfach ist', function () 
         'to' => [['email' => 'kollege@example.test']],
         'subject' => 'Fwd: x',
         'source_type' => 'imap',
-    ]), 1))->toThrow(Illuminate\Validation\ValidationException::class);
+    ]), 1))->toThrow(ValidationException::class);
 });
 
 it('lässt ein Produkt mit eigener Ablage seine Dateien selbst beisteuern', function () {
@@ -232,7 +235,7 @@ class TestControllerDerMitliest
         return [['contents' => 'PDF', 'filename' => 'original.pdf', 'mime' => 'application/pdf']];
     }
 
-    protected function versenden(MailAccount $konto, Outgoing $nachricht, array $daten): \Illuminate\Http\JsonResponse
+    protected function versenden(MailAccount $konto, Outgoing $nachricht, array $daten): JsonResponse
     {
         $this->nachricht = $nachricht;
 
@@ -246,7 +249,7 @@ function mitDatei(array $daten): Request
     file_put_contents($pfad, 'Inhalt');
 
     $r = Request::create('/', 'POST', $daten, [], [
-        'attachments' => [new \Illuminate\Http\UploadedFile($pfad, 'angebot.txt', 'text/plain', null, true)],
+        'attachments' => [new UploadedFile($pfad, 'angebot.txt', 'text/plain', null, true)],
     ]);
     $r->headers->set('Accept', 'application/json');
 

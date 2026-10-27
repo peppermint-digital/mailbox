@@ -6,6 +6,7 @@ use Peppermint\Mailbox\Contracts\Zuweisungsspeicher;
 use Peppermint\Mailbox\Http\HandlesAssignments;
 use Peppermint\Mailbox\Stores\BrainZuweisungsspeicher;
 use Peppermint\Mailbox\Stores\LokalerZuweisungsspeicher;
+use Peppermint\Mailbox\Werkzeuge\Vorgang;
 use Peppermint\Mailbox\Zustand\Person;
 use Peppermint\Mailbox\Zustand\Zuweisung;
 use Peppermint\Mailbox\Zustand\Zuweisungsliste;
@@ -304,7 +305,7 @@ it('haengt die Zuweisung am selben Faden wie ein Werkzeug am Vorgang', function 
     expect($mit->anker())->toBe('kette-1')
         ->and($ohne->anker())->toBe('<m@b.test>')
         ->and($mit->anker())->toBe(
-            (new Peppermint\Mailbox\Werkzeuge\Vorgang('a@b.test', 'kette-1', '<m@b.test>'))->anker()
+            (new Vorgang('a@b.test', 'kette-1', '<m@b.test>'))->anker()
         );
 });
 

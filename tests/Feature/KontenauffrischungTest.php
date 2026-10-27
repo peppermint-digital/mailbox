@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Peppermint\Mailbox\Contracts\AccountStore;
 use Peppermint\Mailbox\Contracts\VerwirftKonten;
@@ -49,7 +50,7 @@ function auffrischungAblage(array $tokenFolge): object
 
         public function __construct(private array $tokenFolge) {}
 
-        public function all(?int $ownerId = null): \Illuminate\Support\Collection
+        public function all(?int $ownerId = null): Collection
         {
             $this->gelesen++;
             $token = array_shift($this->tokenFolge) ?? 'leer';
@@ -235,7 +236,7 @@ describe('der zweite Versuch nach einer Ablehnung', function () {
 
         $ohneVerwerfen = new class implements AccountStore
         {
-            public function all(?int $ownerId = null): \Illuminate\Support\Collection
+            public function all(?int $ownerId = null): Collection
             {
                 return collect([auffrischungKonto('frisch')]);
             }
@@ -361,7 +362,6 @@ describe('die Ablage vergisst wirklich alles', function () {
     });
 });
 
-
 describe('derselbe Weg bei JMAP', function () {
     it('verwirft den Stand, liest neu und kommt durch', function () {
         // Gleiche Logik, gleicher Nachweis wie bei IMAP — die Luecke sass an
@@ -374,7 +374,7 @@ describe('derselbe Weg bei JMAP', function () {
         {
             public int $verworfen = 0;
 
-            public function all(?int $ownerId = null): \Illuminate\Support\Collection
+            public function all(?int $ownerId = null): Collection
             {
                 return collect([$this->find(7)]);
             }

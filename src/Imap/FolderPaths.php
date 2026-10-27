@@ -75,7 +75,7 @@ class FolderPaths
      * Matches the name, the whole path, or the last segment of the path —
      * `INBOX.Sent` is the sent folder, and so is `[Gmail]/Sent`.
      *
-     * @param  list<string>  $aliases lowercase
+     * @param  list<string>  $aliases  lowercase
      */
     public static function matchesAny(string $name, string $path, array $aliases): bool
     {

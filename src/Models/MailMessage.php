@@ -2,9 +2,11 @@
 
 namespace Peppermint\Mailbox\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Peppermint\Mailbox\Database\ArchiveTables;
 
 /**
  * Eine Nachricht in der Ablage — das, worauf Verweise zeigen duerfen.
@@ -29,7 +31,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * Fuer das andere — das endgueltige Entfernen AUS der Ablage — gibt es
  * `purged_at`. Was dann bleibt, ist die Pruefsumme, damit der naechste
  * Erfassungslauf die Nachricht nicht wieder einsammelt; siehe
- * {@see \Peppermint\Mailbox\Database\ArchiveTables}.
+ * {@see ArchiveTables}.
  */
 class MailMessage extends Model
 {
@@ -84,8 +86,8 @@ class MailMessage extends Model
     }
 
     /**
-     * @param  \Illuminate\Database\Eloquent\Builder<self>  $frage
-     * @return \Illuminate\Database\Eloquent\Builder<self>
+     * @param  Builder<self>  $frage
+     * @return Builder<self>
      */
     public function scopeFuerMessageId($frage, int $accountId, string $messageId)
     {

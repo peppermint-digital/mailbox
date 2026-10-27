@@ -2,6 +2,8 @@
 
 namespace Peppermint\Mailbox\Folders;
 
+use Peppermint\Mailbox\Contracts\Mailbox;
+
 /**
  * What a mailbox folder is, judged by its name.
  *
@@ -46,7 +48,7 @@ class FolderNames
      *
      * ## Why this list is a data-loss boundary, not a convenience
      *
-     * {@see \Peppermint\Mailbox\Contracts\Mailbox::delete()} moves a message
+     * {@see Mailbox::delete()} moves a message
      * into the trash — and when it finds no trash, it deletes the message for
      * good. That fallback is intended for a mailbox that genuinely has no
      * trash folder. It cannot tell that case apart from "there is one and I

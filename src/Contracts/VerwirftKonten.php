@@ -2,6 +2,8 @@
 
 namespace Peppermint\Mailbox\Contracts;
 
+use Peppermint\Mailbox\Models\MailAccount;
+
 /**
  * Wirft die gespeicherte Kontenliste weg, damit die nächste Frage die Mitte erreicht.
  *
@@ -11,7 +13,7 @@ namespace Peppermint\Mailbox\Contracts;
  * Token bald abläuft. Bei zentral gepflegten Konten gibt es diese Uhr nicht —
  * AI Brain prägt bei jedem Lesen ein frisches Token und nennt keinen Ablauf,
  * der Zeitstempel im Produkt ist deshalb `null`, und
- * {@see \Peppermint\Mailbox\Models\MailAccount::isTokenExpiringSoon()} meldet
+ * {@see MailAccount::isTokenExpiringSoon()} meldet
  * dort immer `false`. Ein Erneuerer an diesem Steckplatz würde nie gerufen.
  *
  * Diese Schnittstelle handelt stattdessen nach dem **Fehlschlag**: Erst wenn

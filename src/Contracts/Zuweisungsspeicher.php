@@ -2,6 +2,8 @@
 
 namespace Peppermint\Mailbox\Contracts;
 
+use Peppermint\Mailbox\Stores\BrainZuweisungsspeicher;
+use Peppermint\Mailbox\Stores\LokalerZuweisungsspeicher;
 use Peppermint\Mailbox\Zustand\Person;
 use Peppermint\Mailbox\Zustand\Zuweisung;
 use Peppermint\Mailbox\Zustand\Zuweisungsliste;
@@ -22,8 +24,8 @@ use Peppermint\Mailbox\Zustand\Zuweisungsliste;
  * Gemessen am 19.10.2026: `mail_assignments` in AI Brain, CRM und Verwaltung,
  * `email_assignments` im Manager. Dieselbe Mail, vier Zustaendigkeiten.
  *
- * - {@see \Peppermint\Mailbox\Stores\LokalerZuweisungsspeicher} — eigene Tabelle
- * - {@see \Peppermint\Mailbox\Stores\BrainZuweisungsspeicher} — ueber die Bridge
+ * - {@see LokalerZuweisungsspeicher} — eigene Tabelle
+ * - {@see BrainZuweisungsspeicher} — ueber die Bridge
  *
  * ## Die Kette, nicht die Nachricht
  *

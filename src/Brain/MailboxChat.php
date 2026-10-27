@@ -31,16 +31,16 @@ class MailboxChat
 {
     /**
      * @param  callable(string $email): ?array  $holen  The `mailbox-chat-tool`
-     *         call. Returns the decoded answer, or null when Brain could not be
-     *         reached — null is a state, not an error to be thrown.
+     *                                                  call. Returns the decoded answer, or null when Brain could not be
+     *                                                  reached — null is a state, not an error to be thrown.
      * @param  callable(int $chatId, string $content): ?array  $senden  Posts a
-     *         reply into the chat. Same contract.
+     *                                                                  reply into the chat. Same contract.
      */
     /**
      * @param  bool  $verfuegbar  Ob ueberhaupt ein Brain dahintersteht. Ohne
-     *         Bruecke bleibt der Dienst bedienbar, aber stumm — und die
-     *         Oberflaeche soll dann gar keinen Assistenten anbieten statt einen,
-     *         der auf nichts antwortet.
+     *                            Bruecke bleibt der Dienst bedienbar, aber stumm — und die
+     *                            Oberflaeche soll dann gar keinen Assistenten anbieten statt einen,
+     *                            der auf nichts antwortet.
      */
     public function __construct(
         private $holen,
@@ -96,9 +96,9 @@ class MailboxChat
      * Send a message, and say what to answer the browser.
      *
      * @return array{ok: bool, error: ?string, status: int} `status` is the HTTP
-     *         code the product should answer with — the distinction between "no
-     *         chat for this mailbox" (404) and "Brain refused" (502) is what
-     *         makes the difference visible in the browser's network tab.
+     *                                                      code the product should answer with — the distinction between "no
+     *                                                      chat for this mailbox" (404) and "Brain refused" (502) is what
+     *                                                      makes the difference visible in the browser's network tab.
      */
     public function senden(string $email, string $content): array
     {

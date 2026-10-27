@@ -59,8 +59,8 @@ class BrainAccountStore implements AccountStore, VerwirftKonten
 
     /**
      * @param  callable(string, array<string, mixed>): ?array  $fetch  Returns
-     *         the decoded answer, or null when the central system could not be
-     *         reached — null is a state, not an error to be thrown.
+     *                                                                 the decoded answer, or null when the central system could not be
+     *                                                                 reached — null is a state, not an error to be thrown.
      */
     public function __construct(
         private $fetch,

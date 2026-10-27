@@ -116,7 +116,7 @@ class BrainSchlummerspeicher implements Schlummerspeicher
 
     /**
      * @param  array<string, mixed>  $argumente
-     * @return array<string, mixed>|null  `null` heisst: niemand war zu sprechen.
+     * @return array<string, mixed>|null `null` heisst: niemand war zu sprechen.
      */
     private function frage(string $faehigkeit, array $argumente): ?array
     {

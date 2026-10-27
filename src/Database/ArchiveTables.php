@@ -4,6 +4,7 @@ namespace Peppermint\Mailbox\Database;
 
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Peppermint\Mailbox\Content\Gespraechstext;
 
 /**
  * Die Ablage: eine Nachricht, ihre Orte, ihr Gespraechstext.
@@ -48,7 +49,7 @@ use Illuminate\Support\Facades\Schema;
  *
  * ## Warum der Gespraechstext gespeichert und nicht gerechnet wird
  *
- * {@see \Peppermint\Mailbox\Content\Gespraechstext} ist Heuristik. Sie ist
+ * {@see Gespraechstext} ist Heuristik. Sie ist
  * teuer genug, um sie nicht bei jedem Blick zu wiederholen — und vor allem
  * verbessert sie sich. Deshalb steht neben dem Ergebnis, mit WELCHER Fassung
  * es entstanden ist: Wird die Erkennung besser, laesst sich gezielt

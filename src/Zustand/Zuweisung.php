@@ -2,12 +2,16 @@
 
 namespace Peppermint\Mailbox\Zustand;
 
+use Peppermint\Mailbox\Http\HandlesAssignments;
+use Peppermint\Mailbox\Models\MailAssignment;
+use Peppermint\Mailbox\Werkzeuge\Vorgang;
+
 /**
  * Wer sich um diese Unterhaltung kuemmert — als Aussage, nicht als Tabellenzeile.
  *
  * ## Warum ein Wertobjekt und nicht weiter das Model
  *
- * Bis zum 19.10.2026 reichte das Paket {@see \Peppermint\Mailbox\Models\MailAssignment}
+ * Bis zum 19.10.2026 reichte das Paket {@see MailAssignment}
  * durch seine Haken. Das ging, solange die Zuweisung eine lokale Zeile war.
  * Liegt sie in der Mitte, gibt es hier keine Zeile und keinen Schluessel —
  * und ein Haken, der einen braucht, faellt aus.
@@ -52,7 +56,7 @@ final class Zuweisung
     /**
      * Woran die Zuweisung haengt — Kette, sonst Nachricht.
      *
-     * Dieselbe Wahl wie in {@see \Peppermint\Mailbox\Werkzeuge\Vorgang::anker()},
+     * Dieselbe Wahl wie in {@see Vorgang::anker()},
      * und absichtlich dieselbe Formulierung: Eine Zuweisung und ein Verb am
      * selben Vorgang muessen am selben Faden haengen. Liefen die beiden
      * auseinander, haenge die Zuweisung an der einen Kette und das Ticket an
@@ -67,7 +71,7 @@ final class Zuweisung
      * Dieselbe Zuweisung mit oertlich aufgeloesten Personen.
      *
      * Die Mitte liefert Adressen; wer das ist, weiss nur das Produkt. Diese
-     * Zuordnung macht {@see \Peppermint\Mailbox\Http\HandlesAssignments}, weil
+     * Zuordnung macht {@see HandlesAssignments}, weil
      * dort die Liste der zulaessigen Personen liegt — die einzige Stelle, die
      * beides kennt.
      */

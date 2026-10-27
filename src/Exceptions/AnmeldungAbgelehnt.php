@@ -2,6 +2,7 @@
 
 namespace Peppermint\Mailbox\Exceptions;
 
+use Peppermint\Mailbox\Imap\RetryPolicy;
 use Throwable;
 
 /**
@@ -11,7 +12,7 @@ use Throwable;
  *
  * Drei Lagen, drei verschiedene nächste Schritte:
  *
- *   Leitung weg      → noch einmal versuchen  ({@see \Peppermint\Mailbox\Imap\RetryPolicy})
+ *   Leitung weg      → noch einmal versuchen  ({@see RetryPolicy})
  *   Nicht erreichbar → abwarten               ({@see NichtErreichbar})
  *   Anmeldung abgelehnt → die Zugangsdaten sind alt, NEU HOLEN und EINMAL wiederholen
  *

@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use Peppermint\Mailbox\Content\Gespraechstext;
@@ -37,7 +38,7 @@ it('lässt dieselbe Nachricht je Postfach nur einmal zu', function () {
     MailMessage::create(['email_account_id' => 1, 'message_id' => '<abc@example.test>']);
 
     expect(fn () => MailMessage::create(['email_account_id' => 1, 'message_id' => '<abc@example.test>']))
-        ->toThrow(Illuminate\Database\UniqueConstraintViolationException::class);
+        ->toThrow(UniqueConstraintViolationException::class);
 });
 
 it('lässt dieselbe Nachricht in zwei Postfächern zu', function () {

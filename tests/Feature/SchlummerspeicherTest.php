@@ -5,11 +5,14 @@ use DateTimeInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Peppermint\Mailbox\Contracts\Schlummerspeicher;
+use Peppermint\Mailbox\Database\SnoozesTable;
 use Peppermint\Mailbox\Http\HandlesAssignments;
 use Peppermint\Mailbox\Http\HandlesSnoozes;
 use Peppermint\Mailbox\Stores\BrainSchlummerspeicher;
+use Peppermint\Mailbox\Stores\LokalerSchlummerspeicher;
 use Peppermint\Mailbox\Zustand\Person;
 use Peppermint\Mailbox\Zustand\Schlummer;
+use Peppermint\Mailbox\Zustand\Schlummerliste;
 
 /**
  * Geschlummertes in der Mitte (19.10.2026).
@@ -228,9 +231,9 @@ it('haengt Schlummer und Zuweisung an DIESELBE Kette', function () {
     {
         public function __construct(public array &$gesehen) {}
 
-        public function ruhende(int $konto, Person $person): Peppermint\Mailbox\Zustand\Schlummerliste
+        public function ruhende(int $konto, Person $person): Schlummerliste
         {
-            return Peppermint\Mailbox\Zustand\Schlummerliste::mit([]);
+            return Schlummerliste::mit([]);
         }
 
         public function weglegen(int $konto, Person $person, string $kette, string $nachricht, DateTimeInterface $bis): bool
@@ -281,9 +284,9 @@ it('speichert lokal den AUGENBLICK, nicht die Uhrzeit ohne Zone', function () {
      * Schreibweise DARF sich aendern: Eine Zeitstempel-Spalte kennt keine
      * Zone, und 07:00Z IST 09:00+02:00.
      */
-    Peppermint\Mailbox\Database\SnoozesTable::create();
+    SnoozesTable::create();
 
-    $speicher = new Peppermint\Mailbox\Stores\LokalerSchlummerspeicher;
+    $speicher = new LokalerSchlummerspeicher;
     $gewollt = new DateTimeImmutable('2099-01-01T09:00:00+02:00');
 
     $speicher->weglegen(1, new Person(adresse: 'a@b.test', nummer: 3), 'kette-1', '<a@b.test>', $gewollt);
@@ -304,9 +307,9 @@ it('haelt je Kette und Person EINE Zeile, auch bei einem zweiten Lauf', function
      *
      * Gefunden bei der Selbstdurchsicht vor dem Ausrollen.
      */
-    Peppermint\Mailbox\Database\SnoozesTable::create();
+    SnoozesTable::create();
 
-    $speicher = new Peppermint\Mailbox\Stores\LokalerSchlummerspeicher;
+    $speicher = new LokalerSchlummerspeicher;
     $person = new Person(adresse: 'a@b.test', nummer: 3);
     $bis = new DateTimeImmutable('2099-01-01T09:00:00+02:00');
 
@@ -325,9 +328,9 @@ it('legt fuer eine ZWEITE Person eine eigene Zeile an', function () {
      * Ein Speicher, der nur auf die Kette abbildet, besteht den Test darueber
      * und bricht genau diese Regel.
      */
-    Peppermint\Mailbox\Database\SnoozesTable::create();
+    SnoozesTable::create();
 
-    $speicher = new Peppermint\Mailbox\Stores\LokalerSchlummerspeicher;
+    $speicher = new LokalerSchlummerspeicher;
     $anna = new Person(adresse: 'a@b.test', nummer: 3);
     $bodo = new Person(adresse: 'b@b.test', nummer: 7);
     $bis = new DateTimeImmutable('2099-01-01T09:00:00+02:00');

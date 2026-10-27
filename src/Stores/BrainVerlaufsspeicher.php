@@ -5,6 +5,7 @@ namespace Peppermint\Mailbox\Stores;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Peppermint\Mailbox\Contracts\Verlaufsspeicher;
+use Peppermint\Mailbox\Events\VerlaufVergessen;
 
 /**
  * Der Verlauf aus der Mitte — fuer jedes System, das selbst nicht archiviert.
@@ -43,12 +44,12 @@ class BrainVerlaufsspeicher implements Verlaufsspeicher
 {
     /**
      * @param  callable(string, array<string, mixed>): ?array  $fetch  Liefert die
-     *         dekodierte Antwort des Werkzeugs — die Huelle `{ok, data}`, wie
-     *         sie drueben ueber die Leitung geht —, oder null, wenn die Mitte
-     *         nicht erreichbar war.
+     *                                                                 dekodierte Antwort des Werkzeugs — die Huelle `{ok, data}`, wie
+     *                                                                 sie drueben ueber die Leitung geht —, oder null, wenn die Mitte
+     *                                                                 nicht erreichbar war.
      * @param  (callable(int): ?string)|null  $adresse  Die Mailadresse zur
-     *         oertlichen Kennung. Ohne sie fragt dieser Speicher mit einer
-     *         Nummer, die nur HIER gilt — siehe unten.
+     *                                                  oertlichen Kennung. Ohne sie fragt dieser Speicher mit einer
+     *                                                  Nummer, die nur HIER gilt — siehe unten.
      */
     public function __construct(
         private $fetch,
@@ -117,7 +118,7 @@ class BrainVerlaufsspeicher implements Verlaufsspeicher
      * Der Schluessel im Zwischenspeicher.
      *
      * Oeffentlich und statisch, weil ihn zwei Seiten brauchen: dieser
-     * Speicher zum Merken und {@see \Peppermint\Mailbox\Events\VerlaufVergessen}
+     * Speicher zum Merken und {@see VerlaufVergessen}
      * zum Vergessen. Zwei Stellen, die denselben Schluessel selbst
      * zusammensetzen, laufen frueher oder spaeter auseinander — und dann
      * loescht man Schluessel, die es nicht gibt, waehrend die echten

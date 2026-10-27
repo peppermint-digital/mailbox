@@ -60,7 +60,7 @@ final class NichtErreichbar
      * @var list<class-string>
      */
     private const TYPEN = [
-        \Peppermint\Mailbox\Exceptions\MissingAccessToken::class,
+        MissingAccessToken::class,
         'DirectoryTree\\ImapEngine\\Exceptions\\ImapConnectionFailedException',
         'DirectoryTree\\ImapEngine\\Exceptions\\ConnectionFailedException',
         'DirectoryTree\\ImapEngine\\Exceptions\\ConnectionClosedException',

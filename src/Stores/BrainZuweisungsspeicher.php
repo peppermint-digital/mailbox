@@ -55,8 +55,8 @@ class BrainZuweisungsspeicher implements Zuweisungsspeicher
 {
     /**
      * @param  callable(string, array<string, mixed>): ?array  $ruf  Liefert die
-     *         dekodierte Antwort des Werkzeugs — die Huelle `{ok, data}` —, oder
-     *         null, wenn die Mitte nicht erreichbar war.
+     *                                                               dekodierte Antwort des Werkzeugs — die Huelle `{ok, data}` —, oder
+     *                                                               null, wenn die Mitte nicht erreichbar war.
      * @param  callable(int): ?string  $adresse  Die Mailadresse zur oertlichen Kennung.
      */
     public function __construct(
@@ -174,7 +174,7 @@ class BrainZuweisungsspeicher implements Zuweisungsspeicher
 
     /**
      * @param  array<string, mixed>  $argumente
-     * @return array<string, mixed>|null  `null` heisst: niemand war zu sprechen.
+     * @return array<string, mixed>|null `null` heisst: niemand war zu sprechen.
      */
     private function frage(string $faehigkeit, array $argumente): ?array
     {
