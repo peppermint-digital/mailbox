@@ -32,7 +32,16 @@
     "require-dev": {
         "orchestra/testbench": "^10.0|^11.0",
         "pestphp/pest": "^4.0",
-        "directorytree/imapengine": "^1.0"
+        "directorytree/imapengine": "^1.0",
+        "laravel/pint": "^1.24"
+    },
+    "scripts": {
+        "lint": "pint --parallel",
+        "test:lint": "pint --parallel --test",
+        "test": [
+            "@test:lint",
+            "pest"
+        ]
     },
     "config": {
         "allow-plugins": {
