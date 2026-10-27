@@ -95,6 +95,16 @@ Without the bridge the package falls back to `local` **and logs a warning**.
 Silently falling back would mean somebody believes the settings are central
 while they are local, and edits the wrong copy on the next rotation.
 
+`MAILBOX_CACHE_TTL` is capped by the package, and the cap is not a suggestion.
+The cached state holds an **access token**, and the centre only guarantees it a
+minimum lifetime (`MailAccountTokenService::MINDESTLAUFZEIT_MINUTEN`, 20
+minutes). Holding it longer than that means a dead token sits in the cache and
+every sign-in out of it fails with `AUTHENTICATE failed` — bug #1098, seen in
+the Peppermint Manager on 26.10.2026. A higher setting is therefore computed
+with the cap (900 s) and said out loud once per process. Raising it for real
+means raising the guarantee in AI Brain first, then
+`Accounts\Zwischenspeicherfenster::MINDESTLAUFZEIT_SEKUNDEN` here.
+
 ### 3. Get the mailboxes granted
 
 Nothing is handed out without a grant: in AI Brain, `product_mail_account_grants`
@@ -255,3 +265,4 @@ labels and the composer. All four products do it that way; see
 | An empty answer treated as an empty truth | A central system that does not answer must leave the local stock untouched. |
 | A read list read as "nobody" when empty | Empty means **everyone**. The other reading silently takes mailboxes away on the day the feature ships. |
 | Tests that reach the real centre | `MAILBOX_STORE=local` in `phpunit.xml`, and assert the production value by reading the **file**. |
+| A cache window raised above the token guarantee | "The mailbox signs in fine for a while and then stops." The package caps `cache_ttl` and logs it; the number you set is not necessarily the number that applies. |

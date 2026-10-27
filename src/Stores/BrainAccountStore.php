@@ -5,6 +5,7 @@ namespace Peppermint\Mailbox\Stores;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Peppermint\Mailbox\Accounts\Zwischenspeicherfenster;
 use Peppermint\Mailbox\Contracts\AccountStore;
 use Peppermint\Mailbox\Contracts\VerwirftKonten;
 use Peppermint\Mailbox\Models\MailAccount;
@@ -49,14 +50,40 @@ class BrainAccountStore implements AccountStore, VerwirftKonten
     private const VERZEICHNIS = 'mailbox.brain.accounts.__schluessel';
 
     /**
+     * Wie lange ein Stand wirklich gehalten wird.
+     *
+     * Nicht `$ttl`: Das Fenster ist auf die Dauer gedeckelt, die die Mitte
+     * ihren Tokens zusichert. Siehe {@see Zwischenspeicherfenster}.
+     */
+    private readonly int $ttl;
+
+    /**
      * @param  callable(string, array<string, mixed>): ?array  $fetch  Returns
      *         the decoded answer, or null when the central system could not be
      *         reached — null is a state, not an error to be thrown.
      */
     public function __construct(
         private $fetch,
-        private readonly int $ttl = 900,
-    ) {}
+        int $ttl = 900,
+    ) {
+        // Gedeckelt wird hier und nicht beim Lesen der Konfiguration: Der
+        // Zwischenspeicher steht in dieser Klasse, und damit auch die Zusage,
+        // die er einhalten muss. Ein zweiter Aufrufer, der das Paket anders
+        // verdrahtet, bekommt den Deckel dadurch mit.
+        $this->ttl = Zwischenspeicherfenster::gedeckelt($ttl);
+    }
+
+    /**
+     * Wie lange ein gelesener Stand gehalten wird — nach dem Deckel.
+     *
+     * Ein Produkt, das eigene Zwischenspeicher an denselben Takt hängt, soll
+     * die wirksame Dauer erfragen können statt die Konfiguration zu lesen: Die
+     * eingestellte Zahl ist nicht unbedingt die geltende.
+     */
+    public function fenster(): int
+    {
+        return $this->ttl;
+    }
 
     public function all(?int $ownerId = null): Collection
     {

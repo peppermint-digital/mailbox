@@ -71,6 +71,14 @@ return [
     | How long a central state is kept locally. This is the answer to "what if
     | the central system is down": the lookup freezes on the last known good
     | state instead of failing. Only success is cached.
+    |
+    | Nach oben gedeckelt, und zwar hart: Mitgespeichert wird ein
+    | Zugriffstoken, und die Mitte sichert ihm nur eine Mindestlaufzeit zu. Ein
+    | laengeres Fenster hielte ein totes Token vor, und jede Anmeldung daraus
+    | scheiterte (Bug #1098). Was darueber steht, wird auf den Deckel gerechnet
+    | und einmal je Prozess ins Protokoll geschrieben — die Zahl hier ist also
+    | eine Obergrenze fuer eine Obergrenze. Siehe
+    | `Peppermint\Mailbox\Accounts\Zwischenspeicherfenster`.
     */
     'cache_ttl' => (int) env('MAILBOX_CACHE_TTL', 900),
 
