@@ -170,6 +170,22 @@ export interface MailboxSeiteOptionen {
      * nirgends.
      */
     initialGrouped?: boolean;
+    /**
+     * Was `?` tun soll — die Tastaturhilfe des Produkts.
+     *
+     * Das Paket bringt keine mit: Eine Hilfe ist eine Liste von Tasten in
+     * einem Dialog, und der Dialog kommt aus dem UI-Kit des Produkts.
+     * Fehlt die Angabe, tut `?` nichts — wie bisher.
+     */
+    onHilfe?: () => void;
+    /**
+     * Was `/` tun soll — ins Suchfeld springen.
+     *
+     * Auch das bleibt beim Produkt, aber aus einem anderen Grund: Der Haken
+     * besitzt keinen Knoten. Ein Fokus braucht eine Referenz auf ein echtes
+     * Eingabefeld, und das steht in der Leiste.
+     */
+    onSuchen?: () => void;
 }
 
 export function useMailboxSeite({
@@ -181,6 +197,8 @@ export function useMailboxSeite({
     suchQuelle,
     oeffnenQuelle,
     initialGrouped = false,
+    onHilfe,
+    onSuchen,
 }: MailboxSeiteOptionen) {
     const texte = { ...MAILBOX_SEITE_TEXTE, ...labels };
 
@@ -772,12 +790,104 @@ export function useMailboxSeite({
 
     /* j/k blaettern, Escape schliesst. Welche Tasten es gibt, entscheidet das
        Paket; welche hier wirken, entscheidet die Liste der Rueckrufe. */
+    /*
+     * Die vier Aktionen an der GEOEFFNETEN Nachricht (#9116).
+     *
+     * Sie standen bis zum 29.10.2026 in der Flaeche, direkt im JSX von
+     * `MailMessageView`. Dort waren sie fuer die Tastatur unerreichbar: Der
+     * Zuhoerer sitzt hier, und die Flaeche liegt hinter diesem Haken.
+     *
+     * Folge war, dass die Flaeche vier Tasten nicht anbieten konnte, die der
+     * Projekt-Manager seit je hat — und beim Zurueckfuehren seiner Seite
+     * haetten sie lautlos aufgehoert zu wirken. Hierher verschoben, Adressen
+     * und Nutzlast unveraendert; die Flaeche ruft jetzt dieselben Funktionen
+     * statt sie nachzubauen.
+     */
+    const gelesenUmschalten = () =>
+        amGeoeffneten(() =>
+            postJson(
+                `${basis}/${konto?.id}/message/${offeneKennung()}/seen`,
+                { folder: ordnerPfad, seen: !(offene.message as { is_read?: boolean } | null)?.is_read },
+                { csrfToken: csrf },
+            ),
+        );
+
+    const markierungUmschalten = () =>
+        amGeoeffneten(() =>
+            postJson(
+                `${basis}/${konto?.id}/message/${offeneKennung()}/flagged`,
+                { folder: ordnerPfad, flagged: !(offene.message as { is_flagged?: boolean } | null)?.is_flagged },
+                { csrfToken: csrf },
+            ),
+        );
+
+    const offeneArchivieren = () =>
+        amGeoeffneten(
+            () =>
+                postJson(
+                    `${basis}/${konto?.id}/bulk`,
+                    {
+                        folder: ordnerPfad,
+                        action: 'archive',
+                        // Eine ganze Kette, wenn eine offen ist — sonst die eine Nachricht.
+                        uids: archivKennungen.length > 0 ? archivKennungen : [offeneKennung()],
+                    },
+                    { csrfToken: csrf },
+                ),
+            true,
+        );
+
+    const offeneLoeschen = () =>
+        amGeoeffneten(
+            () => postJson(`${basis}/${konto?.id}/message/${offeneKennung()}/delete`, { folder: ordnerPfad }, { csrfToken: csrf }),
+            true,
+        );
+
     useMailboxKeyboard<RowMessage>({
         rows: zeilen,
         openedUid: (offene.message as { uid?: number } | null)?.uid ?? null,
         hasMessage: Boolean(offene.message),
+        /*
+         * Waehrend des Verfassens gilt nur Escape. Sonst loeschte ein `e` im
+         * Text die Mail, an die gerade geantwortet wird.
+         */
+        enabled: !antwortOffen && !weiterleitenOffen && Boolean(konto),
         onOpen: (m) => void offene.open(m, ordnerPfad),
-        onEscape: () => offene.close(),
+        onReply: () => {
+            setAntwortAnAlle(false);
+            setAntwortOffen(true);
+        },
+        onReplyAll: () => {
+            setAntwortAnAlle(true);
+            setAntwortOffen(true);
+        },
+        onForward: () => setWeiterleitenOffen(true),
+        onToggleSeen: () => void gelesenUmschalten(),
+        onToggleFlag: () => void markierungUmschalten(),
+        onArchive: () => void offeneArchivieren(),
+        onDelete: () => void offeneLoeschen(),
+        onSearch: onSuchen,
+        onHelp: onHilfe,
+        /*
+         * Escape raeumt von oben nach unten ab — in der Reihenfolge, in der
+         * die Felder aufgegangen sind. Ohne das schliesst ein Escape im
+         * Antwortfeld die ganze Nachricht, und der Text ist weg.
+         */
+        onEscape: () => {
+            if (weiterleitenOffen) {
+                setWeiterleitenOffen(false);
+
+                return;
+            }
+
+            if (antwortOffen) {
+                setAntwortOffen(false);
+
+                return;
+            }
+
+            offene.close();
+        },
     });
 
     // Beim ersten Postfach: Ordner holen, dann den, der geoeffnet werden soll.
@@ -833,6 +943,10 @@ export function useMailboxSeite({
          */
         basis,
         amGeoeffneten,
+        gelesenUmschalten,
+        markierungUmschalten,
+        offeneArchivieren,
+        offeneLoeschen,
         antwortAnAlle,
         antwortOffen,
         antwortSenden,

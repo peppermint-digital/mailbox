@@ -93,12 +93,16 @@ function Probe({
     suchQuelle,
     oeffnenQuelle,
     initialGrouped,
+    onHilfe,
+    onSuchen,
 }: {
     melden: (text: string, gelungen: boolean) => void;
     basis?: string;
     suchQuelle?: Parameters<typeof useMailboxSeite>[0]['suchQuelle'];
     oeffnenQuelle?: Parameters<typeof useMailboxSeite>[0]['oeffnenQuelle'];
     initialGrouped?: boolean;
+    onHilfe?: () => void;
+    onSuchen?: () => void;
 }) {
     const seite = useMailboxSeite({
         konten: [
@@ -111,6 +115,8 @@ function Probe({
         ...(suchQuelle === undefined ? {} : { suchQuelle }),
         ...(oeffnenQuelle === undefined ? {} : { oeffnenQuelle }),
         ...(initialGrouped === undefined ? {} : { initialGrouped }),
+        ...(onHilfe === undefined ? {} : { onHilfe }),
+        ...(onSuchen === undefined ? {} : { onSuchen }),
     });
 
     zuletzt = seite as unknown as Geprobt;
@@ -167,7 +173,7 @@ describe('der Haken füllt, was er verspricht', () => {
         unmount();
     });
 
-    it('gibt alle 41 Werte heraus — und keinen als undefined', async () => {
+    it('gibt alle 45 Werte heraus — und keinen als undefined', async () => {
         /*
          * Der Wächter gegen den Fehler, den dieser Umbau am leichtesten macht:
          * einen Namen in der Rückgabe zu vergessen. TypeScript fängt das an
@@ -183,6 +189,12 @@ describe('der Haken füllt, was er verspricht', () => {
 
         const erwartet = [
             'basis',
+            // Die vier Aktionen an der geoeffneten Nachricht, seit #9116 hier
+            // statt im JSX der Flaeche — sonst kann die Tastatur sie nicht rufen.
+            'gelesenUmschalten',
+            'markierungUmschalten',
+            'offeneArchivieren',
+            'offeneLoeschen',
             'amGeoeffneten', 'antwortAnAlle', 'antwortOffen', 'antwortSenden', 'archivKennungen',
             'assistent', 'auswahl', 'beschaeftigt', 'chatQuelle', 'csrf', 'fehler', 'filterOffen',
             'konto', 'liste', 'melden', 'nachrichtBeschaeftigt', 'offene', 'offeneKennung', 'ordner',
@@ -385,6 +397,153 @@ describe('der Haken füllt, was er verspricht', () => {
         expect((zuletzt.liste as { grouped: boolean }).grouped).toBe(false);
 
         unmount();
+    });
+
+    /** Eine Taste drücken, wie ein Mensch sie drückt. */
+    async function taste(key: string) {
+        await act(async () => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+        });
+    }
+
+    /**
+     * Die Antwort auf die Nachrichten-Adresse.
+     *
+     * Die Gegenstelle hatte keine: `messages` trifft `/message/9` nicht, und
+     * ohne `success` plus `message` bleibt nichts offen — womit auch keine
+     * Taste wirkt, die eine offene Nachricht braucht.
+     */
+    const eineNachricht = {
+        'message/': {
+            success: true,
+            folder: 'INBOX',
+            message: {
+                uid: 9,
+                message_id: '<a@x>',
+                subject: 'Anfrage',
+                from_address: 'anna@example.test',
+                from_name: 'Anna',
+                date: '2026-10-20T08:00:00+02:00',
+                to: [],
+                cc: [],
+                body_html: null,
+                body_text: 'Text',
+                attachments: [],
+                is_read: true,
+                is_flagged: false,
+            },
+        },
+    };
+
+    /** Eine Nachricht öffnen — die meisten Tasten wirken nur dann. */
+    async function oeffneEine() {
+        await vi.waitFor(() => expect(zuletzt.offene).toBeDefined());
+        await act(async () => {
+            await (zuletzt.offene as { open: (m: unknown, f: string) => Promise<unknown> }).open({ uid: 9, message_id: '<a@x>' }, 'INBOX');
+        });
+    }
+
+    describe('die Tastatur (#9116)', () => {
+        /*
+         * Der Projekt-Manager hatte fünfzehn Tasten verdrahtet, dieser Haken
+         * fünf. Beim Zurückführen seiner Seite hätten zehn davon LAUTLOS
+         * aufgehört zu wirken — keine Meldung, keine rote Zeile, die Taste tut
+         * nichts mehr.
+         *
+         * Jetzt verdrahtet der Haken sie für alle vier Produkte. CRM,
+         * Verwaltung und AI Brain bekommen damit Tasten, die sie vorher nicht
+         * hatten.
+         */
+        it('öffnet mit r das Antwortfeld, mit a die Antwort an alle', async () => {
+            const { fetchStub } = gegenstelle(eineNachricht);
+            vi.stubGlobal('fetch', fetchStub);
+
+            const { unmount } = render(<Probe melden={() => {}} />);
+            await oeffneEine();
+
+            await taste('r');
+            expect(zuletzt.antwortOffen).toBe(true);
+            expect(zuletzt.antwortAnAlle).toBe(false);
+
+            await act(async () => (zuletzt.setAntwortOffen as (w: boolean) => void)(false));
+
+            await taste('a');
+            expect(zuletzt.antwortOffen).toBe(true);
+            expect(zuletzt.antwortAnAlle).toBe(true);
+
+            unmount();
+        });
+
+        it('öffnet mit f das Weiterleiten-Feld', async () => {
+            const { fetchStub } = gegenstelle(eineNachricht);
+            vi.stubGlobal('fetch', fetchStub);
+
+            const { unmount } = render(<Probe melden={() => {}} />);
+            await oeffneEine();
+
+            await taste('f');
+            expect(zuletzt.weiterleitenOffen).toBe(true);
+
+            unmount();
+        });
+
+        it('schweigt beim Verfassen — und räumt mit Escape von oben nach unten ab', async () => {
+            /*
+             * Die wichtigere Richtung. Ohne `enabled` löscht ein `#` im
+             * Antworttext die Mail, auf die gerade geantwortet wird, und ein
+             * `e` archiviert sie.
+             *
+             * Und die Reihenfolge beim Escape zählt: Schließt es die ganze
+             * Nachricht statt erst das Feld, ist der getippte Text weg.
+             */
+            const { fetchStub } = gegenstelle(eineNachricht);
+            vi.stubGlobal('fetch', fetchStub);
+
+            const { unmount } = render(<Probe melden={() => {}} />);
+            await oeffneEine();
+
+            await taste('f');
+            await taste('r');
+            expect(zuletzt.weiterleitenOffen).toBe(true);
+
+            // Beim Verfassen wirkt `r` nicht mehr — das Antwortfeld bleibt zu.
+            expect(zuletzt.antwortOffen).toBe(false);
+
+            // Escape nimmt erst das Weiterleiten-Feld …
+            await taste('Escape');
+            expect(zuletzt.weiterleitenOffen).toBe(false);
+
+            // … und die Nachricht steht noch offen.
+            expect(zuletzt.offene).toBeDefined();
+            expect((zuletzt.offene as { message: unknown }).message).not.toBeNull();
+
+            unmount();
+        });
+
+        it('gibt ? und / an das Produkt weiter', async () => {
+            /*
+             * Beide bleiben beim Produkt, aus zwei verschiedenen Gründen: Eine
+             * Tastaturhilfe ist ein Dialog aus dem UI-Kit des Produkts, und ein
+             * Fokus braucht eine Referenz auf ein echtes Eingabefeld — der
+             * Haken besitzt keinen Knoten.
+             */
+            const { fetchStub } = gegenstelle(eineNachricht);
+            vi.stubGlobal('fetch', fetchStub);
+
+            const hilfe = vi.fn();
+            const suchen = vi.fn();
+
+            const { unmount } = render(<Probe melden={() => {}} onHilfe={hilfe} onSuchen={suchen} />);
+            await oeffneEine();
+
+            await taste('?');
+            await taste('/');
+
+            expect(hilfe).toHaveBeenCalledTimes(1);
+            expect(suchen).toHaveBeenCalledTimes(1);
+
+            unmount();
+        });
     });
 
     it('setzt den Ordner beim Postfachwechsel auf INBOX zurück', async () => {

@@ -154,6 +154,15 @@ export function MailboxFlaeche({
          */
         basis,
         amGeoeffneten,
+        /*
+         * Die vier Aktionen an der geoeffneten Nachricht kommen seit #9116 aus
+         * dem Haken. Sie standen hier im JSX und waren damit fuer die
+         * Tastatur unerreichbar — der Zuhoerer sitzt im Haken.
+         */
+        gelesenUmschalten,
+        markierungUmschalten,
+        offeneArchivieren,
+        offeneLoeschen,
         antwortAnAlle,
         antwortOffen,
         antwortSenden,
@@ -438,51 +447,11 @@ export function MailboxFlaeche({
                                             }}
                                             onForward={() => setWeiterleitenOffen(true)}
                                             extraActions={zusatzAktionen}
-                                            onToggleRead={() =>
-                                                void amGeoeffneten(() =>
-                                                    postJson(
-                                                        `${basis}/${konto?.id}/message/${offeneKennung()}/seen`,
-                                                        { folder: ordnerPfad, seen: !(offene.message as { is_read?: boolean } | null)?.is_read },
-                                                        { csrfToken: csrf },
-                                                    ),
-                                                )
-                                            }
-                                            onToggleFlag={() =>
-                                                void amGeoeffneten(() =>
-                                                    postJson(
-                                                        `${basis}/${konto?.id}/message/${offeneKennung()}/flagged`,
-                                                        { folder: ordnerPfad, flagged: !(offene.message as { is_flagged?: boolean } | null)?.is_flagged },
-                                                        { csrfToken: csrf },
-                                                    ),
-                                                )
-                                            }
+                                            onToggleRead={() => void gelesenUmschalten()}
+                                            onToggleFlag={() => void markierungUmschalten()}
                                             archiveCount={archivKennungen.length}
-                                            onArchive={() =>
-                                                void amGeoeffneten(
-                                                    () =>
-                                                        postJson(
-                                                            `${basis}/${konto?.id}/bulk`,
-                                                            {
-                                                                folder: ordnerPfad,
-                                                                action: 'archive',
-                                                                uids: archivKennungen.length > 0 ? archivKennungen : [offeneKennung()],
-                                                            },
-                                                            { csrfToken: csrf },
-                                                        ),
-                                                    true,
-                                                )
-                                            }
-                                            onDelete={() =>
-                                                void amGeoeffneten(
-                                                    () =>
-                                                        postJson(
-                                                            `${basis}/${konto?.id}/message/${offeneKennung()}/delete`,
-                                                            { folder: ordnerPfad },
-                                                            { csrfToken: csrf },
-                                                        ),
-                                                    true,
-                                                )
-                                            }
+                                            onArchive={() => void offeneArchivieren()}
+                                            onDelete={() => void offeneLoeschen()}
                                             formatDateTime={(iso) => new Date(iso).toLocaleString('de-DE')}
                                             formatAddressList={(a) => a.map((x) => x.name || x.email).join(', ')}
                                             formatFileSize={(b) => `${Math.round(b / 1024)} KB`}
