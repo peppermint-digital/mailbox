@@ -84,9 +84,32 @@ export interface MailboxSeiteOptionen {
     /** Wie das Produkt eine Rueckmeldung zeigt. Ueblicherweise `toast`. */
     melden: (text: string, gelungen: boolean) => void;
     labels?: Partial<MailboxSeiteTexte>;
+    /**
+     * Der Vorsatz, unter dem die Mail-Routen dieses Produkts liegen.
+     *
+     * Vorgabe `/mailbox`, weil drei der vier Produkte dort liegen und sich
+     * fuer sie nichts aendern soll.
+     *
+     * ## Warum das eine Option sein MUSS
+     *
+     * Hier standen die Adressen fest verdrahtet — `/mailbox/{id}/search`,
+     * `/mailbox/{id}/assignments` und zwanzig weitere. Der Projekt-Manager hat
+     * seine 56 Mail-Routen aber unter `/emails/...`, und damit war dieser
+     * Haken fuer ihn unbenutzbar. Das ist der Grund, warum dort eine eigene
+     * Mail-Seite mit 2216 Zeilen gewachsen ist (#9116), wo CRM mit 122
+     * auskommt.
+     *
+     * Die naheliegende Alternative waere, die 56 Routen des Managers
+     * umzuziehen. Das ist eine SICHTBARE Aenderung: Lesezeichen brechen, und
+     * `emails/stored/{email}` wird aus Aufgaben verlinkt. Eine Option kostet
+     * dagegen nichts und niemanden.
+     *
+     * Ohne fuehrenden Schraegstrich am Ende: `/mailbox`, nicht `/mailbox/`.
+     */
+    basis?: string;
 }
 
-export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxSeiteOptionen) {
+export function useMailboxSeite({ konten, namensraum, melden, labels, basis = '/mailbox' }: MailboxSeiteOptionen) {
     const texte = { ...MAILBOX_SEITE_TEXTE, ...labels };
 
     const [konto, setKonto] = useState<MailboxSeiteKonto | null>(konten[0] ?? null);
@@ -113,6 +136,7 @@ export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxS
      * die Quelle. Wer also das Postfach wechselte und dann eine Mail anklickte,
      * schickte deren Kennung an das alte MailboxSeiteKonto. Am 23.09.2026 in AI Brain live
      * nachgestellt: `/mailbox/8/message/2943` fuer eine Nachricht aus MailboxSeiteKonto 11.
+     * (Der Vorsatz `/mailbox` ist die Vorgabe und ueber `basis` einstellbar.)
      * Es passierte schlicht nichts — kein Fehler, keine Meldung, die Mail ging
      * nicht auf.
      *
@@ -135,9 +159,9 @@ export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxS
             httpMailboxSources<RowMessage, Record<string, never>>({
                 accountId: kennung,
                 routes: {
-                    folders: (id) => `/mailbox/${id}/folders`,
-                    messages: (id, { folder, page }) => `/mailbox/${id}/messages?folder=${encodeURIComponent(folder)}&page=${page}`,
-                    message: (id, { uid, folder }) => `/mailbox/${id}/message/${uid}?folder=${encodeURIComponent(folder)}`,
+                    folders: (id) => `${basis}/${id}/folders`,
+                    messages: (id, { folder, page }) => `${basis}/${id}/messages?folder=${encodeURIComponent(folder)}&page=${page}`,
+                    message: (id, { uid, folder }) => `${basis}/${id}/message/${uid}?folder=${encodeURIComponent(folder)}`,
                     search: (id, p) => {
                         const teile = new URLSearchParams({ folder: p.folder });
 
@@ -150,7 +174,7 @@ export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxS
                         // Endpunkt erfährt es über `scope`.
                         if (p.allFolders) teile.set('scope', 'all');
 
-                        return `/mailbox/${id}/search?${teile.toString()}`;
+                        return `${basis}/${id}/search?${teile.toString()}`;
                     },
                 },
             }),
@@ -172,7 +196,7 @@ export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxS
     const chatQuelle = useMemo(
         () =>
             httpMailboxChatSource({
-                url: (id) => `/mailbox/${id}/ai-chat`,
+                url: (id) => `${basis}/${id}/ai-chat`,
                 csrfToken: document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? '',
             }),
         [],
@@ -273,8 +297,8 @@ export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxS
     } | null;
 
     const werkzeuge = useMailWerkzeuge({
-        endpoint: konto ? `/mailbox/${konto.id}/tools` : null,
-        ausloesenEndpoint: konto ? `/mailbox/${konto.id}/tools/run` : null,
+        endpoint: konto ? `${basis}/${konto.id}/tools` : null,
+        ausloesenEndpoint: konto ? `${basis}/${konto.id}/tools/run` : null,
         nachricht: werkzeugNachricht,
         csrfToken: csrf,
     });
@@ -302,7 +326,7 @@ export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxS
             folderOf: (uid) => zeilen.find((z) => z.msg.uid === uid)?.msg.folder ?? ordnerPfad,
             send: (ordnerName, uids) =>
                 postCounted(
-                    `/mailbox/${konto.id}/bulk`,
+                    `${basis}/${konto.id}/bulk`,
                     { folder: ordnerName, action: aktion, uids, ...(zielOrdner ? { target_folder: zielOrdner } : {}) },
                     { csrfToken: csrf },
                 ),
@@ -334,7 +358,7 @@ export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxS
      */
     const ordnerVerwaltung = useFolderActions<MailFolder>({
         accountId: konto?.id ?? null,
-        endpoint: (id) => `/mailbox/${id}/folders`,
+        endpoint: (id) => `${basis}/${id}/folders`,
         csrfToken: csrf,
         selectedFolder: ordnerPfad,
         labels: {
@@ -369,12 +393,12 @@ export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxS
     const zuweisungsQuelle = useMemo(
         () => ({
             users: async (id: number | string, signal: AbortSignal) =>
-                (await (await fetch(`/mailbox/${id}/assignable-users`, { headers: { Accept: 'application/json' }, signal })).json()).users ?? [],
+                (await (await fetch(`${basis}/${id}/assignable-users`, { headers: { Accept: 'application/json' }, signal })).json()).users ?? [],
             // Die Antwort traegt seit dem 19.10.2026 mit, OB sie eine ist:
             // „nicht geholt" und „niemand zustaendig" ergeben beide eine leere
             // Liste, und nur eine davon ist eine Aussage.
             load: async (id: number | string, signal: AbortSignal) => {
-                const antwort = await (await fetch(`/mailbox/${id}/assignments`, { headers: { Accept: 'application/json' }, signal })).json();
+                const antwort = await (await fetch(`${basis}/${id}/assignments`, { headers: { Accept: 'application/json' }, signal })).json();
 
                 return {
                     assignments: antwort.assignments ?? [],
@@ -386,7 +410,7 @@ export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxS
             },
             assign: async (id: number | string, nachricht: RowMessage, userId: number) =>
                 postJson(
-                    `/mailbox/${id}/assignments`,
+                    `${basis}/${id}/assignments`,
                     { message_id: nachricht.message_id ?? '', assigned_to_user_id: userId },
                     { csrfToken: csrf },
                 ),
@@ -394,7 +418,7 @@ export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxS
             // liest das nur aus Formulardaten, nicht aus einem JSON-Rumpf —
             // die Anfrage waere auf 405 gelaufen.
             unassign: async (id: number | string, nachricht: RowMessage) => {
-                const antwort = await fetch(`/mailbox/${id}/assignments`, {
+                const antwort = await fetch(`${basis}/${id}/assignments`, {
                     method: 'DELETE',
                     headers: {
                         'Accept': 'application/json',
@@ -527,7 +551,7 @@ export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxS
 
         void (async () => {
             try {
-                const antwort = await fetch(`/mailbox/${konto.id}/snoozes`, {
+                const antwort = await fetch(`${basis}/${konto.id}/snoozes`, {
                     headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                     signal: abbruch.signal,
                 });
@@ -552,7 +576,7 @@ export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxS
         }
 
         const ok = await postJson(
-            `/mailbox/${konto.id}/snoozes`,
+            `${basis}/${konto.id}/snoozes`,
             { message_id: m.message_id, until: bis.toISOString() },
             { csrfToken: csrf },
         );
@@ -564,7 +588,7 @@ export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxS
         }
 
         offene.close();
-        const antwort = await fetch(`/mailbox/${konto.id}/snoozes`, { headers: { Accept: 'application/json' } });
+        const antwort = await fetch(`${basis}/${konto.id}/snoozes`, { headers: { Accept: 'application/json' } });
         setSchlummernde(antwort.ok ? ((await antwort.json()).snoozes ?? []) : []);
         await liste.load({ accountId: konto.id, folder: ordnerPfad, page: liste.page, refresh: true });
     };
@@ -626,7 +650,7 @@ export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxS
 
             anhaenge.forEach((datei, i) => nutzlast.append(`attachments[${i}]`, datei));
 
-            const antwort = await fetch(`/mailbox/${konto.id}/send`, {
+            const antwort = await fetch(`${basis}/${konto.id}/send`, {
                 method: 'POST',
                 headers: {
                     Accept: 'application/json',
@@ -722,6 +746,11 @@ export function useMailboxSeite({ konten, namensraum, melden, labels }: MailboxS
 
 
     return {
+        /*
+         * Der Routen-Vorsatz reist mit: Die Flaeche baut daraus ihre eigenen
+         * Adressen, und ein Produkt soll ihn nicht zweimal angeben muessen.
+         */
+        basis,
         amGeoeffneten,
         antwortAnAlle,
         antwortOffen,

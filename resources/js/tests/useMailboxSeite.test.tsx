@@ -86,7 +86,7 @@ interface Geprobt {
 
 let zuletzt: Geprobt = {};
 
-function Probe({ melden }: { melden: (text: string, gelungen: boolean) => void }) {
+function Probe({ melden, basis }: { melden: (text: string, gelungen: boolean) => void; basis?: string }) {
     const seite = useMailboxSeite({
         konten: [
             { id: 42, email: 'department@example.test', name: 'Abteilung' },
@@ -94,6 +94,7 @@ function Probe({ melden }: { melden: (text: string, gelungen: boolean) => void }
         ],
         namensraum: 'test.mailbox.assistent',
         melden,
+        ...(basis === undefined ? {} : { basis }),
     });
 
     zuletzt = seite as unknown as Geprobt;
@@ -131,7 +132,7 @@ describe('der Haken füllt, was er verspricht', () => {
         unmount();
     });
 
-    it('gibt alle 40 Werte heraus — und keinen als undefined', async () => {
+    it('gibt alle 41 Werte heraus — und keinen als undefined', async () => {
         /*
          * Der Wächter gegen den Fehler, den dieser Umbau am leichtesten macht:
          * einen Namen in der Rückgabe zu vergessen. TypeScript fängt das an
@@ -146,6 +147,7 @@ describe('der Haken füllt, was er verspricht', () => {
         await vi.waitFor(() => expect(Object.keys(zuletzt).length).toBeGreaterThan(0));
 
         const erwartet = [
+            'basis',
             'amGeoeffneten', 'antwortAnAlle', 'antwortOffen', 'antwortSenden', 'archivKennungen',
             'assistent', 'auswahl', 'beschaeftigt', 'chatQuelle', 'csrf', 'fehler', 'filterOffen',
             'konto', 'liste', 'melden', 'nachrichtBeschaeftigt', 'offene', 'offeneKennung', 'ordner',
@@ -163,6 +165,55 @@ describe('der Haken füllt, was er verspricht', () => {
         const fehlend = erwartet.filter((n) => zuletzt[n] === undefined);
 
         expect(fehlend).toEqual([]);
+
+        unmount();
+    });
+
+    it('legt jede Adresse unter den Routen-Vorsatz des Produkts (#9116)', async () => {
+        /*
+         * Hier standen zwanzig Adressen fest verdrahtet auf `/mailbox/...`.
+         * Der Projekt-Manager hat seine 56 Mail-Routen unter `/emails/...` —
+         * und war damit von diesem Haken ausgeschlossen. Das ist der Grund,
+         * warum dort eine eigene Mail-Seite mit 2216 Zeilen gewachsen ist,
+         * wo das CRM mit 122 auskommt.
+         *
+         * Geprueft wird NICHT eine einzelne Adresse, sondern dass KEINE
+         * ausserhalb des Vorsatzes liegt. Eine vergessene faellt sonst nicht
+         * auf: Sie bricht genau eine Funktion, und zwar die, die niemand
+         * sofort anklickt.
+         */
+        const { fetchStub, gesehen } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} basis="/emails" />);
+
+        await vi.waitFor(() => expect(gesehen.length).toBeGreaterThan(1));
+
+        expect(gesehen.filter((pfad) => pfad.startsWith('/mailbox/'))).toEqual([]);
+        expect(gesehen.every((pfad) => pfad.startsWith('/emails/'))).toBe(true);
+
+        // Und der Vorsatz reist mit, damit die Flaeche ihn nicht erneut braucht.
+        expect(zuletzt.basis).toBe('/emails');
+
+        unmount();
+    });
+
+    it('bleibt ohne Angabe auf /mailbox — die drei anderen Produkte merken nichts', async () => {
+        /*
+         * Die wichtigere Richtung. CRM, Verwaltung und AI Brain geben keinen
+         * Vorsatz an; waere die Vorgabe falsch oder fehlte sie, fielen dort
+         * alle Abrufe aus — und zwar erst in Produktion, denn die Typpruefung
+         * hat an einer Zeichenkette nichts zu beanstanden.
+         */
+        const { fetchStub, gesehen } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} />);
+
+        await vi.waitFor(() => expect(gesehen.length).toBeGreaterThan(1));
+
+        expect(gesehen.every((pfad) => pfad.startsWith('/mailbox/'))).toBe(true);
+        expect(zuletzt.basis).toBe('/mailbox');
 
         unmount();
     });

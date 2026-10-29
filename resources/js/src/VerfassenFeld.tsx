@@ -2,6 +2,7 @@ import {
     EmailComposerForm,
     type EmailComposerFormLabels,
     type EmailComposerFormProps,
+    type RecipientSource,
     type RecipientSuggestion,
 } from './EmailComposerForm';
 import { germanLabels } from './germanLabels';
@@ -45,10 +46,46 @@ async function hole(url: string, signal: AbortSignal): Promise<RecipientSuggesti
  * und ein bei jedem Zeichnen neu gebautes Objekt stellt dem Formular seine
  * Verzögerung zurück.
  */
-export const empfaengerQuelle = {
-    all: (signal: AbortSignal) => hole('/mailbox/address-book/colleagues', signal),
-    search: (frage: string, signal: AbortSignal) => hole(`/mailbox/address-book/search?q=${encodeURIComponent(frage)}`, signal),
-};
+/**
+ * Dieselbe Quelle, aber unter dem Routen-Vorsatz eines Produkts (#9116).
+ *
+ * Der Projekt-Manager hat sein Adressbuch unter `/emails/address-book`, nicht
+ * unter `/mailbox/address-book`. Eine feste Adresse hier hiesse: Entweder der
+ * Manager kann dieses Feld nicht benutzen, oder er baut es nach — und
+ * Nachbauten laufen auseinander.
+ *
+ * ## Warum gemerkt und nicht bei jedem Aufruf neu
+ *
+ * Aus demselben Grund, aus dem {@link empfaengerQuelle} eine Konstante ist und
+ * kein Hook: Ein bei jedem Zeichnen neu gebautes Objekt stellt dem Formular
+ * seine Verzoegerung zurueck, und dann sucht es bei jedem Tastendruck von
+ * vorn. Gleicher Vorsatz, gleiches Objekt.
+ *
+ * Die Merk-Tabelle steht VOR der Fabrik und die Fabrik vor {@link empfaengerQuelle}
+ * — nicht aus Stilgefuehl: `empfaengerQuelle` ruft die Fabrik beim Laden des
+ * Moduls, und eine danach deklarierte `const` waere dann noch nicht da. Die
+ * Typpruefung sieht das nicht, es faellt erst beim ersten Import auf.
+ */
+const gemerkteQuellen = new Map<string, RecipientSource>();
+
+export function empfaengerQuelleFuer(basis: string): RecipientSource {
+    const vorhanden = gemerkteQuellen.get(basis);
+
+    if (vorhanden) {
+        return vorhanden;
+    }
+
+    const quelle: RecipientSource = {
+        all: (signal: AbortSignal) => hole(`${basis}/address-book/colleagues`, signal),
+        search: (frage: string, signal: AbortSignal) => hole(`${basis}/address-book/search?q=${encodeURIComponent(frage)}`, signal),
+    };
+
+    gemerkteQuellen.set(basis, quelle);
+
+    return quelle;
+}
+
+export const empfaengerQuelle = empfaengerQuelleFuer('/mailbox');
 
 /**
  * Keines der drei Systeme führt Signaturen im Postfach.

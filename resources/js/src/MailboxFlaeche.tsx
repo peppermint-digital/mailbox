@@ -130,6 +130,12 @@ export function MailboxFlaeche({
     werkzeugeEigene,
 }: MailboxFlaecheProps) {
     const {
+        /*
+         * Der Routen-Vorsatz des Produkts (#9116). Vorgabe `/mailbox`, der
+         * Projekt-Manager liegt unter `/emails`. Er kommt aus `seite`, damit
+         * ein Produkt ihn nur EINMAL angibt — beim Haken.
+         */
+        basis,
         amGeoeffneten,
         antwortAnAlle,
         antwortOffen,
@@ -222,8 +228,8 @@ export function MailboxFlaeche({
                     accounts={konten.map((k) => ({ id: k.id, name: k.name }))}
                     accountId={konto?.id ?? null}
                     onAccountChange={(wert) => setKonto(konten.find((k) => k.id === Number(wert)) ?? null)}
-                    onAddressBook={() => navigieren('/mailbox/address-book')}
-                    onCompose={() => navigieren('/mailbox/compose')}
+                    onAddressBook={() => navigieren(`${basis}/address-book`)}
+                    onCompose={() => navigieren(`${basis}/compose`)}
                     onRefresh={
                         konto ? () => void liste.load({ accountId: konto.id, folder: ordnerPfad, page: liste.page, refresh: true }) : undefined
                     }
@@ -387,7 +393,7 @@ export function MailboxFlaeche({
                                             bodyHtml={nachricht.body_html ?? null}
                                             bodyText={nachricht.body_text ?? null}
                                             originalAttachments={nachricht.attachments ?? []}
-                                            endpoints={{ forward: `/mailbox/${konto.id}/forward` }}
+                                            endpoints={{ forward: `${basis}/${konto.id}/forward` }}
                                             melden={(text) => melden(text, true)}
                                             onSent={() => setWeiterleitenOffen(false)}
                                             onCancel={() => setWeiterleitenOffen(false)}
@@ -418,7 +424,7 @@ export function MailboxFlaeche({
                                             onToggleRead={() =>
                                                 void amGeoeffneten(() =>
                                                     postJson(
-                                                        `/mailbox/${konto?.id}/message/${offeneKennung()}/seen`,
+                                                        `${basis}/${konto?.id}/message/${offeneKennung()}/seen`,
                                                         { folder: ordnerPfad, seen: !(offene.message as { is_read?: boolean } | null)?.is_read },
                                                         { csrfToken: csrf },
                                                     ),
@@ -427,7 +433,7 @@ export function MailboxFlaeche({
                                             onToggleFlag={() =>
                                                 void amGeoeffneten(() =>
                                                     postJson(
-                                                        `/mailbox/${konto?.id}/message/${offeneKennung()}/flagged`,
+                                                        `${basis}/${konto?.id}/message/${offeneKennung()}/flagged`,
                                                         { folder: ordnerPfad, flagged: !(offene.message as { is_flagged?: boolean } | null)?.is_flagged },
                                                         { csrfToken: csrf },
                                                     ),
@@ -438,7 +444,7 @@ export function MailboxFlaeche({
                                                 void amGeoeffneten(
                                                     () =>
                                                         postJson(
-                                                            `/mailbox/${konto?.id}/bulk`,
+                                                            `${basis}/${konto?.id}/bulk`,
                                                             {
                                                                 folder: ordnerPfad,
                                                                 action: 'archive',
@@ -453,7 +459,7 @@ export function MailboxFlaeche({
                                                 void amGeoeffneten(
                                                     () =>
                                                         postJson(
-                                                            `/mailbox/${konto?.id}/message/${offeneKennung()}/delete`,
+                                                            `${basis}/${konto?.id}/message/${offeneKennung()}/delete`,
                                                             { folder: ordnerPfad },
                                                             { csrfToken: csrf },
                                                         ),
@@ -465,7 +471,7 @@ export function MailboxFlaeche({
                                             formatFileSize={(b) => `${Math.round(b / 1024)} KB`}
                                             attachmentUrl={(anhang) =>
                                                 konto
-                                                    ? `/mailbox/${konto.id}/message/${(offene.message as { uid?: number | string } | null)?.uid ?? ''}/attachment/${anhang.index}/download?folder=${encodeURIComponent(ordnerPfad)}`
+                                                    ? `${basis}/${konto.id}/message/${(offene.message as { uid?: number | string } | null)?.uid ?? ''}/attachment/${anhang.index}/download?folder=${encodeURIComponent(ordnerPfad)}`
                                                     : '#'
                                             }
                                         />

@@ -13,6 +13,12 @@ import { render } from './support/render';
  */
 function seite(teil: Partial<MailboxSeiteErgebnis> = {}): MailboxSeiteErgebnis {
     const leer = {
+        // Der Routen-Vorsatz (#9116). Bewusst in der Attrappe und NICHT als
+        // Rueckfall in der Flaeche: Fehlt er wirklich, baut die Flaeche
+        // `undefined/1/forward` — eine Adresse, die sofort auffaellt. Ein
+        // stiller Rueckfall auf `/mailbox` haette im Projekt-Manager
+        // plausibel aussehende 404 erzeugt.
+        basis: '/mailbox',
         amGeoeffneten: vi.fn(),
         antwortAnAlle: false,
         antwortOffen: false,
@@ -247,6 +253,26 @@ describe('Antworten und Weiterleiten', () => {
         expect(gesehen[0].endpoints).toEqual({ forward: '/mailbox/1/forward' });
         expect(gesehen[0].account).toEqual({ id: 1, name: 'Post', email: 'post@beispiel.de' });
         unmount();
+    });
+
+    it('baut die Adresse des Weiterleiten-Felds unter dem Vorsatz des Produkts (#9116)', () => {
+        /*
+         * Die Flaeche hatte `/mailbox/...` fest verdrahtet, an acht Stellen.
+         * Der Projekt-Manager liegt unter `/emails/...` — hier wird die eine
+         * Adresse geprueft, die ein Produkt wirklich hereinbekommt.
+         */
+        const feld = vi.fn(() => null);
+
+        render(
+            <MailboxFlaeche
+                seite={seite({ basis: '/emails', weiterleitenOffen: true, offene: { message: { uid: 1 }, loading: false } as never })}
+                konten={[{ id: 1, email: 'a@b.test', name: 'A' }]}
+                navigieren={() => {}}
+                weiterleitenFeld={feld as never}
+            />,
+        );
+
+        expect((feld.mock.calls[0]?.[0] as { endpoints?: { forward?: string } })?.endpoints).toEqual({ forward: '/emails/1/forward' });
     });
 
     it('reicht die Meldung des Produkts an das Weiterleiten-Feld durch', () => {
