@@ -3,6 +3,7 @@
 namespace Peppermint\Mailbox\Sending;
 
 use Illuminate\Support\Str;
+use Peppermint\Mailbox\Http\HandlesSending;
 use Peppermint\Mailbox\Mailboxes;
 use Peppermint\Mailbox\Models\MailAccount;
 use Symfony\Component\Mailer\Mailer as SymfonyMailer;
@@ -36,6 +37,22 @@ use Symfony\Component\Mime\Email as MimeEmail;
  */
 class Mailer
 {
+    /**
+     * Der Ersatz-Postausgang fuer Tests, sonst `null`.
+     *
+     * Statisch, weil der Aufrufer den `Mailer` nicht in der Hand hat:
+     * `versenden()` baut sich seinen selbst (`new Mailer`). Eine
+     * Eigenschaft am Objekt waere damit unerreichbar.
+     *
+     * Dass hier Zustand zwischen Anfragen stehenbleiben kann, ist unter
+     * Octane bewusst in Kauf genommen und derselbe Handel wie bei
+     * {@see Mailboxes::fake()}: EINE Closure, die
+     * ersetzt und nicht anwaechst. Gesetzt wird sie nur in Tests.
+     *
+     * @var (\Closure(MailAccount): TransportInterface)|null
+     */
+    private static ?\Closure $fake = null;
+
     /**
      * Verschickt die Nachricht und gibt ihre Message-ID zurueck.
      *
@@ -114,9 +131,69 @@ class Mailer
      */
     public function transportFor(MailAccount $konto): TransportInterface
     {
+        if (self::$fake !== null) {
+            return (self::$fake)($konto);
+        }
+
         return $this->nutztOAuth($konto)
             ? $this->oauthTransport($konto)
             : $this->passwortTransport($konto);
+    }
+
+    /**
+     * Den Postausgang in Tests ersetzen — das Gegenstueck zu
+     * {@see Mailboxes::fake()}.
+     *
+     * ## Warum das Paket diese Naht braucht
+     *
+     * Ohne sie ist der Versand nur ueber einen echten Mailserver pruefbar, und
+     * was das kostet, war am 29.10.2026 im Projekt-Manager zu sehen: Dort
+     * liefen fuenf Versand-Tests gegen eine Attrappe des PRODUKT-Dienstes.
+     * Sobald dieser Dienst dem Paketweg wich, griff die Attrappe nicht mehr,
+     * der Versand lief echt — und jeder Test endete nach rund 20 Sekunden im
+     * SMTP-Zeitablauf.
+     *
+     * Das Paket selbst stand nicht besser da: Seine eigenen Versand-Tests
+     * umgehen {@see HandlesSending::versenden()},
+     * indem ein Test-Controller die Methode ueberschreibt. Damit ist alles
+     * geprueft, was VOR dem Versand passiert, und nichts danach: nicht die
+     * Entscheidung ueber die Kopie in „Gesendet", nicht der Haken fuer die
+     * Buchfuehrung des Produkts, nicht die Reihenfolge, in der beides laeuft.
+     * Genau diese Reihenfolge traegt die Regel, dass nach dem Hinausgeben
+     * nichts mehr als Fehlschlag beim Absender ankommen darf.
+     *
+     * ## Warum kein Container-Eintrag
+     *
+     * Ein Eintrag im Container wuerde verschweigen, welcher Transport gewaehlt
+     * wurde — und in Produktion ist das das Einzige, was sichtbar bleiben
+     * muss. Diese Naht tut das Gegenteil: Sie ist ausdruecklich, sie steht nur
+     * im Test, und sie muss wieder abgeraeumt werden.
+     *
+     * ## Benutzung
+     *
+     * ```php
+     * $postausgang = new RecordingTransport;
+     * Mailer::fake(fn () => $postausgang);
+     * // … senden …
+     * expect($postausgang->anzahl())->toBe(1);
+     * // und in afterEach:
+     * Mailer::fake(null);
+     * ```
+     *
+     * Die Closure bekommt das Konto und darf danach entscheiden — so laesst
+     * sich ein Konto pruefen, dessen Versand scheitert, waehrend ein anderes
+     * durchgeht. Wer einen Fehlschlag braucht, gibt einen Transport mit, der
+     * wirft.
+     *
+     * `null` raeumt ab. Ein Test, der das vergisst, laesst den naechsten gegen
+     * ein Gespenst laufen — und dieser naechste Test ist dann gruen, ohne
+     * jemals gesendet zu haben.
+     *
+     * @param  (\Closure(MailAccount): TransportInterface)|null  $factory
+     */
+    public static function fake(?\Closure $factory): void
+    {
+        self::$fake = $factory;
     }
 
     /**

@@ -321,3 +321,42 @@ vendor/bin/pest      # PHP half
 npm install
 npm test             # JavaScript half
 ```
+
+### Testing sending, without a mail server
+
+Sending has a seam, like mailboxes do. `Mailer::fake()` takes a closure and
+returns whatever it builds instead of a real SMTP transport:
+
+```php
+use Peppermint\Mailbox\Sending\Mailer;
+use Peppermint\Mailbox\Sending\RecordingTransport;
+
+$outbox = new RecordingTransport;
+Mailer::fake(fn () => $outbox);
+
+// … send through your controller …
+
+expect($outbox->anzahl())->toBe(1);
+expect($outbox->letzteNachricht()->getHeaders()->get('To')->getBodyAsString())
+    ->toContain('customer@example.test');
+
+Mailer::fake(null);   // in afterEach — a test that forgets leaves the next
+                      // one green without ever having sent anything
+```
+
+The closure receives the account, so one test can let one mailbox succeed while
+another fails. For a failure, hand it a transport that throws — then you can
+assert the thing that is otherwise invisible: that **nothing after the send ran**.
+That order carries a rule worth keeping — once the message is out, nothing may
+reach the sender as a failure, or they will send it a second time.
+
+Without this seam that question needs a real mail server, and a question that
+needs a real mail server does not get asked. What it cost before is on record:
+five send tests in the project manager faked the *product's* service instead, so
+they checked their own wiring and never the message. The moment that service
+gave way to the package path, each of them ran into a 20-second SMTP timeout.
+
+Two things it deliberately leaves alone. It does not touch the copy into the
+Sent folder — that runs through `Mailboxes::for()` and has its own seam, and
+keeping them apart means a green test cannot quietly claim both halves. And it
+never pretends a failure: a transport that should fail is one you pass in.
