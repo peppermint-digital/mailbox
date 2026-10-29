@@ -92,11 +92,13 @@ function Probe({
     basis,
     suchQuelle,
     oeffnenQuelle,
+    initialGrouped,
 }: {
     melden: (text: string, gelungen: boolean) => void;
     basis?: string;
     suchQuelle?: Parameters<typeof useMailboxSeite>[0]['suchQuelle'];
     oeffnenQuelle?: Parameters<typeof useMailboxSeite>[0]['oeffnenQuelle'];
+    initialGrouped?: boolean;
 }) {
     const seite = useMailboxSeite({
         konten: [
@@ -108,6 +110,7 @@ function Probe({
         ...(basis === undefined ? {} : { basis }),
         ...(suchQuelle === undefined ? {} : { suchQuelle }),
         ...(oeffnenQuelle === undefined ? {} : { oeffnenQuelle }),
+        ...(initialGrouped === undefined ? {} : { initialGrouped }),
     });
 
     zuletzt = seite as unknown as Geprobt;
@@ -345,6 +348,41 @@ describe('der Haken füllt, was er verspricht', () => {
         });
 
         expect(gesehen.some((pfad) => pfad.includes('/message/9'))).toBe(true);
+
+        unmount();
+    });
+
+    it('fängt gruppiert an, wenn das Produkt es so gemerkt hat (#9116)', async () => {
+        /*
+         * Die Gruppierung entscheidet, WAS man liest, nicht wie breit es
+         * steht. Der Projekt-Manager merkt sie deshalb serverseitig an der
+         * Person — sie folgt ihm auf jedes Geraet.
+         *
+         * Dieser Haken gab sie bisher gar nicht weiter. Ohne diese Option
+         * haette die Liste nach dem Umstieg immer flach angefangen, und die
+         * Wahl waere nicht pro Browser, sondern ganz verloren gewesen.
+         */
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} initialGrouped />);
+
+        await vi.waitFor(() => expect(zuletzt.liste).toBeDefined());
+
+        expect((zuletzt.liste as { grouped: boolean }).grouped).toBe(true);
+
+        unmount();
+    });
+
+    it('fängt ohne Angabe flach an — die drei anderen merken nichts', async () => {
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} />);
+
+        await vi.waitFor(() => expect(zuletzt.liste).toBeDefined());
+
+        expect((zuletzt.liste as { grouped: boolean }).grouped).toBe(false);
 
         unmount();
     });

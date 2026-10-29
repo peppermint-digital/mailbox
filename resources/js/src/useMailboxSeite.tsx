@@ -142,9 +142,46 @@ export interface MailboxSeiteOptionen {
      * gesendeten Nachrichten (#9116).
      */
     oeffnenQuelle?: OpenMessageSource<RowMessage, Record<string, never>>;
+    /**
+     * Ob die Liste beim ersten Zeichnen nach Konversationen gruppiert ist.
+     *
+     * Vorgabe `false`, wie bisher. Umschalten kann man weiterhin in der
+     * Leiste; hier steht nur, womit es anfaengt.
+     *
+     * ## Warum das eine Option ist und nicht gemerkt wird
+     *
+     * Die Ordnerspalte merkt sich dieses Paket selbst, pro Browser
+     * ({@link useMailboxPreference}) — mit der dort aufgeschriebenen
+     * Begruendung, dass eine eingeklappte Spalte die Bequemlichkeit EINES
+     * Bildschirms ist.
+     *
+     * Die Gruppierung ist etwas anderes: Sie entscheidet, was man liest, nicht
+     * wie breit es steht. Der Projekt-Manager merkt sie deshalb seit je
+     * serverseitig an der Person (`emailPreferences.groupByThread`) — sie
+     * folgt ihm auf jedes Geraet.
+     *
+     * Dieser Haken gab sie bisher GAR NICHT weiter. Nach einem Umstieg auf
+     * diese Flaeche haette die Liste also immer flach angefangen, und die
+     * Wahl waere nicht etwa pro Browser, sondern ganz verloren gewesen
+     * (#9116).
+     *
+     * Als Option statt als eigene Merkregel, damit jedes Produkt behalten
+     * kann, wo es sie fuehrt: der Manager am Server, ein anderes vielleicht
+     * nirgends.
+     */
+    initialGrouped?: boolean;
 }
 
-export function useMailboxSeite({ konten, namensraum, melden, labels, basis = '/mailbox', suchQuelle, oeffnenQuelle }: MailboxSeiteOptionen) {
+export function useMailboxSeite({
+    konten,
+    namensraum,
+    melden,
+    labels,
+    basis = '/mailbox',
+    suchQuelle,
+    oeffnenQuelle,
+    initialGrouped = false,
+}: MailboxSeiteOptionen) {
     const texte = { ...MAILBOX_SEITE_TEXTE, ...labels };
 
     const [konto, setKonto] = useState<MailboxSeiteKonto | null>(konten[0] ?? null);
@@ -247,7 +284,7 @@ export function useMailboxSeite({ konten, namensraum, melden, labels, basis = '/
     const assistent = useMailboxSidePanel(namensraum);
 
     const ordner = useMailboxFolders({ source: quellen.folders });
-    const liste = useMailboxList<RowMessage>({ source: quellen.messages });
+    const liste = useMailboxList<RowMessage>({ source: quellen.messages, initialGrouped });
     // Die eigene des Produkts, sonst die des Hakens.
     const offene = useOpenMessage<RowMessage, Record<string, never>>({ source: oeffnenQuelle ?? quellen.message });
     const suche = useMailboxSearch<RowMessage>({
