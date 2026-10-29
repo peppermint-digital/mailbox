@@ -1,62 +1,160 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MailboxHeader, type MailboxHeaderLabels } from '../src/MailboxHeader';
-import { render } from './support/render';
+import { click, render, textOf } from './support/render';
 
-const labels: MailboxHeaderLabels = {
+/**
+ * Die Kopfzeile des Postfachs (22.09.2026).
+ *
+ * Der Punkt dieser Tests ist die Regel, nach der sie gebaut ist: Was alle
+ * Produkte teilen, steht fest an seinem Platz; was ein Produkt zusaetzlich
+ * hat, steht in einem eigenen, erkennbaren Bereich daneben. Und ein Knopf, den
+ * das Produkt nicht bedient, erscheint gar nicht — ein Knopf ohne Wirkung
+ * sieht aus wie ein Fehler, nicht wie eine fehlende Funktion.
+ */
+const texte: MailboxHeaderLabels = {
     addressBook: 'Adressbuch',
     compose: 'Neue E-Mail',
     refresh: 'Aktualisieren',
-    refreshing: 'Wird aktualisiert',
-    accountPicker: 'Postfach wählen',
-    noAccounts: 'Kein Postfach',
+    refreshing: 'Wird aktualisiert …',
+    accountPicker: 'Postfach auswählen',
+    noAccounts: 'Kein Postfach zugeteilt',
 };
 
-const konten = [{ id: 1, name: 'department@peppermint-digital.de' }];
+const konten = [
+    { id: 1, name: 'info@example.test' },
+    { id: 2, name: 'buero@example.test' },
+];
 
-/**
- * Gemessen am 29.10.2026 auf vw. und crm.peppermint-digital.com bei 390 px:
- * Der Kontowähler lag 135 px unter dem Knopf „Neue E-Mail" — die Adresse war
- * weder lesbar noch ganz anklickbar.
- *
- * Ursache war eine feste `w-[250px]` ohne Schrumpferlaubnis neben einer
- * `shrink-0`-Gruppe: 24+24 px Innenabstand lassen bei 390 px nur 342 px, und
- * was nicht schrumpfen darf, schiebt sich unter den Nachbarn.
- *
- * Was dieser Test NICHT kann: jsdom rechnet kein Layout, er misst also keine
- * Überlappung. Er hält nur fest, dass die Schrumpferlaubnis und der Umbruch
- * nicht wieder verschwinden. Der Nachweis, dass es wirklich passt, ist der
- * Screenshot bei 390 px — nicht diese Datei.
- */
-describe('MailboxHeader bei schmaler Breite', () => {
-    it('lässt den Kontowähler schrumpfen, statt ihn fest auf 250 px zu nageln', () => {
-        const { container, unmount } = render(
-            <MailboxHeader title="E-Mails" labels={labels} accounts={konten} accountId={1} onAccountChange={() => {}} onCompose={() => {}} />,
-        );
+const grund = { title: 'E-Mails', labels: texte, accounts: konten, accountId: 1, onAccountChange: () => {} };
 
-        const waehler = container.querySelector('[aria-label="Postfach wählen"]');
-        expect(waehler).not.toBeNull();
+describe('MailboxHeader', () => {
+    it('zeigt Titel und Postfach-Auswahl', () => {
+        const { container, unmount } = render(<MailboxHeader {...grund} />);
 
-        const klassen = waehler!.className;
-        expect(klassen).toContain('max-w-full');
-        expect(klassen).toContain('min-w-0');
-
+        expect(textOf(container)).toContain('E-Mails');
+        expect(container.querySelector('[data-slot="mailbox-header"]')).not.toBeNull();
         unmount();
     });
 
-    it('bricht die Kopfzeile unterhalb von md um, damit die Knöpfe eine eigene Reihe bekommen', () => {
+    it('laesst jeden Knopf weg, den das Produkt nicht bedient', () => {
+        // Das ist der Kern: Ein CRM ohne Verfassen-Route soll keinen
+        // Verfassen-Knopf zeigen, der nichts tut.
+        const { container, unmount } = render(<MailboxHeader {...grund} />);
+
+        expect(container.querySelector('button[aria-label="Adressbuch"]')).toBeNull();
+        expect(container.querySelector('button[aria-label="Aktualisieren"]')).toBeNull();
+        expect(textOf(container)).not.toContain('Neue E-Mail');
+        unmount();
+    });
+
+    it('zeigt die gemeinsamen Knoepfe, sobald es sie gibt', () => {
         const { container, unmount } = render(
-            <MailboxHeader title="E-Mails" labels={labels} accounts={konten} accountId={1} onAccountChange={() => {}} onCompose={() => {}} />,
+            <MailboxHeader {...grund} onAddressBook={() => {}} onCompose={() => {}} onRefresh={() => {}} />,
         );
 
+        expect(container.querySelector('button[aria-label="Adressbuch"]')).not.toBeNull();
+        expect(container.querySelector('button[aria-label="Aktualisieren"]')).not.toBeNull();
+        expect(textOf(container)).toContain('Neue E-Mail');
+        unmount();
+    });
+
+    it('haelt die produkteigenen Werkzeuge in einem eigenen Bereich', () => {
+        // Nicht bloss „irgendwo mitgerendert": Wer zwei Produkte nebeneinander
+        // legt, soll sehen koennen, welcher Knopf geteilt ist und welcher nicht.
+        const { container, unmount } = render(<MailboxHeader {...grund} extras={<button>NUR HIER</button>} />);
+
+        const bereich = container.querySelector('[data-slot="mailbox-header-extras"]');
+
+        expect(bereich).not.toBeNull();
+        expect(bereich?.textContent).toContain('NUR HIER');
+        unmount();
+    });
+
+    it('ohne Zusatzwerkzeuge bleibt der Bereich weg', () => {
+        // Sonst stuende ein Trennstrich da, hinter dem nichts kommt.
+        const { container, unmount } = render(<MailboxHeader {...grund} />);
+
+        expect(container.querySelector('[data-slot="mailbox-header-extras"]')).toBeNull();
+        unmount();
+    });
+
+    it('meldet das Aktualisieren und sperrt sich, solange es laeuft', () => {
+        const aktualisiere = vi.fn();
+        const { container, rerender, unmount } = render(<MailboxHeader {...grund} onRefresh={aktualisiere} />);
+
+        click(container.querySelector('button[aria-label="Aktualisieren"]')!);
+        expect(aktualisiere).toHaveBeenCalled();
+
+        rerender(<MailboxHeader {...grund} onRefresh={aktualisiere} refreshing />);
+        const knopf = container.querySelector<HTMLButtonElement>('button[aria-label="Aktualisieren"]')!;
+        expect(knopf.disabled).toBe(true);
+        expect(knopf.title).toBe('Wird aktualisiert …');
+        unmount();
+    });
+
+    it('sagt bei einem leeren Produkt, dass kein Postfach zugeteilt ist', () => {
+        // „Postfach auswaehlen" ueber einer leeren Liste schickt jemanden auf
+        // die Suche nach einem Eintrag, den es nicht gibt.
+        const { container, unmount } = render(<MailboxHeader {...grund} accounts={[]} accountId={null} />);
+
+        expect(textOf(container)).toContain('Kein Postfach zugeteilt');
+        unmount();
+    });
+
+    /*
+     * `accountAccessory` hat hier BEWUSST keinen Test.
+     *
+     * Radix baut die Zeilen der Auswahlliste erst, wenn sie geoeffnet ist, und
+     * das Oeffnen braucht Zeiger-APIs, die jsdom nicht hat. Ein Test waere
+     * gruen, ohne je an der Kennzeichnung vorbeizukommen — ein Waechter, der
+     * nie zuschnappt, und damit schlimmer als keiner: Er sagt, die Sache sei
+     * geprueft.
+     *
+     * Geprueft wird sie am ausgerollten Stand im Browser.
+     */
+
+    it('zeigt eine Stoerung neben dem Titel', () => {
+        const { container, unmount } = render(<MailboxHeader {...grund} error="Das Postfach ist gerade nicht erreichbar." />);
+
+        expect(container.querySelector('[data-slot="mailbox-header-error"]')?.textContent).toContain('nicht erreichbar');
+        unmount();
+    });
+
+    /**
+     * Gemessen am 29.10.2026 in Produktion bei 390 px, auf vw. UND
+     * crm.peppermint-digital.com identisch: Der Kontowaehler lag 135 px unter
+     * dem Knopf „Neue E-Mail" — die Adresse war weder lesbar noch auf ihrer
+     * ganzen Flaeche anklickbar.
+     *
+     * Ursache war `w-[250px]` ohne Schrumpferlaubnis neben einer
+     * `shrink-0`-Gruppe: Bei 390 px bleiben nach `px-6` nur 342 px, und was
+     * nicht schrumpfen darf, schiebt sich unter den Nachbarn.
+     *
+     * Was diese beiden Tests NICHT koennen: jsdom rechnet kein Layout, sie
+     * messen also keine Ueberlappung. Sie halten den Klassenvertrag fest,
+     * damit er nicht unbemerkt wieder verschwindet. Der Nachweis, dass es
+     * wirklich passt, ist der Screenshot bei 390 px — nicht diese Datei.
+     */
+
+    it('laesst den Kontowaehler schrumpfen, statt ihn fest auf 250 px zu nageln', () => {
+        const { container, unmount } = render(<MailboxHeader {...grund} onCompose={() => {}} />);
+
+        const waehler = container.querySelector('[aria-label="Postfach auswählen"]');
+        expect(waehler).not.toBeNull();
+        expect(waehler!.className).toContain('max-w-full');
+        expect(waehler!.className).toContain('min-w-0');
+        unmount();
+    });
+
+    it('bricht die Kopfzeile unterhalb von md um, damit die Knoepfe eine eigene Reihe bekommen', () => {
+        const { container, unmount } = render(<MailboxHeader {...grund} onCompose={() => {}} />);
+
         const kopf = container.querySelector('[data-slot="mailbox-header"]');
-        expect(kopf).not.toBeNull();
         expect(kopf!.className).toContain('max-md:flex-wrap');
 
         // Die linke Gruppe muss die Reihe fuellen, sonst steht der Waehler nach
         // dem Umbruch in einer 95-px-Spalte statt ueber die volle Breite.
-        const links = kopf!.querySelector('div');
-        expect(links!.className).toContain('max-md:w-full');
-
+        expect(kopf!.querySelector('div')!.className).toContain('max-md:w-full');
         unmount();
     });
 });
