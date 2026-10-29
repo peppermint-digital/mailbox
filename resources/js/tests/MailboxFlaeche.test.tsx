@@ -275,6 +275,38 @@ describe('Antworten und Weiterleiten', () => {
         expect((feld.mock.calls[0]?.[0] as { endpoints?: { forward?: string } })?.endpoints).toEqual({ forward: '/emails/1/forward' });
     });
 
+    it('reicht die Zusatzknoepfe des Produkts an den Assistenten durch (#9116)', async () => {
+        /*
+         * `MailboxChat` nimmt `controls` seit jeher — die Flaeche hat es nur
+         * nicht weitergegeben. Folge: Der Projekt-Manager haette beim Umstieg
+         * auf diese Flaeche seine Spracheingabe verloren, und damit einen
+         * Grund gehabt, die Seite doch selbst zu bauen.
+         *
+         * Geprueft wird an der ECHTEN Verdrahtung, nicht an einer Attrappe
+         * von MailboxChat: Eine Attrappe wuerde zeigen, dass die Flaeche
+         * etwas weitergibt — nicht, dass es unten ankommt.
+         */
+        const chatQuelle = {
+            load: async () => ({ messages: [], status: null, activity: [] }),
+            send: async () => null,
+        };
+
+        const { container } = render(
+            <MailboxFlaeche
+                seite={seite({
+                    chatQuelle: chatQuelle as never,
+                    assistent: { sichtbar: true, zeigen: vi.fn(), verbergen: vi.fn() },
+                })}
+                konten={[{ id: 1, email: 'a@b.test', name: 'A' }]}
+                navigieren={() => {}}
+                chatVerfuegbar
+                chatZusatz={() => <button data-slot="probe-mikrofon">Mikrofon</button>}
+            />,
+        );
+
+        await vi.waitFor(() => expect(container.querySelector('[data-slot="probe-mikrofon"]')).not.toBeNull());
+    });
+
     it('reicht die Meldung des Produkts an das Weiterleiten-Feld durch', () => {
         /*
          * `melden` kommt aus dem Haken, nicht als zweite Eigenschaft der

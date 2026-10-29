@@ -16,7 +16,7 @@ import { useMailboxFolders } from './useMailboxFolders';
 import { useMailboxKeyboard } from './useMailboxKeyboard';
 import { useMailboxList } from './useMailboxList';
 import { useMailboxPreference } from './useMailboxPreference';
-import { useMailboxSearch } from './useMailboxSearch';
+import { useMailboxSearch, type MailboxSearchSource } from './useMailboxSearch';
 import { useMailWerkzeuge } from './useMailWerkzeuge';
 import { useMessageSelection } from './useMessageSelection';
 import { useOpenMessage } from './useOpenMessage';
@@ -107,9 +107,24 @@ export interface MailboxSeiteOptionen {
      * Ohne fuehrenden Schraegstrich am Ende: `/mailbox`, nicht `/mailbox/`.
      */
     basis?: string;
+    /**
+     * Eine eigene Suchquelle, falls das Produkt mehr kann als der Endpunkt.
+     *
+     * Der Haken baut sonst seine eigene (`{basis}/{id}/search`), und das ist
+     * fuer drei der vier Produkte genau richtig.
+     *
+     * Der Projekt-Manager hat aber einen Volltext-Index und meldet dessen
+     * Zustand in der Oberflaeche — etwas, das dieser Haken nicht kennen soll
+     * und nicht kennen muss. Ohne diesen Platz waere er gezwungen, die ganze
+     * Seite selbst zu bauen, nur wegen der Suche (#9116).
+     *
+     * `httpSources` hatte den Platz (`search?: MailboxSearchSource`) schon;
+     * er kam hier nur nicht an.
+     */
+    suchQuelle?: MailboxSearchSource<RowMessage>;
 }
 
-export function useMailboxSeite({ konten, namensraum, melden, labels, basis = '/mailbox' }: MailboxSeiteOptionen) {
+export function useMailboxSeite({ konten, namensraum, melden, labels, basis = '/mailbox', suchQuelle }: MailboxSeiteOptionen) {
     const texte = { ...MAILBOX_SEITE_TEXTE, ...labels };
 
     const [konto, setKonto] = useState<MailboxSeiteKonto | null>(konten[0] ?? null);
@@ -187,8 +202,14 @@ export function useMailboxSeite({ konten, namensraum, melden, labels, basis = '/
          * `exhaustive-deps` — und genau diese Unterdrueckung hat den Fehler
          * vom 23.09.2026 verdeckt, bei dem die Quelle fuer immer das erste
          * Postfach festhielt.
+         *
+         * `basis` steht aus demselben Grund dabei: Seit v0.155.0 bauen diese
+         * Adressen damit, und eine unvollstaendige Liste ist genau die Form
+         * des Fehlers von damals — nur ein Feld weiter. Dass der Wert je
+         * Produkt konstant ist, macht die Auslassung nicht richtig, sondern
+         * nur folgenlos, und folgenlos hoert irgendwann auf.
          */
-        [kennung],
+        [kennung, basis],
     );
 
     // Stabil halten: Die Quelle haengt am Takt des Chats — eine bei jedem
@@ -199,7 +220,8 @@ export function useMailboxSeite({ konten, namensraum, melden, labels, basis = '/
                 url: (id) => `${basis}/${id}/ai-chat`,
                 csrfToken: document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? '',
             }),
-        [],
+        // `basis` seit v0.155.0 — dieselbe Begruendung wie bei `quellen`.
+        [basis],
     );
 
     const assistent = useMailboxSidePanel(namensraum);
@@ -208,7 +230,8 @@ export function useMailboxSeite({ konten, namensraum, melden, labels, basis = '/
     const liste = useMailboxList<RowMessage>({ source: quellen.messages });
     const offene = useOpenMessage<RowMessage, Record<string, never>>({ source: quellen.message });
     const suche = useMailboxSearch<RowMessage>({
-        source: quellen.search!,
+        // Die eigene des Produkts, sonst die des Hakens.
+        source: suchQuelle ?? quellen.search!,
         folder: ordnerPfad,
         onResults: (zeilen, gesamt) => liste.showRows(zeilen, gesamt),
         // Zurück zur normalen Liste — der Ordner, der offen war.

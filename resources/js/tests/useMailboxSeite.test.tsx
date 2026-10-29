@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act } from 'react';
 import { useMailboxSeite } from '../src/useMailboxSeite';
 import { render } from './support/render';
 
@@ -86,7 +87,15 @@ interface Geprobt {
 
 let zuletzt: Geprobt = {};
 
-function Probe({ melden, basis }: { melden: (text: string, gelungen: boolean) => void; basis?: string }) {
+function Probe({
+    melden,
+    basis,
+    suchQuelle,
+}: {
+    melden: (text: string, gelungen: boolean) => void;
+    basis?: string;
+    suchQuelle?: Parameters<typeof useMailboxSeite>[0]['suchQuelle'];
+}) {
     const seite = useMailboxSeite({
         konten: [
             { id: 42, email: 'department@example.test', name: 'Abteilung' },
@@ -95,6 +104,7 @@ function Probe({ melden, basis }: { melden: (text: string, gelungen: boolean) =>
         namensraum: 'test.mailbox.assistent',
         melden,
         ...(basis === undefined ? {} : { basis }),
+        ...(suchQuelle === undefined ? {} : { suchQuelle }),
     });
 
     zuletzt = seite as unknown as Geprobt;
@@ -110,6 +120,25 @@ beforeEach(() => {
 afterEach(() => {
     vi.unstubAllGlobals();
 });
+
+/**
+ * Eine Suche auslösen, wie der Mensch sie auslöst.
+ *
+ * `set` nimmt Feld und Wert einzeln, und `search` läuft nur, wenn `canSearch`
+ * zustimmt — mindestens zwei Zeichen. Beides in `act`, weil `set` Zustand
+ * setzt und der nächste Durchlauf erst danach die neue Frage sieht.
+ */
+async function suchen(frage = 'rechnung') {
+    const suche = () => zuletzt.suche as { set: (f: string, w: unknown) => void; search: () => Promise<unknown> };
+
+    await act(async () => {
+        suche().set('query', frage);
+    });
+
+    await act(async () => {
+        await suche().search();
+    });
+}
 
 describe('der Haken füllt, was er verspricht', () => {
     it('nimmt das erste Postfach und holt Ordner und Nachrichten', async () => {
@@ -214,6 +243,50 @@ describe('der Haken füllt, was er verspricht', () => {
 
         expect(gesehen.every((pfad) => pfad.startsWith('/mailbox/'))).toBe(true);
         expect(zuletzt.basis).toBe('/mailbox');
+
+        unmount();
+    });
+
+    it('benutzt die Suchquelle des Produkts, statt die eigene zu bauen (#9116)', async () => {
+        /*
+         * Drei Produkte wollen den Endpunkt des Hakens. Der Projekt-Manager
+         * hat einen Volltext-Index und meldet dessen Zustand in der
+         * Oberflaeche — etwas, das dieser Haken nicht kennen soll.
+         *
+         * Ohne diesen Platz waere er gezwungen, die ganze Seite selbst zu
+         * bauen, nur wegen der Suche. Genau das ist der Grund fuer die 2216
+         * Zeilen in #9116.
+         */
+        const { fetchStub, gesehen } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        // Die Form, die der Haken erwartet: `messages`, nicht `rows`.
+        const eigene = { search: vi.fn(async () => ({ messages: [], total: 0 })) };
+
+        const { unmount } = render(<Probe melden={() => {}} suchQuelle={eigene as never} />);
+
+        await vi.waitFor(() => expect(zuletzt.suche).toBeDefined());
+
+        await suchen();
+
+        expect(eigene.search).toHaveBeenCalled();
+        // Und der eigene Endpunkt des Hakens wird dabei NICHT angefasst.
+        expect(gesehen.filter((pfad) => pfad.includes('/search'))).toEqual([]);
+
+        unmount();
+    });
+
+    it('baut ohne Angabe seine eigene Suche — die drei anderen merken nichts', async () => {
+        const { fetchStub, gesehen } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} />);
+
+        await vi.waitFor(() => expect(zuletzt.suche).toBeDefined());
+
+        await suchen();
+
+        expect(gesehen.some((pfad) => pfad.includes('/search'))).toBe(true);
 
         unmount();
     });

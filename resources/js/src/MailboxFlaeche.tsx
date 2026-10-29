@@ -4,7 +4,7 @@ import type { InlineAntwortProps } from './InlineAntwort';
 import type { WeiterleitenFeldProps } from './inertia/WeiterleitenFeld';
 import { MailAssignmentPicker } from './MailAssignmentPicker';
 import { MailboxBrowser } from './MailboxBrowser';
-import { MailboxChat } from './MailboxChat';
+import { MailboxChat, type MailboxChatProps } from './MailboxChat';
 import { MailboxHeader } from './MailboxHeader';
 import { MailboxSidePanel, MailboxSidePanelHandle } from './MailboxSidePanel';
 import { MailConversationPane } from './MailConversationPane';
@@ -57,6 +57,11 @@ import type { MailWerkzeug } from './useMailWerkzeuge';
  * | `zusatzAktionen` | Schlummer-Menü | Schlummer-Menü | dazu „Aus der Ablage entfernen" |
  * | `nachDerSeite` | — | — | der Entfernen-Dialog |
  * | `werkzeugeVerbergen` | eigene Verben aus | eigene Verben aus | nichts aus |
+ * | `chatZusatz` | — | — | — |
+ *
+ * `chatZusatz` steht noch leer, weil es fuer den Projekt-Manager ergaenzt
+ * wurde (#9116): Dort haengt eine Spracheingabe am Assistenten, und ohne
+ * diesen Durchgang haette der Umstieg auf diese Flaeche sie gekostet.
  *
  * ## Warum das Schlummer-Menü ein Einschnitt bleibt
  *
@@ -110,6 +115,17 @@ export interface MailboxFlaecheProps {
      * Inertia, sie nimmt ihren Router als Eigenschaft.
      */
     weiterleitenFeld?: ComponentType<WeiterleitenFeldProps>;
+    /**
+     * Zusatzknoepfe im Eingabefeld des Assistenten — etwa ein Mikrofon.
+     *
+     * `MailboxChat` nimmt `controls` seit jeher; die Flaeche hat es nur nicht
+     * weitergegeben. Folge: Der Projekt-Manager haette beim Umstieg auf diese
+     * Flaeche seine Spracheingabe verloren — und damit einen Grund gehabt, die
+     * Seite doch selbst zu bauen (#9116).
+     *
+     * Die drei anderen Produkte geben nichts an und sehen keinen Unterschied.
+     */
+    chatZusatz?: MailboxChatProps['controls'];
     werkzeugeVerbergen?: (werkzeug: MailWerkzeug) => boolean;
     werkzeugeEigene?: Record<string, () => void>;
 }
@@ -126,6 +142,7 @@ export function MailboxFlaeche({
     nachDerSeite,
     antwortFeld: AntwortFeld,
     weiterleitenFeld: WeiterleitenFeld,
+    chatZusatz,
     werkzeugeVerbergen,
     werkzeugeEigene,
 }: MailboxFlaecheProps) {
@@ -482,7 +499,7 @@ export function MailboxFlaeche({
                         aside={
                             zeigtAssistent && konto ? (
                                 <MailboxSidePanel title="Postfach-Assistent" onClose={assistent.verbergen}>
-                                    <MailboxChat account={konto} source={chatQuelle} />
+                                    <MailboxChat account={konto} source={chatQuelle} controls={chatZusatz} />
                                 </MailboxSidePanel>
                             ) : undefined
                         }
