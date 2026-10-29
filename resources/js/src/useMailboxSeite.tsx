@@ -19,7 +19,7 @@ import { useMailboxPreference } from './useMailboxPreference';
 import { useMailboxSearch, type MailboxSearchSource } from './useMailboxSearch';
 import { useMailWerkzeuge } from './useMailWerkzeuge';
 import { useMessageSelection } from './useMessageSelection';
-import { useOpenMessage } from './useOpenMessage';
+import { useOpenMessage, type OpenMessageSource } from './useOpenMessage';
 
 /**
  * Das Postfach einer Mailseite — ALLE Haken an einer Stelle (#8316).
@@ -122,9 +122,29 @@ export interface MailboxSeiteOptionen {
      * er kam hier nur nicht an.
      */
     suchQuelle?: MailboxSearchSource<RowMessage>;
+    /**
+     * Eine eigene Oeffnen-Quelle, falls das Produkt mehr oeffnen kann als ein
+     * Postfach hergibt.
+     *
+     * Der Haken baut sonst `{basis}/{id}/message/{uid}?folder=…`, und das ist
+     * fuer drei der vier Produkte genau richtig.
+     *
+     * Der Projekt-Manager hat ein eigenes Archiv: Eine Zeile mit
+     * `source: 'stored'` hat GAR KEINE IMAP-Kennung und liegt in keinem
+     * Ordner — sie kommt unter `{basis}/{id}/stored/{email}/json` aus der
+     * Datenbank. Die Nachrichtenform des Pakets kennt `source` und
+     * `stored_id` seit jeher ({@link RowMessage}), seine HTTP-Quelle aber
+     * nicht; sie fragt immer nach der Kennung.
+     *
+     * Ohne diesen Platz koennte der Manager nach dem Umstieg auf die
+     * gemeinsame Flaeche keine Archiv-Mail mehr oeffnen — und das ist keine
+     * Randfunktion: Dort liegen die Mails an Aufgaben und die eigenen
+     * gesendeten Nachrichten (#9116).
+     */
+    oeffnenQuelle?: OpenMessageSource<RowMessage, Record<string, never>>;
 }
 
-export function useMailboxSeite({ konten, namensraum, melden, labels, basis = '/mailbox', suchQuelle }: MailboxSeiteOptionen) {
+export function useMailboxSeite({ konten, namensraum, melden, labels, basis = '/mailbox', suchQuelle, oeffnenQuelle }: MailboxSeiteOptionen) {
     const texte = { ...MAILBOX_SEITE_TEXTE, ...labels };
 
     const [konto, setKonto] = useState<MailboxSeiteKonto | null>(konten[0] ?? null);
@@ -228,7 +248,8 @@ export function useMailboxSeite({ konten, namensraum, melden, labels, basis = '/
 
     const ordner = useMailboxFolders({ source: quellen.folders });
     const liste = useMailboxList<RowMessage>({ source: quellen.messages });
-    const offene = useOpenMessage<RowMessage, Record<string, never>>({ source: quellen.message });
+    // Die eigene des Produkts, sonst die des Hakens.
+    const offene = useOpenMessage<RowMessage, Record<string, never>>({ source: oeffnenQuelle ?? quellen.message });
     const suche = useMailboxSearch<RowMessage>({
         // Die eigene des Produkts, sonst die des Hakens.
         source: suchQuelle ?? quellen.search!,

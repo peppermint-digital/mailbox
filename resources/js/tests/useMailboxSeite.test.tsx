@@ -91,10 +91,12 @@ function Probe({
     melden,
     basis,
     suchQuelle,
+    oeffnenQuelle,
 }: {
     melden: (text: string, gelungen: boolean) => void;
     basis?: string;
     suchQuelle?: Parameters<typeof useMailboxSeite>[0]['suchQuelle'];
+    oeffnenQuelle?: Parameters<typeof useMailboxSeite>[0]['oeffnenQuelle'];
 }) {
     const seite = useMailboxSeite({
         konten: [
@@ -105,6 +107,7 @@ function Probe({
         melden,
         ...(basis === undefined ? {} : { basis }),
         ...(suchQuelle === undefined ? {} : { suchQuelle }),
+        ...(oeffnenQuelle === undefined ? {} : { oeffnenQuelle }),
     });
 
     zuletzt = seite as unknown as Geprobt;
@@ -287,6 +290,61 @@ describe('der Haken füllt, was er verspricht', () => {
         await suchen();
 
         expect(gesehen.some((pfad) => pfad.includes('/search'))).toBe(true);
+
+        unmount();
+    });
+
+    it('benutzt die Öffnen-Quelle des Produkts, statt die eigene zu bauen (#9116)', async () => {
+        /*
+         * Der Projekt-Manager hat ein Archiv: Eine Zeile mit
+         * `source: 'stored'` hat GAR KEINE IMAP-Kennung und liegt in keinem
+         * Ordner. Die Nachrichtenform des Pakets kennt `source` und
+         * `stored_id` seit jeher, seine HTTP-Quelle aber nicht — sie fragt
+         * immer nach der Kennung.
+         *
+         * Ohne diesen Platz koennte der Manager nach dem Umstieg keine
+         * Archiv-Mail mehr oeffnen, und dort liegen die Mails an Aufgaben und
+         * die eigenen gesendeten Nachrichten.
+         */
+        const { fetchStub, gesehen } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const eigene = { open: vi.fn(async () => ({ message: { subject: 'Aus dem Archiv' }, folder: null })) };
+
+        const { unmount } = render(<Probe melden={() => {}} oeffnenQuelle={eigene as never} />);
+
+        await vi.waitFor(() => expect(zuletzt.offene).toBeDefined());
+
+        await act(async () => {
+            await (zuletzt.offene as { open: (m: unknown, f: string) => Promise<unknown> }).open(
+                { uid: 0, message_id: '<archiv@x>', source: 'stored', stored_id: 7 },
+                'INBOX',
+            );
+        });
+
+        expect(eigene.open).toHaveBeenCalled();
+        // Und der eigene Weg des Hakens wird dabei NICHT angefasst.
+        expect(gesehen.filter((pfad) => pfad.includes('/message/'))).toEqual([]);
+
+        unmount();
+    });
+
+    it('öffnet ohne Angabe über den eigenen Weg — die drei anderen merken nichts', async () => {
+        const { fetchStub, gesehen } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} />);
+
+        await vi.waitFor(() => expect(zuletzt.offene).toBeDefined());
+
+        await act(async () => {
+            await (zuletzt.offene as { open: (m: unknown, f: string) => Promise<unknown> }).open(
+                { uid: 9, message_id: '<a@x>' },
+                'INBOX',
+            );
+        });
+
+        expect(gesehen.some((pfad) => pfad.includes('/message/9'))).toBe(true);
 
         unmount();
     });
