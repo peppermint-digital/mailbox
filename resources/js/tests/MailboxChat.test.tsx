@@ -188,6 +188,76 @@ describe('MailboxChat polling', () => {
         expect(source.load).toHaveBeenCalledTimes(2);
     });
 
+    /** Den Tab verbergen bzw. zeigen — jsdom laesst `visibilityState` nicht setzen. */
+    function sichtbarkeit(wert: 'visible' | 'hidden') {
+        Object.defineProperty(document, 'visibilityState', { value: wert, configurable: true });
+        document.dispatchEvent(new Event('visibilitychange'));
+    }
+
+    it('fragt nicht weiter, solange der Tab verborgen ist', async () => {
+        /*
+         * Gemessen am 29.10.2026: 13 Abrufe in 100 s, 526 KB, 601 ms
+         * Serverzeit je Abruf — und der Assistent ist von vorneherein offen
+         * (`useMailboxSidePanel` steht auf `standard = true`). Wer die
+         * Mailseite in einem Tab offen laesst, zahlt den Takt stundenlang,
+         * ohne hinzusehen.
+         */
+        const source = quelle({ load: vi.fn(async () => zustand({ status: 'running' })) });
+
+        await act(async () => {
+            render(<MailboxChat account={konto} source={source} />);
+        });
+        expect(source.load).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            sichtbarkeit('hidden');
+        });
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(20000);
+        });
+
+        // Zehn Takte waeren vergangen. Kein einziger Abruf.
+        expect(source.load).toHaveBeenCalledTimes(1);
+
+        sichtbarkeit('visible');
+    });
+
+    it('fragt sofort, sobald der Tab wieder sichtbar wird', async () => {
+        /*
+         * Die Gegenrichtung, und sie ist die wichtigere: Ein Takt, der sich
+         * verbergen laesst und nicht wieder anlaeuft, ist ein Chat, der stumm
+         * bleibt. Sofort statt erst nach acht Sekunden, weil genau jetzt
+         * jemand hinsieht.
+         */
+        const source = quelle({ load: vi.fn(async () => zustand({ status: 'running' })) });
+
+        await act(async () => {
+            render(<MailboxChat account={konto} source={source} />);
+        });
+
+        await act(async () => {
+            sichtbarkeit('hidden');
+        });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(20000);
+        });
+        expect(source.load).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            sichtbarkeit('visible');
+        });
+
+        // Ohne Zeitvorlauf: der Abruf haengt am Ereignis, nicht am Takt.
+        expect(source.load).toHaveBeenCalledTimes(2);
+
+        // Und der Takt laeuft danach weiter.
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(2100);
+        });
+        expect(source.load).toHaveBeenCalledTimes(3);
+    });
+
     it('stops asking once it is gone', async () => {
         // A component polling into the void keeps a whole tab busy.
         const source = quelle({ load: vi.fn(async () => zustand({ status: 'running' })) });

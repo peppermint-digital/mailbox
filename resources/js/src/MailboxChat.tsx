@@ -248,10 +248,35 @@ export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat'
         // vom vorigen Gespraech haengen, und der neue Verlauf liefe nie mit.
         amEndeRef.current = true;
 
+        /*
+         * Ein verborgener Tab fragt nicht (#9075).
+         *
+         * Gemessen am 29.10.2026 in Produktion: 13 Abrufe in 100 Sekunden,
+         * 526 KB, im Mittel 601 ms Serverzeit je Abruf. Hochgerechnet rund 450
+         * Anfragen und 18 MB je Stunde und Person — und jede davon konkurriert
+         * mit dem, was der Nutzer gerade tut.
+         *
+         * Das Fenster war dabei nicht „vergessen offen": `useMailboxSidePanel`
+         * steht auf `standard = true`, der Assistent ist also VON VORNEHEREIN
+         * offen. Wer die Mailseite oeffnet und den Assistenten nie anfasst,
+         * zahlt den Takt trotzdem — in jedem Tab, auch in denen, die seit
+         * Stunden im Hintergrund liegen.
+         *
+         * Die Uhr laeuft weiter, nur der Abruf entfaellt. Das ist der
+         * einfachere der beiden Wege: Ein Takt, der sich beim Verbergen
+         * abschaltet, muss beim Zurueckkommen zuverlaessig wieder anlaufen —
+         * und ein Takt, der nicht wieder anlaeuft, ist ein Chat, der stumm
+         * bleibt. Ein Zeitgeber alle acht Sekunden kostet nichts; eine
+         * Anfrage kostet 601 ms Serverzeit.
+         */
+        const verborgen = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
+
         const takten = () => {
             uhr = setTimeout(
                 async () => {
-                    await load(abbruch.signal);
+                    if (!verborgen()) {
+                        await load(abbruch.signal);
+                    }
                     if (!abbruch.signal.aborted) {
                         takten();
                     }
@@ -259,6 +284,35 @@ export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat'
                 isWorkingRef.current ? TAKT_ARBEITEND : TAKT_RUHEND,
             );
         };
+
+        /*
+         * Zurueck im Vordergrund: sofort fragen, nicht erst nach dem Takt.
+         *
+         * Sonst sieht man nach dem Tabwechsel bis zu acht Sekunden einen
+         * Stand von vorhin — und zwar genau in dem Moment, in dem man
+         * hinsieht. Der anstehende Zeitgeber wird dabei verworfen, damit nicht
+         * zweimal dasselbe geholt wird.
+         */
+        const aufwachen = () => {
+            if (verborgen() || abbruch.signal.aborted) {
+                return;
+            }
+
+            if (uhr) {
+                clearTimeout(uhr);
+                uhr = null;
+            }
+
+            void load(abbruch.signal).then(() => {
+                if (!abbruch.signal.aborted) {
+                    takten();
+                }
+            });
+        };
+
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', aufwachen);
+        }
 
         void load(abbruch.signal).then(() => {
             if (!abbruch.signal.aborted) {
@@ -268,6 +322,11 @@ export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat'
 
         return () => {
             abbruch.abort();
+
+            if (typeof document !== 'undefined') {
+                document.removeEventListener('visibilitychange', aufwachen);
+            }
+
             if (uhr) {
                 clearTimeout(uhr);
             }
