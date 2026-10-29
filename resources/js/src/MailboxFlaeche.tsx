@@ -1,4 +1,5 @@
 import { type ComponentType, type ReactNode } from 'react';
+import { looksLikeFolder } from './folders';
 import { germanLabels } from './germanLabels';
 import type { InlineAntwortProps } from './InlineAntwort';
 import type { WeiterleitenFeldProps } from './inertia/WeiterleitenFeld';
@@ -139,6 +140,19 @@ export interface MailboxFlaecheProps {
      * kommt nur, WANN es aufgeht.
      */
     zeilenMenue?: MailMessageListProps<RowMessage>['onRowContextMenu'];
+    /**
+     * Einen Entwurf weiterbearbeiten.
+     *
+     * Die Leseansicht zeigt den Knopf nur, wenn die Nachricht in einem
+     * Entwurfsordner liegt UND dieser Rueckruf da ist. Erkannt wird der
+     * Ordner hier (`looksLikeFolder`), das Bearbeiten selbst gehoert dem
+     * Produkt: Der Projekt-Manager fuehrt dafuer auf eine eigene Seite.
+     *
+     * Ohne diesen Platz zeigte die Flaeche an einem Entwurf gar keinen Knopf
+     * — in CRM, Verwaltung und AI Brain ist das heute so, und der Manager
+     * haette es beim Umstieg verloren (#9116).
+     */
+    entwurfBearbeiten?: () => void;
     werkzeugeVerbergen?: (werkzeug: MailWerkzeug) => boolean;
     werkzeugeEigene?: Record<string, () => void>;
 }
@@ -157,6 +171,7 @@ export function MailboxFlaeche({
     weiterleitenFeld: WeiterleitenFeld,
     chatZusatz,
     zeilenMenue,
+    entwurfBearbeiten,
     werkzeugeVerbergen,
     werkzeugeEigene,
 }: MailboxFlaecheProps) {
@@ -455,6 +470,24 @@ export function MailboxFlaeche({
                                             message={offene.message as never}
                                             labels={germanLabels.view}
                                             loading={offene.loading}
+                                            /*
+                                             * Es zaehlt der Ordner, in dem die Nachricht WIRKLICH
+                                             * liegt — nicht der links ausgewaehlte. Ein Entwurf, den
+                                             * man ueber die Suche findet, bleibt einer, auch wenn
+                                             * daneben der Posteingang steht.
+                                             *
+                                             * Die Erkennung liegt im Paket: Sie fragt zuerst die
+                                             * IMAP-Flags und kennt die kodierten Schreibweisen
+                                             * („Entw&APw-rfe" bei Office 365), an denen ein
+                                             * handgeschriebenes Muster vorbeigeht.
+                                             */
+                                            isDraft={(() => {
+                                                const pfad = offene.folder ?? ordnerPfad;
+                                                const ordnerZeile = (ordner.folders as MailFolder[]).find((f) => f.path === pfad);
+
+                                                return looksLikeFolder({ path: pfad, name: ordnerZeile?.name, flags: ordnerZeile?.flags }, 'Drafts');
+                                            })()}
+                                            onEditDraft={entwurfBearbeiten}
                                             busy={{ archiving: nachrichtBeschaeftigt, deleting: nachrichtBeschaeftigt }}
                                             onReply={(alle) => {
                                                 setAntwortAnAlle(alle);

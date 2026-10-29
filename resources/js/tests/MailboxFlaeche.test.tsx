@@ -11,6 +11,32 @@ import { render } from './support/render';
  * leeren Browsers? Und — der Fall, der eine weiße Fläche erzeugen würde —
  * kommt die Leseansicht zurück, wenn ein Produkt kein Antwortfeld mitgibt?
  */
+/**
+ * Eine Nachricht, wie die Leseansicht sie braucht.
+ *
+ * Die kurze Fassung ({ uid, subject }) reicht NICHT: `MailMessageView` liest
+ * `attachments.length`, und ein fehlendes Feld endet in
+ * „Cannot read properties of undefined (reading 'length')" — ein Fehler der
+ * Attrappe, der wie einer im Code aussieht.
+ */
+function entwurf() {
+    return {
+        uid: 3,
+        message_id: '<entwurf@x>',
+        subject: 'Halb getippt',
+        from_address: 'ich@example.test',
+        from_name: 'Ich',
+        to: [],
+        cc: [],
+        date: '2026-10-29T10:00:00+01:00',
+        body_html: null,
+        body_text: 'Halb getippt',
+        attachments: [],
+        is_read: true,
+        is_flagged: false,
+    };
+}
+
 function seite(teil: Partial<MailboxSeiteErgebnis> = {}): MailboxSeiteErgebnis {
     const leer = {
         // Der Routen-Vorsatz (#9116). Bewusst in der Attrappe und NICHT als
@@ -344,6 +370,74 @@ describe('Antworten und Weiterleiten', () => {
         zeile!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
 
         expect(menue).toHaveBeenCalled();
+    });
+
+    it('zeigt den Weiterbearbeiten-Knopf nur an einem Entwurf (#9116)', () => {
+        /*
+         * Die Flaeche gab weder `isDraft` noch `onEditDraft` weiter. Folge: An
+         * einem Entwurf stand gar kein Knopf — in CRM, Verwaltung und AI Brain
+         * ist das heute so, und der Manager haette es beim Umstieg verloren.
+         *
+         * Geprueft wird der Ordner, in dem die Nachricht WIRKLICH liegt
+         * (`offene.folder`), nicht der links ausgewaehlte: Ein Entwurf aus der
+         * Suche bleibt einer, auch wenn daneben der Posteingang steht.
+         */
+        const bearbeiten = vi.fn();
+
+        const { container } = render(
+            <MailboxFlaeche
+                seite={seite({
+                    ordnerPfad: 'INBOX',
+                    offene: {
+                        message: entwurf(),
+                        folder: 'Drafts',
+                        loading: false,
+                        open: vi.fn(),
+                        close: vi.fn(),
+                    } as never,
+                })}
+                konten={[{ id: 1, email: 'a@b.test', name: 'A' }]}
+                navigieren={() => {}}
+                entwurfBearbeiten={bearbeiten}
+            />,
+        );
+
+        const knopf = [...container.querySelectorAll('button')].find((b) => b.textContent?.includes('Weiter bearbeiten'));
+
+        expect(knopf).toBeDefined();
+
+        knopf!.click();
+
+        expect(bearbeiten).toHaveBeenCalled();
+    });
+
+    it('zeigt ihn NICHT, wenn die Nachricht im Posteingang liegt', () => {
+        /*
+         * Die wichtigere Richtung. Ein Knopf „Weiter bearbeiten" an einer
+         * empfangenen Mail fuehrt in einen Verfasser mit fremdem Text — und
+         * der Weg dorthin ist im Manager eine eigene Seite.
+         */
+        const { container } = render(
+            <MailboxFlaeche
+                seite={seite({
+                    ordnerPfad: 'Drafts',
+                    offene: {
+                        message: entwurf(),
+                        folder: 'INBOX',
+                        loading: false,
+                        open: vi.fn(),
+                        close: vi.fn(),
+                    } as never,
+                })}
+                konten={[{ id: 1, email: 'a@b.test', name: 'A' }]}
+                navigieren={() => {}}
+                entwurfBearbeiten={vi.fn()}
+            />,
+        );
+
+        const knopf = [...container.querySelectorAll('button')].find((b) => b.textContent?.includes('Weiter bearbeiten'));
+
+        expect(knopf).toBeUndefined();
     });
 
     it('reicht die Meldung des Produkts an das Weiterleiten-Feld durch', () => {
