@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { runBulkAcrossFolders } from './bulk';
 import { germanLabels } from './germanLabels';
-import { httpMailboxSources } from './httpSources';
+import { httpMailboxSources, type MailboxRoutes } from './httpSources';
 import type { MailFolder } from './MailFolderList';
 import { httpMailboxChatSource } from './mailboxChatSource';
 import { useMailboxSidePanel } from './MailboxSidePanel';
@@ -186,6 +186,61 @@ export interface MailboxSeiteOptionen {
      * Eingabefeld, und das steht in der Leiste.
      */
     onSuchen?: () => void;
+    /**
+     * Einzelne Adressen anders bauen, als dieser Haken sie vorgibt.
+     *
+     * Wird UEBER die Vorgaben gelegt, nicht statt ihrer — wer nur `targets`
+     * angibt, behaelt die uebrigen vier.
+     *
+     * ## Warum das nicht drei Schalter sind
+     *
+     * Drei Dinge fehlten dem Projekt-Manager, und jedes haette einen eigenen
+     * Schalter gebraucht (#9116):
+     *
+     * - `targets` — die Zielordner beim Verschieben. `httpMailboxSources`
+     *   kennt die Route, dieser Haken setzte sie nie; die Auswahl waere nach
+     *   dem Umstieg leer geblieben.
+     * - Ketten statt Nachrichten. `ListParams` traegt `grouped`, und die
+     *   Vorgabe hier ignorierte es: In der Gruppierung holte sie die FLACHE
+     *   Liste. Der Manager hat dafuer `/threads`.
+     * - `refresh`. Traegt `ListParams` ebenfalls, wurde ebenfalls
+     *   verschluckt — ein Neuladen las den Zwischenspeicher.
+     *
+     * Eine ueberschreibbare Angabe ist weniger API als drei Schalter und
+     * deckt auch das ab, was der naechste Fall braucht.
+     *
+     * ## Ein Befund am Rande, der hier NICHT geloest wird
+     *
+     * CRM, Verwaltung und AI Brain haben gar keinen Ketten-Endpunkt
+     * (`routes/web.php`: null Treffer fuer `threads`). Der Gruppieren-Schalter
+     * in der Leiste verspricht dort also etwas, das niemand liefern kann, und
+     * zeigt still die flache Liste. Das ist ein eigener Fehler und keine
+     * Nebenwirkung dieser Option — die Vorgabe bleibt deshalb unveraendert
+     * `messages`, damit dort nichts neu bricht.
+     *
+     * ## ⚠️ STABIL hereingeben, nicht als frisches Objekt
+     *
+     * Dieser Wert steht in der Abhaengigkeitsliste der Quellen. Ein bei jedem
+     * Zeichnen neu gebautes Literal stellt damit JEDEN laufenden Abruf neu —
+     * dieselbe Falle, an der die Quelle schon einmal haengengeblieben ist
+     * (23.09.2026, siehe `useAktuelleKennung`).
+     *
+     * Also in ein `useMemo` mit leerer Abhaengigkeitsliste, so wie die
+     * Produkte es mit ihren Chat- und Empfaengerquellen auch tun.
+     */
+    routen?: Partial<MailboxRoutes>;
+    /**
+     * Zeilen, die die Liste ueberspringt — zusaetzlich zum Schlummern.
+     *
+     * Der Projekt-Manager hat einen Filter fuer die eigenen Zustaendigkeiten,
+     * und der braucht Wissen, das nur er hat: wem eine Nachricht zugewiesen
+     * ist und wer gerade angemeldet ist.
+     *
+     * Ohne diesen Platz waere der Filter nach dem Umstieg ohne Wirkung
+     * gewesen — der Schalter haette sich weiter umlegen lassen und nichts
+     * getan.
+     */
+    zeilenFilter?: (nachricht: RowMessage) => boolean;
 }
 
 export function useMailboxSeite({
@@ -199,6 +254,8 @@ export function useMailboxSeite({
     initialGrouped = false,
     onHilfe,
     onSuchen,
+    routen,
+    zeilenFilter,
 }: MailboxSeiteOptionen) {
     const texte = { ...MAILBOX_SEITE_TEXTE, ...labels };
 
@@ -249,9 +306,15 @@ export function useMailboxSeite({
             httpMailboxSources<RowMessage, Record<string, never>>({
                 accountId: kennung,
                 routes: {
-                    folders: (id) => `${basis}/${id}/folders`,
-                    messages: (id, { folder, page }) => `${basis}/${id}/messages?folder=${encodeURIComponent(folder)}&page=${page}`,
-                    message: (id, { uid, folder }) => `${basis}/${id}/message/${uid}?folder=${encodeURIComponent(folder)}`,
+                    // Die eigenen des Produkts liegen UEBER diesen, siehe `routen`.
+                    ...routen,
+                    folders: routen?.folders ?? ((id) => `${basis}/${id}/folders`),
+                    messages:
+                        routen?.messages ??
+                        ((id, { folder, page }) => `${basis}/${id}/messages?folder=${encodeURIComponent(folder)}&page=${page}`),
+                    message:
+                        routen?.message ??
+                        ((id, { uid, folder }) => `${basis}/${id}/message/${uid}?folder=${encodeURIComponent(folder)}`),
                     search: (id, p) => {
                         const teile = new URLSearchParams({ folder: p.folder });
 
@@ -284,7 +347,7 @@ export function useMailboxSeite({
          * Produkt konstant ist, macht die Auslassung nicht richtig, sondern
          * nur folgenlos, und folgenlos hoert irgendwann auf.
          */
-        [kennung, basis],
+        [kennung, basis, routen],
     );
 
     // Stabil halten: Die Quelle haengt am Takt des Chats — eine bei jedem
@@ -346,6 +409,8 @@ export function useMailboxSeite({
                 groupByThread: liste.grouped,
                 isSearchMode: suche.isSearchMode,
                 expandedThreads: auswahl.expanded,
+                // Der zusaetzliche Filter des Produkts, etwa die eigenen Zustaendigkeiten.
+                filter: zeilenFilter,
                 // Eine Kettennachricht trägt weniger als eine Listenzeile —
                 // was fehlt, wird hier ergänzt statt im Paket geraten.
                 toRow: (m) => ({

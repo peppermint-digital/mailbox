@@ -95,6 +95,8 @@ function Probe({
     initialGrouped,
     onHilfe,
     onSuchen,
+    routen,
+    zeilenFilter,
 }: {
     melden: (text: string, gelungen: boolean) => void;
     basis?: string;
@@ -103,6 +105,8 @@ function Probe({
     initialGrouped?: boolean;
     onHilfe?: () => void;
     onSuchen?: () => void;
+    routen?: Parameters<typeof useMailboxSeite>[0]['routen'];
+    zeilenFilter?: Parameters<typeof useMailboxSeite>[0]['zeilenFilter'];
 }) {
     const seite = useMailboxSeite({
         konten: [
@@ -117,6 +121,8 @@ function Probe({
         ...(initialGrouped === undefined ? {} : { initialGrouped }),
         ...(onHilfe === undefined ? {} : { onHilfe }),
         ...(onSuchen === undefined ? {} : { onSuchen }),
+        ...(routen === undefined ? {} : { routen }),
+        ...(zeilenFilter === undefined ? {} : { zeilenFilter }),
     });
 
     zuletzt = seite as unknown as Geprobt;
@@ -544,6 +550,83 @@ describe('der Haken füllt, was er verspricht', () => {
 
             unmount();
         });
+    });
+
+    it('nimmt die eigenen Adressen des Produkts — und behält die übrigen (#9116)', async () => {
+        /*
+         * Drei Dinge fehlten, und jedes haette einen eigenen Schalter
+         * gebraucht: die Zielordner beim Verschieben (`targets`), Ketten statt
+         * Nachrichten in der Gruppierung, und `refresh`. Die beiden letzten
+         * traegt `ListParams` seit je — die Vorgabe hier hat sie verschluckt.
+         *
+         * Geprueft wird beides: dass die eigene Adresse benutzt wird UND dass
+         * die nicht genannten Vorgaben stehenbleiben. Eine Ueberschreibung,
+         * die die uebrigen mitnimmt, waere die schlimmere Variante.
+         */
+        const { fetchStub, gesehen } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const eigene = {
+            messages: (id: number | string, { folder, page, grouped }: { folder: string; page: number; grouped: boolean }) =>
+                `/emails/${id}/${grouped ? 'threads' : 'messages'}?folder=${encodeURIComponent(folder)}&page=${page}`,
+        };
+
+        const { unmount } = render(<Probe melden={() => {}} basis="/emails" routen={eigene as never} initialGrouped />);
+
+        /*
+         * Auf GENAU das warten, was gemessen wird. Ein `gesehen.length > 1`
+         * war hier zu wenig: Zuweisungen, Schlummernde und Ordner sind schon
+         * da, bevor die Liste ueberhaupt laedt — der Test lief ins Leere und
+         * sah vier andere Adressen.
+         */
+        await vi.waitFor(() => expect(gesehen.some((pfad) => /\/(threads|messages)\?/.test(pfad))).toBe(true));
+
+        // Die eigene Adresse: Ketten statt Nachrichten, weil gruppiert.
+        expect(gesehen.some((pfad) => pfad.includes('/threads?'))).toBe(true);
+        // Und die Vorgabe fuer die Ordner steht noch.
+        expect(gesehen.some((pfad) => pfad.includes('/folders'))).toBe(true);
+
+        unmount();
+    });
+
+    it('überspringt Zeilen, die der Filter des Produkts ablehnt (#9116)', async () => {
+        /*
+         * Der Manager filtert auf die eigenen Zustaendigkeiten — Wissen, das
+         * nur er hat. Ohne diesen Platz waere der Schalter nach dem Umstieg
+         * ohne Wirkung gewesen: umlegbar, aber wirkungslos.
+         */
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} zeilenFilter={() => false} />);
+
+        /*
+         * ERST warten, bis die Liste wirklich etwas hat — sonst ist dieser
+         * Test wertlos: Null Zeilen stimmen auch vor dem Laden, und dann ist
+         * er gruen, ob der Filter verdrahtet ist oder nicht.
+         *
+         * Genau das ist passiert. Aufgefallen ist es nicht beim Schreiben,
+         * sondern an der Mutationsprobe: Den Filter zu entfernen liess alle
+         * zwanzig Tests gruen.
+         */
+        await vi.waitFor(() => expect((zuletzt.liste as { messages: unknown[] }).messages.length).toBe(1));
+
+        expect((zuletzt.zeilen as unknown[]).length).toBe(0);
+
+        unmount();
+    });
+
+    it('zeigt ohne Filter alle Zeilen — die drei anderen merken nichts', async () => {
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} />);
+
+        await vi.waitFor(() => expect((zuletzt.liste as { messages: unknown[] }).messages.length).toBe(1));
+
+        expect((zuletzt.zeilen as unknown[]).length).toBe(1);
+
+        unmount();
     });
 
     it('setzt den Ordner beim Postfachwechsel auf INBOX zurück', async () => {
