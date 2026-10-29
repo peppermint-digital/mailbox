@@ -434,13 +434,40 @@ interface Mailbox
      * own keywords. Handing the caller two vocabularies for one thing would
      * put the transport back into the product.
      *
+     * ## `$receivedAt` exists because of migrations
+     *
+     * Everything that files a mail it just produced — a sent copy, a saved
+     * draft — wants the arrival time to be now, and that is the default.
+     *
+     * Everything that MOVES mail that already exists wants the opposite. A
+     * mailbox copied from another server with 70.000 messages all stamped
+     * "today" is not a migrated mailbox: sorting by date, "what came in this
+     * week", every thread order — all of it is gone, while the bytes are
+     * intact. The loss is invisible until someone looks for an old mail.
+     *
+     * JMAP names the field (`receivedAt`, RFC 8621 §4.8). IMAP's APPEND has
+     * an optional date-time too (RFC 3501), but the library underneath this
+     * transport does not expose it — neither `MessageQuery::append()` nor
+     * `ImapConnection::append()` takes one.
+     *
+     * So an IMAP transport THROWS when a date is passed, rather than filing
+     * the message with the wrong one. Dropping it quietly is the worse of the
+     * two: a migration would report success and hand back a mailbox whose
+     * dates are all the migration day, and nobody would re-check a claim that
+     * was never doubted.
+     *
      * @param  string  $raw  the complete message, headers and body
      * @param  list<string>  $flags
+     * @param  \DateTimeInterface|null  $receivedAt  when the message arrived
+     *                                               originally; null means now
      * @return int|string|null the new message's handle, when the server says
      *                         one — appending is worth doing even when it
      *                         does not
+     *
+     * @throws \RuntimeException when a date is given and this transport cannot
+     *                           preserve it
      */
-    public function append(string $folder, string $raw, array $flags = []): int|string|null;
+    public function append(string $folder, string $raw, array $flags = [], ?\DateTimeInterface $receivedAt = null): int|string|null;
 
     /** False when the message is gone. */
     public function setSeen(string $folder, int|string $uid, bool $seen): bool;

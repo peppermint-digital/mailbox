@@ -938,7 +938,7 @@ class JmapClient implements Mailbox
      *
      * @param  list<string>  $flags  in IMAP-Schreibweise
      */
-    public function append(string $folder, string $raw, array $flags = []): int|string|null
+    public function append(string $folder, string $raw, array $flags = [], ?\DateTimeInterface $receivedAt = null): int|string|null
     {
         $ordner = $this->folderNamed($folder);
 
@@ -959,13 +959,29 @@ class JmapClient implements Mailbox
             throw new RuntimeException('The JMAP server accepted no blob for this message.');
         }
 
+        $einzutragen = [
+            'blobId' => $blobId,
+            'mailboxIds' => [$ordner['id'] => true],
+            'keywords' => $this->keywords($flags),
+        ];
+
+        /*
+         * Das Eingangsdatum, wenn der Aufrufer eines kennt (#9115).
+         *
+         * Ohne dieses Feld setzt der Server die eigene Uhr — richtig fuer eine
+         * Gesendet-Kopie, falsch fuer alles Umgezogene. Dieselbe
+         * Zeitstempel-Form wie in `countNewSince()`, damit es im Klienten
+         * genau eine gibt; der Umweg ueber den Unix-Zeitstempel normiert jede
+         * Zeitzone nach UTC, bevor das Z dahinter geschrieben wird.
+         */
+        if ($receivedAt !== null) {
+            $einzutragen['receivedAt'] = (new \DateTimeImmutable('@'.$receivedAt->getTimestamp()))
+                ->format('Y-m-d\TH:i:s\Z');
+        }
+
         $antwort = $this->antwortZu($this->call([['Email/import', [
             'accountId' => $this->session()->accountId,
-            'emails' => ['neu' => [
-                'blobId' => $blobId,
-                'mailboxIds' => [$ordner['id'] => true],
-                'keywords' => $this->keywords($flags),
-            ]],
+            'emails' => ['neu' => $einzutragen],
         ], 'i0']]), 'i0');
 
         if (isset($antwort['notCreated']['neu'])) {

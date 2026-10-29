@@ -1455,8 +1455,32 @@ class MailboxClient implements Mailbox
      *
      * @param  list<string>  $flags
      */
-    public function append(string $folder, string $raw, array $flags = []): int|string|null
+    public function append(string $folder, string $raw, array $flags = [], ?\DateTimeInterface $receivedAt = null): int|string|null
     {
+        /*
+         * Kein Internaldate ueber diesen Weg — und deshalb lieber laut.
+         *
+         * IMAPs APPEND kennt ein optionales Datum (RFC 3501), die Bibliothek
+         * darunter gibt es aber nicht her: Weder `MessageQuery::append()` noch
+         * `ImapConnection::append()` nimmt eines an.
+         *
+         * Das Datum hier still fallen zu lassen waere die gefaehrlichere
+         * Variante. Ein Umzug wuerde Erfolg melden und ein Postfach
+         * zurueckgeben, in dem jede Nachricht am Umzugstag eingegangen ist —
+         * die Bytes vollstaendig, die Sortierung weg. Auffallen wuerde es
+         * erst, wenn jemand eine alte Mail sucht, und dann ist die Quelle
+         * womoeglich schon abgeschaltet.
+         *
+         * Wer ohne Datum anhaengt (Gesendet-Kopie, Entwurf), merkt davon
+         * nichts: Dort IST jetzt die richtige Zeit.
+         */
+        if ($receivedAt !== null) {
+            throw new RuntimeException(
+                'This mailbox speaks IMAP, and the library underneath cannot set a message\'s arrival date. '
+                .'Filing it with the wrong date would look like success. Use a JMAP transport for that.'
+            );
+        }
+
         return $this->session(function ($mailbox) use ($folder, $raw, $flags): int|string|null {
             $ordner = FolderResolver::resolve($mailbox->folders()->get(), $folder, fn ($f) => $f->path(), fn ($f) => $f->name());
 

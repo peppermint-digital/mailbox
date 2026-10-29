@@ -259,6 +259,97 @@ describe('eine Nachricht ablegen', function () {
         expect(fn () => jmapKlient()->append('Gibt-Es-Nicht', 'Text'))
             ->toThrow(RuntimeException::class, 'Folder not found');
     });
+
+    /*
+     * Das Eingangsdatum (#9115).
+     *
+     * Ein Umzug legt Nachrichten ab, die es schon gibt. Ohne `receivedAt`
+     * setzt der Server seine eigene Uhr — und ein Postfach, in dem alle
+     * 70.000 Nachrichten am Umzugstag eingegangen sind, hat vollstaendige
+     * Bytes und keine Sortierung mehr. Auffallen wuerde es erst, wenn jemand
+     * eine alte Mail sucht, und dann ist die Quelle womoeglich abgeschaltet.
+     */
+    it('gibt das Eingangsdatum mit, wenn der Aufrufer eines kennt', function () {
+        $klient = jmapKlient([
+            'Mailbox/get' => [jmapOrdner()],
+            'upload' => ['blobId' => 'blob-alt'],
+            'Email/import' => [['Email/import', ['created' => ['neu' => ['id' => 'm-alt']]], 'i0']],
+        ], $protokoll);
+
+        $klient->batch(fn ($p) => $p->append(
+            'Sent Items',
+            "From: a@b\r\n\r\nText",
+            ['\\Seen'],
+            new DateTimeImmutable('2019-03-07 08:14:55', new DateTimeZone('UTC')),
+        ));
+
+        $ablegen = collect($protokoll)->last()['payload']['methodCalls'][0][1];
+
+        expect($ablegen['emails']['neu']['receivedAt'])->toBe('2019-03-07T08:14:55Z');
+    });
+
+    it('laesst das Feld WEG, wenn kein Datum kommt', function () {
+        /*
+         * Die wichtigere Richtung. Eine Gesendet-Kopie und ein Entwurf sind
+         * JETZT entstanden; dort ist die Uhr des Servers die richtige Antwort.
+         * Ein Feld, das immer mitgeht, waere eine Behauptung ueber einen
+         * Zeitpunkt, den der Aufrufer nicht kennt.
+         */
+        $klient = jmapKlient([
+            'Mailbox/get' => [jmapOrdner()],
+            'upload' => ['blobId' => 'blob-neu'],
+            'Email/import' => [['Email/import', ['created' => ['neu' => ['id' => 'm-neu']]], 'i0']],
+        ], $protokoll);
+
+        $klient->batch(fn ($p) => $p->append('Sent Items', "From: a@b\r\n\r\nText", ['\\Seen']));
+
+        $ablegen = collect($protokoll)->last()['payload']['methodCalls'][0][1];
+
+        expect($ablegen['emails']['neu'])->not->toHaveKey('receivedAt');
+    });
+
+    it('rechnet eine fremde Zeitzone nach UTC, statt sie mitzuschleppen', function () {
+        /*
+         * Der Nutzer lebt in Europe/Berlin, die Quelle liefert oft Ortszeit.
+         * Wuerde der Zeitstempel ungerechnet mit einem Z dahinter geschrieben,
+         * waere jede Nachricht eine oder zwei Stunden daneben — gleichmaessig,
+         * also unauffaellig. 09:14:55 in Berlin (Winter, +01:00) ist 08:14:55 UTC.
+         */
+        $klient = jmapKlient([
+            'Mailbox/get' => [jmapOrdner()],
+            'upload' => ['blobId' => 'blob-tz'],
+            'Email/import' => [['Email/import', ['created' => ['neu' => ['id' => 'm-tz']]], 'i0']],
+        ], $protokoll);
+
+        $klient->batch(fn ($p) => $p->append(
+            'Sent Items',
+            'Text',
+            [],
+            new DateTimeImmutable('2019-03-07 09:14:55', new DateTimeZone('Europe/Berlin')),
+        ));
+
+        $ablegen = collect($protokoll)->last()['payload']['methodCalls'][0][1];
+
+        expect($ablegen['emails']['neu']['receivedAt'])->toBe('2019-03-07T08:14:55Z');
+    });
+
+    it('wirft, wenn ein IMAP-Postfach das Datum nicht halten kann', function () {
+        /*
+         * Fail-closed, und das ist der Punkt. IMAPs APPEND kennt ein Datum
+         * (RFC 3501), die Bibliothek darunter gibt es nicht her. Es still
+         * fallen zu lassen waere die gefaehrlichere Variante: Der Umzug
+         * meldete Erfolg und lieferte ein Postfach mit falschen Daten.
+         *
+         * Wer OHNE Datum anhaengt, merkt davon nichts — deshalb wirft es nur
+         * hier und nicht im Normalfall.
+         */
+        expect(fn () => verbKlient([])->append(
+            'Sent Items',
+            'Text',
+            [],
+            new DateTimeImmutable('2019-03-07 08:14:55'),
+        ))->toThrow(RuntimeException::class, 'arrival date');
+    });
 });
 
 describe('endgueltig loeschen', function () {
