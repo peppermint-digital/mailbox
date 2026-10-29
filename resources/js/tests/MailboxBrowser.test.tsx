@@ -258,14 +258,43 @@ describe('MailboxBrowser auf einem schmalen Bildschirm', () => {
         unmount();
     });
 
-    it('legt die Seitenspalte darueber statt als vierte Spalte daneben', () => {
+    it('legt eine GEWAEHLTE Seitenspalte darueber statt als vierte Spalte daneben', () => {
         // Vier Spalten auf 390px sind der Fehler noch einmal. Oberhalb von `md`
         // ist die Huelle per `contents` nicht da — dort bleibt die Seitenspalte
         // selbst das Flex-Kind, genau wie vorher.
-        const { container, unmount } = render(<MailboxBrowser {...panes} aside={<span>ASSISTENT</span>} />);
+        const { container, unmount } = render(<MailboxBrowser {...panes} aside={<span>ASSISTENT</span>} asideGewaehlt />);
 
         expect(hatKlasse(container, 'mailbox-aside', 'max-md:absolute')).toBe(true);
         expect(hatKlasse(container, 'mailbox-aside', 'md:contents')).toBe(true);
+
+        unmount();
+    });
+
+    it('deckt NICHTS ab, solange die Seitenspalte nur per Vorgabe offen steht', () => {
+        /*
+         * Der Fehler, den erst ein Screenshot gezeigt hat (29.10.2026, CRM in
+         * Produktion): Der Assistent steht per Vorgabe offen, und die Huelle
+         * legte ihn ab dem ersten Aufruf ueber die Mailliste. Man sah den Chat
+         * statt seiner Post — auf genau dem Geraet, auf dem gerade erst wieder
+         * etwas zu sehen sein sollte.
+         *
+         * Die DOM-Werte sagten damals „Liste sichtbar, 386 px, kein
+         * Ueberlauf", und jede Zahl davon stimmte. Sie war nur zugedeckt.
+         */
+        const { container, unmount } = render(<MailboxBrowser {...panes} aside={<span>ASSISTENT</span>} asideGewaehlt={false} />);
+
+        expect(hatKlasse(container, 'mailbox-aside', 'max-md:hidden')).toBe(true);
+        expect(hatKlasse(container, 'mailbox-aside', 'max-md:absolute')).toBe(false);
+        // Am Schreibtisch unveraendert: dort ist die Huelle gar nicht da.
+        expect(hatKlasse(container, 'mailbox-aside', 'md:contents')).toBe(true);
+
+        unmount();
+    });
+
+    it('deckt ab, wenn nichts gesagt wird — bestehende Aufrufer merken nichts', () => {
+        const { container, unmount } = render(<MailboxBrowser {...panes} aside={<span>ASSISTENT</span>} />);
+
+        expect(hatKlasse(container, 'mailbox-aside', 'max-md:absolute')).toBe(true);
 
         unmount();
     });

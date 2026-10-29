@@ -24,8 +24,33 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
  */
 
 /** Remember whether a side panel is open — across reloads, per browser. */
-export function useMailboxSidePanel(key: string, standard = true): { sichtbar: boolean; zeigen: () => void; verbergen: () => void } {
+export function useMailboxSidePanel(
+    key: string,
+    standard = true,
+): { sichtbar: boolean; gewaehlt: boolean; zeigen: () => void; verbergen: () => void } {
     const [sichtbar, setSichtbar] = useState(standard);
+
+    /**
+     * Ist dieser Zustand eine ENTSCHEIDUNG oder nur die Vorgabe?
+     *
+     * Der Unterschied klang lange nach Haarspalterei und hat am 29.10.2026 die
+     * Handy-Ansicht gekostet: Seit v0.154.0 deckt das Panel unterhalb von `md`
+     * die ganze Flaeche ab — mit der Begruendung, es sei ja gerade absichtlich
+     * geoeffnet worden und bringe seinen eigenen Schliessen-Knopf mit.
+     *
+     * Nur ist es das beim ERSTEN Aufruf nicht. `standard` ist `true`, also lag
+     * der Assistent auf dem Telefon ab Werk ueber der Mailliste. Man sah den
+     * Chat statt seiner Post.
+     *
+     * Die Unterscheidung ist gratis: Eine Wahl landet in `localStorage`. Steht
+     * dort nichts, ist der offene Zustand die Vorgabe — und dann darf er auf
+     * einem schmalen Schirm nichts verdecken.
+     *
+     * Gefunden hat das nicht die Messung, sondern ein Screenshot: Die
+     * DOM-Werte sagten „Liste sichtbar, 386 px, kein Ueberlauf", und jede Zahl
+     * davon stimmte. Sie war nur zugedeckt.
+     */
+    const [gewaehlt, setGewaehlt] = useState(false);
 
     useEffect(() => {
         try {
@@ -33,6 +58,7 @@ export function useMailboxSidePanel(key: string, standard = true): { sichtbar: b
 
             if (gespeichert !== null) {
                 setSichtbar(gespeichert === 'true');
+                setGewaehlt(true);
             }
         } catch {
             // Private window or storage denied — then the default stands.
@@ -42,6 +68,9 @@ export function useMailboxSidePanel(key: string, standard = true): { sichtbar: b
     const setzen = useCallback(
         (wert: boolean) => {
             setSichtbar(wert);
+            // Wer schaltet, hat gewaehlt — auch wenn der Speicher gleich
+            // darauf abweist. Die Sitzung soll es trotzdem wissen.
+            setGewaehlt(true);
             try {
                 localStorage.setItem(key, String(wert));
             } catch {
@@ -53,6 +82,7 @@ export function useMailboxSidePanel(key: string, standard = true): { sichtbar: b
 
     return {
         sichtbar,
+        gewaehlt,
         zeigen: useCallback(() => setzen(true), [setzen]),
         verbergen: useCallback(() => setzen(false), [setzen]),
     };

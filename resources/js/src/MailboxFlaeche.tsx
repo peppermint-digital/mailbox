@@ -513,6 +513,7 @@ export function MailboxFlaeche({
                                 </MailConversationPane>
                             </>
                         }
+                        asideGewaehlt={assistent.gewaehlt}
                         aside={
                             zeigtAssistent && konto ? (
                                 <MailboxSidePanel title="Postfach-Assistent" onClose={assistent.verbergen}>
@@ -538,6 +539,17 @@ export function MailboxFlaeche({
 
                 {chatVerfuegbar && konto && !assistent.sichtbar && (
                     <MailboxSidePanelHandle label="AI-Brain-Chat" onClick={assistent.zeigen} />
+                )}
+
+                {/* Auf schmalen Schirmen ist die Spalte weg, solange sie nur per
+                    Vorgabe offen steht (siehe `asideGewaehlt`). Ohne diesen Griff
+                    waere der Assistent dort gar nicht mehr erreichbar — und ein
+                    Antippen macht aus der Vorgabe eine Wahl, ab da deckt er wie
+                    gehabt ab. */}
+                {chatVerfuegbar && konto && assistent.sichtbar && !assistent.gewaehlt && (
+                    <div className="md:hidden">
+                        <MailboxSidePanelHandle label="AI-Brain-Chat" onClick={assistent.zeigen} />
+                    </div>
                 )}
             </div>
 

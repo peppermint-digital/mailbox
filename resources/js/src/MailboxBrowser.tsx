@@ -119,6 +119,19 @@ export interface MailboxBrowserProps {
     listWidth?: string;
     /** Die Woerter der Umschaltung. Nur unterhalb von `md` sichtbar. */
     labels?: MailboxBrowserLabels;
+    /**
+     * War das Oeffnen der Seitenspalte eine ENTSCHEIDUNG — oder nur die Vorgabe?
+     *
+     * Entscheidet, ob sie unterhalb von `md` die Flaechen abdecken darf.
+     * Vorgabe `true`, damit sich fuer bestehende Aufrufer nichts aendert.
+     *
+     * Der Unterschied hat am 29.10.2026 die Handy-Ansicht gekostet: Der
+     * Assistent steht per Vorgabe offen, und seit der Umstellung auf eine
+     * Flaeche deckte er ab dem ersten Aufruf die Mailliste zu. Man sah den
+     * Chat statt seiner Post — auf einem Geraet, auf dem gerade erst wieder
+     * etwas zu sehen sein sollte.
+     */
+    asideGewaehlt?: boolean;
 }
 
 export function MailboxBrowser({
@@ -130,6 +143,7 @@ export function MailboxBrowser({
     showFolders = true,
     listWidth = 'w-80',
     labels = mailboxBrowserLabels,
+    asideGewaehlt = true,
 }: MailboxBrowserProps) {
     const [pane, setPane] = useState<MailboxPane>('list');
 
@@ -210,10 +224,16 @@ export function MailboxBrowser({
                         das Flex-Kind. Darunter deckt sie die Flaechen ab, statt
                         sich als vierte Spalte dazwischenzuschieben: Sie wurde
                         gerade absichtlich geoeffnet und bringt ihren eigenen
-                        Schliessen-Knopf mit. */}
+                        Schliessen-Knopf mit.
+
+                        ABER nur dann. Steht sie nur deshalb offen, weil das die
+                        Vorgabe ist, bleibt sie auf schmalen Schirmen weg
+                        (`max-md:hidden`) — sonst verdeckt sie die Liste, bevor
+                        jemand sie ueberhaupt angefordert hat. Am Schreibtisch
+                        aendert sich nichts: Dort ist diese Huelle `contents`. */}
                     {aside && (
                         <div
-                            className="max-md:absolute max-md:inset-0 max-md:z-20 max-md:flex max-md:overflow-hidden max-md:bg-background md:contents"
+                            className={`max-md:inset-0 max-md:z-20 max-md:overflow-hidden max-md:bg-background md:contents ${asideGewaehlt ? 'max-md:absolute max-md:flex' : 'max-md:hidden'}`}
                             data-slot="mailbox-aside"
                         >
                             {aside}
