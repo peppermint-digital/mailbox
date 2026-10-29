@@ -1,6 +1,7 @@
 import { FolderOpen, FolderPlus, Inbox } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import { cn } from './ui/utils';
+import { useMailboxPane } from './MailboxPane';
 
 /**
  * The folder column of a mailbox.
@@ -57,6 +58,13 @@ export function MailFolderList({
     onFolderContextMenu,
     loadingPlaceholder,
 }: MailFolderListProps) {
+    // Vor dem fruehen Ausstieg beim Laden: Haken halten die Reihenfolge ein.
+    //
+    // Auf dem Telefon steht nur eine Flaeche. Wer einen Ordner waehlt, will
+    // dessen Mails sehen — also holt die Ordnerspalte die Liste selbst nach
+    // vorn. Oberhalb von `md` ohne Wirkung.
+    const { showPane } = useMailboxPane();
+
     if (loading) {
         return (
             <div className="space-y-2 p-2" data-slot="mail-folder-loading">
@@ -87,7 +95,10 @@ export function MailFolderList({
                     type="button"
                     data-slot="mail-folder"
                     data-selected={selectedPath === folder.path ? '' : undefined}
-                    onClick={() => onSelect(folder.path)}
+                    onClick={() => {
+                        showPane('list');
+                        onSelect(folder.path);
+                    }}
                     onContextMenu={(event) => {
                         event.preventDefault();
                         onFolderContextMenu?.(event, folder);

@@ -206,8 +206,16 @@ export function MailboxFlaeche({
                 zusaetzlich 8px Rand oben und unten. Wer nur den Header abzieht,
                 bekommt einen Kasten, der exakt 16px zu hoch ist — und damit
                 einen ZWEITEN Bildlauf neben dem des Verlaufs. Gemessen, nicht
-                geschaetzt: `main` 2407px bei 2407px Fenster, Wrapper 2423px. */}
-            <div className="flex h-[calc(100vh-5rem)] flex-col overflow-hidden">
+                geschaetzt: `main` 2407px bei 2407px Fenster, Wrapper 2423px.
+
+                `dvh` statt `vh`, seit #1079: Auf dem iPhone zaehlt `vh` die
+                Adressleiste MIT, auch wenn sie gerade Platz wegnimmt. Der
+                Kasten ist dann hoeher als das, was man sieht — und was unten
+                heraushaengt, ist nicht wegzuscrollen, weil der Kasten selbst
+                ja nicht scrollt. Genau die „Bedienelemente teilweise nicht
+                anklickbar" aus der Meldung. Am Schreibtisch sind die beiden
+                Einheiten gleich, dort aendert sich nichts. */}
+            <div className="flex h-[calc(100dvh-5rem)] flex-col overflow-hidden">
                 <MailboxHeader
                     title={titel}
                     labels={germanLabels.header}

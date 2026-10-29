@@ -5,6 +5,7 @@ import type { MailListToolbarLabels } from './MailListToolbar';
 import type { MailMessageListLabels } from './MailMessageList';
 import type { MailMessageViewLabels } from './MailMessageView';
 import type { MailWerkzeugleisteLabels } from './MailWerkzeugleiste';
+import { mailboxBrowserLabels } from './MailboxBrowser';
 
 /**
  * Die deutschen Woerter des Mailbrowsers — als VORGABE, nicht als Vorschrift.
@@ -211,7 +212,21 @@ const werkzeuge: MailWerkzeugleisteLabels = {
  * `germanLabels.list` und sieht am Namen, dass es eine Vorgabe nimmt — bei
  * einem freistehenden `listLabels` saehe es wie seine eigene Festlegung aus.
  */
+
 export const germanLabels = {
+    /**
+     * Die Woerter des Rahmens — die Umschaltung zwischen Ordnern, Liste und
+     * Nachricht, die es nur unterhalb von `md` gibt.
+     *
+     * Anders als die uebrigen Flaechen nimmt der Rahmen seine Texte NICHT als
+     * Pflichtfeld, sondern bringt sie als Vorgabe schon selbst mit — sonst
+     * haette der mobile Rahmen (#1079) in jedem der vier Produkte eine Zeile
+     * gekostet, und waere so lange kaputt geblieben, wie eines sie nicht hat.
+     *
+     * Hier steht er trotzdem: Wer die Woerter aendern will, sucht sie in
+     * dieser Datei und nicht im Bauteil.
+     */
+    rahmen: mailboxBrowserLabels,
     list,
     conversation,
     view,

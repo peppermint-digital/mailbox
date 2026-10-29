@@ -71,7 +71,7 @@ function pruefeWoerter(gruppe: Record<string, unknown>, pfad = ''): void {
 }
 
 describe('germanLabels', () => {
-    it('bringt alle vierzehn Gruppen mit', () => {
+    it('bringt alle fünfzehn Gruppen mit', () => {
         // Faellt eine weg, verliert ein Produkt lautlos seine Woerter und
         // zeigt `undefined` — oder gar nichts.
         //
@@ -87,6 +87,11 @@ describe('germanLabels', () => {
             'folders',
             'header',
             'list',
+            // Seit #1079: die Umschaltung des Rahmens, die es nur auf schmalen
+            // Bildschirmen gibt. Als EINZIGE Gruppe auch die Vorgabe des
+            // Bauteils selbst — der mobile Rahmen sollte in allen vier
+            // Produkten wirken, ohne dass eines eine Zeile aendert.
+            'rahmen',
             'rumpf',
             'toolbar',
             'verfassen',

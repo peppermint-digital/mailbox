@@ -5,6 +5,7 @@ import { Checkbox } from './ui/checkbox';
 import { Skeleton } from './ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { cn } from './ui/utils';
+import { useMailboxPane } from './MailboxPane';
 
 /**
  * The message list of a mailbox — flat messages or conversations, one row each.
@@ -164,6 +165,11 @@ export function MailMessageList<M extends RowMessage>({
     loading = false,
     loadingPlaceholder,
 }: MailMessageListProps<M>) {
+    // Auf dem Telefon steht nur eine Flaeche. Wer eine Zeile antippt, will die
+    // Nachricht sehen — also holt die Liste den Lesebereich selbst nach vorn,
+    // statt es jedem Produkt zu ueberlassen. Oberhalb von `md` ohne Wirkung.
+    const { showPane } = useMailboxPane();
+
     const ticked = selectedUids ?? new Set<MessageHandle>();
     const expanded = expandedThreads ?? new Set<string>();
 
@@ -254,7 +260,10 @@ export function MailMessageList<M extends RowMessage>({
                             data-slot="mail-message-open"
                             className={cn('min-w-0 flex-1 text-left', row.isOutbound ? 'cursor-default' : '')}
                             disabled={row.isOutbound}
-                            onClick={() => onOpen(row.msg)}
+                            onClick={() => {
+                                showPane('view');
+                                onOpen(row.msg);
+                            }}
                         >
                             <div className="mb-1 flex items-start justify-between gap-2">
                                 <div className="flex min-w-0 items-center gap-2">

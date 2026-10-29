@@ -12,6 +12,7 @@ export * from './folders';
 export * from './rows';
 export * from './MailboxBrowser';
 export { default as MailboxBrowser } from './MailboxBrowser';
+export * from './MailboxPane';
 export * from './MailFolderList';
 export { default as MailFolderList } from './MailFolderList';
 export * from './MailboxHeader';
