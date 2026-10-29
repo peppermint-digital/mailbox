@@ -94,12 +94,12 @@ export function MailboxHeader({
     accountAccessory,
 }: MailboxHeaderProps) {
     return (
-        <div className="flex items-center justify-between gap-4 border-b px-6 py-4" data-slot="mailbox-header">
-            <div className="flex min-w-0 items-center gap-4">
+        <div className="flex items-center justify-between gap-4 border-b px-6 py-4 max-md:flex-wrap" data-slot="mailbox-header">
+            <div className="flex min-w-0 items-center gap-4 max-md:w-full">
                 <h1 className="shrink-0 text-2xl font-bold">{title}</h1>
 
                 <Select value={accountId === null ? '' : String(accountId)} onValueChange={onAccountChange} disabled={accounts.length === 0}>
-                    <SelectTrigger className="w-[250px] [&>span]:min-w-0" aria-label={labels.accountPicker}>
+                    <SelectTrigger className="w-[250px] max-w-full min-w-0 [&>span]:min-w-0" aria-label={labels.accountPicker}>
                         <SelectValue placeholder={accounts.length === 0 ? labels.noAccounts : labels.accountPicker} />
                     </SelectTrigger>
                     <SelectContent>
