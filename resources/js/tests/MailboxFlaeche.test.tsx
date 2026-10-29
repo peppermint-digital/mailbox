@@ -307,6 +307,45 @@ describe('Antworten und Weiterleiten', () => {
         await vi.waitFor(() => expect(container.querySelector('[data-slot="probe-mikrofon"]')).not.toBeNull());
     });
 
+    it('reicht den Rechtsklick auf eine Zeile an das Produkt durch (#9116)', () => {
+        /*
+         * `MailMessageList` nimmt `onRowContextMenu` seit jeher, die Flaeche
+         * gab es nicht weiter. Der Projekt-Manager haengt dort seine
+         * Wiedervorlage an — und seit #7690 ist das Menue der EINZIGE Weg
+         * dorthin. Beim Umstieg waere sie ohne Ersatz verschwunden.
+         */
+        const menue = vi.fn();
+
+        const { container } = render(
+            <MailboxFlaeche
+                seite={seite({
+                    zeilen: [{ msg: { uid: 5, message_id: '<a@b>', subject: 'Angebot', from_address: 'a@b.test', from_name: 'A', date: '', has_attachments: false, attachment_count: 0, is_read: true, is_flagged: false, preview: '' }, isOutbound: false }] as never,
+                    sichtbareZeilen: ((z: unknown) => z) as never,
+                    /*
+                     * `ticked` muss ein Set sein — die Liste fragt `.has()`.
+                     * Die Attrappe trug bisher ein Array, und das fiel nie
+                     * auf: Dieser Test ist der erste, der ueberhaupt eine
+                     * Zeile zeichnen laesst.
+                     */
+                    auswahl: { ticked: new Set(), targets: [], toggle: vi.fn(), clear: vi.fn(), expanded: new Set(), toggleThread: vi.fn() } as never,
+                })}
+                konten={[{ id: 1, email: 'a@b.test', name: 'A' }]}
+                navigieren={() => {}}
+                zeilenMenue={menue}
+            />,
+        );
+
+        const zeile = container.querySelector('[data-slot="mail-message-open"]');
+
+        expect(zeile).not.toBeNull();
+
+        // Ohne `act`: Der Rechtsklick ruft nur einen Rueckruf, er aendert in
+        // dieser Flaeche keinen Zustand.
+        zeile!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+
+        expect(menue).toHaveBeenCalled();
+    });
+
     it('reicht die Meldung des Produkts an das Weiterleiten-Feld durch', () => {
         /*
          * `melden` kommt aus dem Haken, nicht als zweite Eigenschaft der

@@ -11,7 +11,7 @@ import { MailConversationPane } from './MailConversationPane';
 import { MailFolderList } from './MailFolderList';
 import { MailFolderManager } from './MailFolderManager';
 import { MailListToolbar } from './MailListToolbar';
-import { MailMessageList } from './MailMessageList';
+import { MailMessageList, type MailMessageListProps } from './MailMessageList';
 import { MailMessageView } from './MailMessageView';
 import { MailWerkzeugleiste } from './MailWerkzeugleiste';
 import { postJson } from './transport';
@@ -126,6 +126,19 @@ export interface MailboxFlaecheProps {
      * Die drei anderen Produkte geben nichts an und sehen keinen Unterschied.
      */
     chatZusatz?: MailboxChatProps['controls'];
+    /**
+     * Rechtsklick auf eine Zeile der Liste.
+     *
+     * `MailMessageList` nimmt `onRowContextMenu` seit jeher; diese Flaeche hat
+     * es nicht weitergegeben. Der Projekt-Manager haengt dort seine
+     * Wiedervorlage an, und beim Umstieg waere sie verschwunden — ohne Ersatz,
+     * denn seit #7690 ist das Menue der EINZIGE Weg dorthin (das Zuweisen ist
+     * an das Abzeichen in der Zeile gewandert, #9116).
+     *
+     * Das Menue selbst zeichnet das Produkt, ueber `nachDerSeite`. Hierher
+     * kommt nur, WANN es aufgeht.
+     */
+    zeilenMenue?: MailMessageListProps<RowMessage>['onRowContextMenu'];
     werkzeugeVerbergen?: (werkzeug: MailWerkzeug) => boolean;
     werkzeugeEigene?: Record<string, () => void>;
 }
@@ -143,6 +156,7 @@ export function MailboxFlaeche({
     antwortFeld: AntwortFeld,
     weiterleitenFeld: WeiterleitenFeld,
     chatZusatz,
+    zeilenMenue,
     werkzeugeVerbergen,
     werkzeugeEigene,
 }: MailboxFlaecheProps) {
@@ -339,6 +353,7 @@ export function MailboxFlaeche({
                                         rows={sichtbareZeilen(zeilen)}
                                         isSearchMode={suche.isSearchMode}
                                         labels={germanLabels.list}
+                                    onRowContextMenu={zeilenMenue}
                                         loading={liste.loading}
                                         selectedUids={auswahl.ticked}
                                         formatDate={(iso) => (iso ? new Date(iso).toLocaleString('de-DE') : '-')}
