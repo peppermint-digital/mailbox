@@ -42,20 +42,39 @@ import { mailboxBrowserLabels } from './MailboxBrowser';
  * Oberflaeche eines Produkts, in der dann `undefined` steht.
  */
 
-/** Die Liste der Nachrichten. */
+/**
+ * Die Liste der Nachrichten.
+ *
+ * ## Fünf Texte wurden am 29.10.2026 genauer (#9116)
+ *
+ * Sie standen so im Projekt-Manager, der sie bewusst ausführlicher gefasst
+ * hatte: *„Der Manager sagt es genauer, weil er ein Archiv hat. Beim
+ * Zusammenlegen darf nichts wegfallen: Wer mehr weiss, sagt mehr."*
+ *
+ * Beim Zurückführen seiner Seite auf die gemeinsame Fläche gab es zwei Wege.
+ * Der eine: der Fläche Text-Überschreibungen beibringen. Das wäre genau das
+ * Auseinanderlaufen zurück, das die Zusammenlegung abschafft — vier Produkte,
+ * vier Wortlaute, und niemand weiß mehr, welcher der gemeinte ist.
+ *
+ * Der andere, und der ist es geworden: Die genauere Fassung gilt überall.
+ * Sie ist in jedem Produkt WAHR — „liegt im Ordner ‚Gesendet'" stimmt auch im
+ * CRM —, und wo es kein Archiv gibt, erscheint der Archiv-Text ohnehin nie.
+ * Betroffen: `outboundBadgeTitle`, `unreadCountTitle`, `archivedTitle` (hier
+ * und in der Leseansicht) und `archiveConversation`.
+ */
 const list: MailMessageListLabels = {
     unread: 'Ungelesen',
     outboundSender: 'Ihre Antwort',
     outboundBadge: 'gesendet',
-    outboundBadgeTitle: 'Aus dem Postfach gesendet',
+    outboundBadgeTitle: 'Aus dem Postfach gesendet — liegt im Ordner „Gesendet"',
     expandThread: 'Konversation aufklappen',
     collapseThread: 'Konversation zuklappen',
     newest: 'Neueste',
     newestTitle: 'Die jüngste Nachricht dieser Konversation',
     unreadCount: (anzahl) => `${anzahl} neu`,
-    unreadCountTitle: (anzahl, gesamt) => `${anzahl} von ${gesamt} ungelesen`,
+    unreadCountTitle: (anzahl, gesamt) => `${anzahl} von ${gesamt} Nachrichten dieser Konversation ungelesen`,
     archived: 'Archiv',
-    archivedTitle: 'Liegt nicht mehr im Postfach',
+    archivedTitle: 'Aus dem Archiv der Anwendung — liegt nicht mehr im Postfach',
     foundInFolder: (ordner) => `Gefunden in ${ordner}`,
     flagged: 'Markiert',
     hasAttachments: 'Hat Anhänge',
@@ -86,7 +105,7 @@ const conversation: MailConversationPaneLabels = {
 const view: MailMessageViewLabels = {
     empty: 'Wählen Sie eine E-Mail aus',
     archived: 'Archiv',
-    archivedTitle: 'Liegt nicht mehr im Postfach',
+    archivedTitle: 'Aus dem Archiv der Anwendung — diese Nachricht liegt nicht mehr im Postfach',
     editDraft: 'Weiter bearbeiten',
     reply: 'Antworten',
     replyAll: 'Allen antworten',
@@ -96,7 +115,7 @@ const view: MailMessageViewLabels = {
     flag: 'Markieren',
     unflag: 'Markierung entfernen',
     archive: 'Archivieren',
-    archiveConversation: (anzahl) => `Ganze Konversation archivieren (${anzahl})`,
+    archiveConversation: (anzahl) => `Ganze Konversation archivieren (${anzahl} Nachrichten)`,
     delete: 'Löschen',
     from: 'Von:',
     date: 'Datum:',

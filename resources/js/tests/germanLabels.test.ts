@@ -110,11 +110,37 @@ describe('germanLabels', () => {
     });
 
     it('lässt sich überschreiben, ohne die Vorgabe zu verändern', () => {
-        // So behaelt der Manager seine fuenf genaueren Saetze. Wuerde das
-        // Spreizen die Vorgabe anfassen, traefe seine Abweichung alle.
+        /*
+         * Fuer das, was wirklich nur ein Produkt angeht — „Keine Tickets"
+         * gehoert der Verwaltung, nicht allen. Wuerde das Spreizen die Vorgabe
+         * anfassen, traefe eine solche Abweichung alle.
+         *
+         * Hier stand bis zum 29.10.2026 „So behaelt der Manager seine fuenf
+         * genaueren Saetze". Das gilt nicht mehr: Die fuenf sind in die
+         * Vorgabe gewandert (#9116), weil sie ueberall wahr sind. Siehe den
+         * Test darunter.
+         */
         const eigene = { ...germanLabels.list, empty: 'Keine Tickets' };
 
         expect(eigene.empty).toBe('Keine Tickets');
         expect(germanLabels.list.empty).not.toBe('Keine Tickets');
+    });
+
+    it('sagt genau, WO eine Nachricht liegt — die fünf ausführlicheren Sätze (#9116)', () => {
+        /*
+         * Diese fuenf standen im Projekt-Manager und sind am 29.10.2026 in die
+         * Vorgabe gewandert, statt dass die Flaeche Ueberschreibungen lernt.
+         * Begruendung an `list` in germanLabels.ts.
+         *
+         * Festgenagelt, weil der Unterschied genau der ist, der einer
+         * „Vereinfachung" zum Opfer faellt: Beide Fassungen lesen sich richtig,
+         * nur sagt die kuerzere nicht, WO die Nachricht liegt — und das ist
+         * die Frage, die jemand hat, wenn er das Abzeichen anklickt.
+         */
+        expect(germanLabels.list.archivedTitle).toContain('Archiv der Anwendung');
+        expect(germanLabels.view.archivedTitle).toContain('Archiv der Anwendung');
+        expect(germanLabels.list.outboundBadgeTitle).toContain('Gesendet');
+        expect(germanLabels.list.unreadCountTitle(2, 5)).toContain('dieser Konversation');
+        expect(germanLabels.view.archiveConversation(3)).toContain('Nachrichten');
     });
 });
