@@ -317,20 +317,83 @@ class Mailer
      */
     private function smtpZiel(MailAccount $konto): array
     {
-        $host = (string) $konto->field('smtp_host');
+        $host = trim((string) $konto->field('smtp_host'));
         $port = (int) $konto->field('smtp_port');
 
-        if ($host !== '' && $port > 0) {
-            return [$host, $port];
+        /*
+         * Ein eingetragener Host gilt — auch ohne Port.
+         *
+         * Hier stand `$host !== '' && $port > 0`, und das war die schlimmere
+         * Haelfte von Bug #1149: Fehlte nur die PORTZAHL, wurde der
+         * eingetragene Host mitverworfen und die Mail ging an den Rueckfall.
+         * Also an einen Server, den niemand eingetragen hat, waehrend der
+         * richtige Name danebenstand.
+         *
+         * 587 ist die Einreichungs-Vorgabe (RFC 6409) und dieselbe Zahl, die
+         * der Rueckfall unten nimmt. Gemessen am 29.10.2026 in der Mitte: NULL
+         * Konten haben einen Host ohne Port — diese Haelfte ist heute also
+         * folgenlos und schliesst nur die Luecke fuer spaeter.
+         */
+        if ($host !== '') {
+            return [$host, $port > 0 ? $port : 587];
         }
 
-        // Ohne Eintrag die bekannten Ziele der beiden Anbieter. Ein Postfach
-        // ohne SMTP-Angaben ist bei OAuth der Normalfall — dort traegt niemand
-        // Hostnamen ein, die seit Jahren gleich sind.
-        return match ((string) $konto->field('oauth_provider')) {
-            'google' => ['smtp.gmail.com', 587],
-            default => ['smtp.office365.com', 587],
-        };
+        /*
+         * Der Rueckfall gilt nur bei OAuth — dafuer war er gedacht (#1149).
+         *
+         * Der Kommentar hier begruendete ihn immer schon mit OAuth: „dort
+         * traegt niemand Hostnamen ein, die seit Jahren gleich sind." Der
+         * `default`-Zweig traf aber JEDES Konto ohne Anbieter-Wort, also auch
+         * ein Passwort-Konto, bei dem die Angabe einfach fehlt.
+         *
+         * Was dabei herauskam, war nicht „der bekannte Anbieter", sondern ein
+         * fremder Mailserver — und eine Meldung, die in die falsche Richtung
+         * zeigt: `535 5.7.3 Authentication unsuccessful` aus einem
+         * Microsoft-Rechenzentrum. Wer sie liest, sucht ein Passwortproblem
+         * und nicht ein leeres Feld.
+         *
+         * Gemessen am 29.10.2026: GENAU EIN Konto lief darauf
+         * (ankinickmedcampus@gmail.com, Gmail per Passwort, Port 587
+         * eingetragen, Host leer). Senden kann dort nie gegangen sein —
+         * Gmail-Zugangsdaten gegen Microsofts Postausgang. Statt weiter
+         * stillzuhalten sagt es jetzt, was fehlt.
+         */
+        if (! $this->nutztOAuth($konto)) {
+            throw new \RuntimeException(sprintf(
+                'Fuer %s ist kein SMTP-Host eingetragen. Ein Postfach mit Passwort-Anmeldung braucht einen '
+                .'eigenen Postausgang; der Rueckfall auf die bekannten Anbieter gilt nur fuer OAuth-Konten.',
+                (string) $konto->field('email') ?: 'dieses Postfach',
+            ));
+        }
+
+        /*
+         * Welcher Anbieter — und das Wort steht in zwei Feldern.
+         *
+         * `oauth_provider` ist der Name in der Paket-Tabelle, `provider` der
+         * in der Mitte. Die beiden bedeuten nicht dasselbe (siehe
+         * MergedAccountStore::CORE: die Mitte schreibt, WELCHE ART Postfach es
+         * ist, ein gewachsenes Produkt schreibt, bei WEM man sich anmeldet) —
+         * fuer diese eine Frage liefern aber beide die Antwort.
+         *
+         * Dass hier beide gelesen werden, ist kein Gueretel: Der
+         * Uebersetzer der Mitte setzt `oauth_provider` GAR NICHT. Der
+         * `'google'`-Zweig war damit fuer jedes Konto aus Brain toter Code,
+         * und ein Google-Konto per OAuth waere bei Microsoft gelandet.
+         *
+         * Und die Schreibweisen gehen auseinander — `office365` gegen
+         * `microsoft`, genau die Doppelung, an der Bug #1112 den Versand
+         * zerlegt hat. Deshalb Teilwort statt Gleichheit.
+         *
+         * Microsoft bleibt der Rueckfall des Rueckfalls, damit kein heute
+         * funktionierendes OAuth-Konto stehenbleibt: Ein unbekanntes
+         * Anbieter-Wort ohne Host ist hypothetisch, ein abgewiesener Versand
+         * waere es nicht.
+         */
+        $anbieter = mb_strtolower((string) ($konto->field('oauth_provider') ?: $konto->field('provider')));
+
+        return str_contains($anbieter, 'goog') || str_contains($anbieter, 'gmail')
+            ? ['smtp.gmail.com', 587]
+            : ['smtp.office365.com', 587];
     }
 
     /**

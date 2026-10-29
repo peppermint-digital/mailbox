@@ -181,3 +181,85 @@ it('nimmt eingetragene SMTP-Angaben, wo es welche gibt', function () {
 
     expect($transport->getStream()->getHost())->toBe('mail.example.test');
 });
+
+describe('der Rueckfall auf die bekannten Anbieter gilt nur bei OAuth (#1149)', function () {
+    it('waehlt NICHT Microsoft an, wenn einem Passwort-Konto der SMTP-Host fehlt', function () {
+        /*
+         * Der Fehler, und er war still: Der `default`-Zweig traf jedes Konto
+         * ohne Anbieter-Wort, also auch ein Passwort-Konto mit leerem Feld.
+         *
+         * Was dabei herauskam, war nicht „der bekannte Anbieter", sondern ein
+         * fremder Mailserver — plus eine Meldung, die in die falsche Richtung
+         * zeigt: `535 5.7.3 Authentication unsuccessful` aus einem
+         * Microsoft-Rechenzentrum. Wer sie liest, sucht ein Passwortproblem
+         * und nicht ein leeres Feld.
+         *
+         * Aufgefallen ist es in der Testsuite des Managers: Zwei Tests, die
+         * den Versand nicht gefaelscht hatten, haben mit von Faker erzeugten
+         * Namen bei Microsofts Produktions-Postausgang angeklopft.
+         */
+        expect(fn () => (new Mailer)->transportFor(sendeKonto([
+            'auth_type' => 'password',
+            'username' => 'buero',
+            'password' => 'geheim',
+            'smtp_port' => 587,
+        ])))->toThrow(RuntimeException::class, 'kein SMTP-Host eingetragen');
+    });
+
+    it('laesst einen eingetragenen Host gelten, auch wenn die Portzahl fehlt', function () {
+        /*
+         * Die schlimmere Haelfte desselben Fehlers. Die Bedingung lautete
+         * `$host !== '' && $port > 0` — fehlte nur die ZAHL, wurde der
+         * eingetragene Hostname mitverworfen und die Mail ging an den
+         * Rueckfall. An einen Server also, den niemand eingetragen hat,
+         * waehrend der richtige Name danebenstand.
+         */
+        $transport = (new Mailer)->transportFor(sendeKonto([
+            'auth_type' => 'password',
+            'username' => 'buero',
+            'password' => 'geheim',
+            'smtp_host' => 'mail.example.test',
+        ]));
+
+        expect($transport->getStream()->getHost())->toBe('mail.example.test')
+            ->and($transport->getStream()->getPort())->toBe(587);
+    });
+
+    it('findet den Anbieter auch, wenn er nur in `provider` steht', function () {
+        /*
+         * Der Uebersetzer der Mitte setzt `oauth_provider` GAR NICHT — er
+         * schreibt `provider`. Der `'google'`-Zweig war damit fuer jedes
+         * Konto aus Brain toter Code, und ein Google-Konto per OAuth waere
+         * bei Microsofts Postausgang gelandet.
+         *
+         * Dass die beiden Felder nicht dasselbe bedeuten (MergedAccountStore::CORE
+         * sagt es: die Mitte schreibt die ART des Postfachs, ein Produkt den
+         * Anmelde-Anbieter), aendert fuer DIESE Frage nichts — beide nennen
+         * den Anbieter.
+         */
+        $transport = (new Mailer)->transportFor(sendeKonto([
+            'auth_type' => 'oauth',
+            'provider' => 'google',
+            'oauth_access_token' => sendeToken(['upn' => 'a@b.test']),
+        ]));
+
+        expect($transport->getStream()->getHost())->toBe('smtp.gmail.com');
+    });
+
+    it('bleibt bei Microsoft, wenn das Anbieter-Wort anders geschrieben ist', function () {
+        /*
+         * `office365` gegen `microsoft` — genau die Doppelung, an der Bug
+         * #1112 den Versand zerlegt hat. Deshalb Teilwort statt Gleichheit,
+         * und Microsoft als Rueckfall des Rueckfalls: Ein unbekanntes
+         * Anbieter-Wort ohne Host ist hypothetisch, ein abgewiesener Versand
+         * waere es nicht.
+         */
+        $transport = (new Mailer)->transportFor(sendeKonto([
+            'auth_type' => 'oauth',
+            'provider' => 'office365',
+            'oauth_access_token' => sendeToken(['upn' => 'a@b.test']),
+        ]));
+
+        expect($transport->getStream()->getHost())->toBe('smtp.office365.com');
+    });
+});
