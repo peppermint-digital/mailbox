@@ -1,0 +1,528 @@
+// @vitest-environment node
+/**
+ * Die Handy-Messreihe der Mailflaeche — in echtem Chromium (#9134).
+ *
+ * ## Was gemeldet wurde
+ *
+ * Bastian am 30.10.2026: „Da liegen Buttons uebereinander und der AI-Browser
+ * ist auf, wenn ich da das erste Mal draufgehe. Dann sind die Ordner
+ * eingeblendet, obwohl die erstmal nicht eingeblendet sein sollten. … wie so
+ * ein Outlook-Mobile-App."
+ *
+ * Drei Beschwerden, und jede ist hier eine Zusicherung geworden:
+ *
+ * | Beschwerde | Zusicherung |
+ * |---|---|
+ * | „Buttons uebereinander" | kein Bedienelement ueberlappt ein anderes, bei keiner Geraetebreite und in keinem der vier Zustaende |
+ * | „der AI-Browser ist auf" | auf der Liste ist der Assistent nicht im Bild |
+ * | „die Ordner sind eingeblendet" | die Schublade ist zu, bis jemand sie holt |
+ *
+ * ## Warum „ueberlappt nichts" als Zahl und nicht als Blick
+ *
+ * Weil der Blick es viermal nicht gefunden hat. Eine paarweise Pruefung der
+ * Rechtecke aller sichtbaren Bedienelemente findet es immer — und sie findet
+ * auch den Fall, den niemand vorhergesehen hat. Beim Bauen hat sie genau einen
+ * gefunden, der sonst live gegangen waere: Der schwebende Verfassen-Knopf lag
+ * beim Lesen auf der Knopfleiste der Mail, weil beide unten rechts sitzen.
+ *
+ * Text zaehlt dabei NICHT als Bedienelement. Ein Abschnitt darf hinter einem
+ * schwebenden Knopf durchlaufen — das ist, was ein schwebender Knopf tut.
+ *
+ * ## Warum Geraetebreiten und keine Spaltenbreiten
+ *
+ * Anders als bei der Leseansicht ({@see ./leseansicht-breiten.test.ts}) ist
+ * hier das FENSTER die richtige Frage: Unterhalb von `md` zeigt der Rahmen
+ * EINE Flaeche auf dem ganzen Schirm. Gemessen wird deshalb ueber die Breiten
+ * wirklicher Geraete, vom kleinsten iPhone SE bis zum groessten Pro Max.
+ */
+import { createServer, type Server } from 'node:http';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, extname, join, resolve } from 'node:path';
+import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+import { build } from 'esbuild';
+import { chromium, type Browser } from 'playwright-core';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+const ausfuehren = promisify(execFile);
+
+const HIER = dirname(fileURLToPath(import.meta.url));
+const PAKET = resolve(HIER, '../../../..');
+const ATTRAPPE = join(HIER, 'attrappe');
+
+/** Die Breiten wirklicher Telefone, vom kleinsten bis zum groessten. */
+const GERAETE = [320, 360, 375, 390, 393, 412, 414, 428, 430];
+const HOEHE = 844;
+
+/** Die vier Zustaende, die die Attrappe gleichzeitig zeichnet. */
+const FASSUNGEN = ['liste', 'schublade', 'lesen', 'assistent'] as const;
+type Fassung = (typeof FASSUNGEN)[number];
+
+/**
+ * Wie hoch ein Bedienelement auf einem Telefon mindestens sein soll.
+ *
+ * 44 px ist die Zahl, die Apple und Google seit Jahren nennen, und sie gilt
+ * fuer das, was man in der Leiste mit dem Daumen trifft. Die Knoepfe IN der
+ * Mail (`size="sm"`, 32 px) sind davon ausgenommen: Sie stehen in einer Reihe
+ * am unteren Rand, nicht einzeln im Fliesstext, und sie am Schreibtisch
+ * mitzuvergroessern waere eine Aenderung an einer Stelle, die niemand
+ * beanstandet hat.
+ */
+const DAUMEN = 44;
+
+interface Kasten {
+    markierung: string;
+    x: number;
+    y: number;
+    breite: number;
+    hoehe: number;
+}
+
+interface Messung {
+    breite: number;
+    fassung: Fassung;
+    ueberlappungen: [string, string][];
+    ueberlaufX: number;
+    leisteHoehe: number;
+    baenderOben: number;
+    zuKlein: Kasten[];
+    assistentSichtbar: boolean;
+    schubladeSichtbar: boolean;
+    kontoInSchublade: boolean;
+    verfassenSichtbar: boolean;
+    aktionenUnten: number | null;
+    aktionenHoehe: number;
+    rumpfLuftUnten: number;
+    textAb: number | null;
+}
+
+function chromiumPfad(): string {
+    const kandidaten = [
+        process.env.MAILBOX_CHROMIUM,
+        process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/google-chrome-stable',
+        '/usr/bin/google-chrome',
+        '/opt/google/chrome/chrome',
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    ].filter((p): p is string => typeof p === 'string' && p.length > 0);
+
+    for (const pfad of kandidaten) if (existsSync(pfad)) return pfad;
+
+    try {
+        const eigener = chromium.executablePath();
+        if (eigener && existsSync(eigener)) return eigener;
+    } catch {
+        // kein heruntergeladener Browser
+    }
+
+    throw new Error(
+        'Kein Chromium gefunden. Die Handy-Messreihe braucht einen echten Browser — jsdom rechnet kein Layout. ' +
+            'Chromium installieren (Arch: `pacman -S chromium`) oder MAILBOX_CHROMIUM=/pfad/zu/chrome setzen.',
+    );
+}
+
+async function bauen(): Promise<string> {
+    const ziel = await mkdtemp(join(tmpdir(), 'mailbox-handy-'));
+
+    await build({
+        entryPoints: [join(ATTRAPPE, 'handy.tsx')],
+        outfile: join(ziel, 'handy.js'),
+        bundle: true,
+        format: 'esm',
+        jsx: 'automatic',
+        target: 'es2022',
+        define: { 'process.env.NODE_ENV': '"production"' },
+        logLevel: 'silent',
+    });
+
+    const tailwind = join(PAKET, 'node_modules/.bin/tailwindcss');
+    if (!existsSync(tailwind)) throw new Error(`Tailwind-CLI fehlt (${tailwind}). \`npm install\` im Paket ausführen.`);
+    await ausfuehren(tailwind, ['--input', join(ATTRAPPE, 'stil.css'), '--output', join(ziel, 'stil.css')], { cwd: PAKET });
+
+    const css = await readFile(join(ziel, 'stil.css'), 'utf8');
+    /*
+     * Der Riegel vor dem Browser: Erzeugt Tailwind die `md`-Schwelle nicht,
+     * stuende die Handy-Fassung bei JEDER Breite und die Reihe waere gruen
+     * ohne Aussage. Tailwind v4 schreibt Bereiche (`width >= 48rem`), nicht
+     * `min-width` — beides einmal nachgesehen, nicht geraten.
+     */
+    expect(css, 'Tailwind hat die md-Schwelle des Rahmens nicht erzeugt').toContain('(width >= 48rem)');
+    expect(css, 'Tailwind hat die max-md-Schwelle nicht erzeugt').toContain('(width < 48rem)');
+    await writeFile(join(ziel, 'handy.html'), await readFile(join(ATTRAPPE, 'handy.html'), 'utf8'));
+
+    return ziel;
+}
+
+function ausliefern(wurzel: string): Promise<{ server: Server; adresse: string }> {
+    const typen: Record<string, string> = {
+        '.html': 'text/html; charset=utf-8',
+        '.js': 'text/javascript; charset=utf-8',
+        '.css': 'text/css; charset=utf-8',
+    };
+
+    return new Promise((fertig) => {
+        const server = createServer((anfrage, antwort) => {
+            const pfad = (anfrage.url ?? '/').split('?')[0] ?? '/';
+            if (pfad === '/favicon.ico') {
+                antwort.writeHead(204).end();
+                return;
+            }
+            const datei = join(wurzel, pfad === '/' ? 'handy.html' : pfad);
+            if (!datei.startsWith(wurzel)) {
+                antwort.writeHead(403).end();
+                return;
+            }
+            readFile(datei)
+                .then((inhalt) => {
+                    antwort.writeHead(200, { 'content-type': typen[extname(datei)] ?? 'application/octet-stream' });
+                    antwort.end(inhalt);
+                })
+                .catch(() => antwort.writeHead(404).end());
+        });
+        server.listen(0, '127.0.0.1', () => {
+            const an = server.address();
+            const port = typeof an === 'object' && an ? an.port : 0;
+            fertig({ server, adresse: `http://127.0.0.1:${port}/handy.html` });
+        });
+    });
+}
+
+let browser: Browser;
+let server: Server;
+let verzeichnis: string;
+let messungen: Messung[] = [];
+
+beforeAll(async () => {
+    verzeichnis = await bauen();
+    const ausgeliefert = await ausliefern(verzeichnis);
+    server = ausgeliefert.server;
+
+    browser = await chromium.launch({ executablePath: chromiumPfad() });
+    const seite = await browser.newPage({ viewport: { width: 1400, height: 1000 }, deviceScaleFactor: 1 });
+
+    const fehler: string[] = [];
+    seite.on('pageerror', (e) => fehler.push(String(e)));
+    seite.on('console', (n) => n.type() === 'error' && fehler.push(n.text()));
+
+    await seite.goto(ausgeliefert.adresse, { waitUntil: 'load' });
+    await seite.waitForSelector('body[data-gezeichnet="ja"]', { timeout: 15_000 });
+    await seite.waitForSelector('[data-fassung="lesen"] [data-slot="mail-message-actions"] button');
+
+    expect(fehler, 'Die Attrappe hat Fehler geworfen — dann ist die Messung keine').toEqual([]);
+
+    /*
+     * Die vier Zustaende werden hergestellt, wie ein Mensch sie herstellt:
+     * durch Antippen der echten Knoepfe. Den Flaechen-Zustand fuehrt der
+     * Rahmen selbst; ihn von aussen zu setzen ginge nur, indem man den Rahmen
+     * umgeht — und dann misst man eine Anordnung, die so nie entsteht.
+     *
+     * Das Fenster muss dafuer schon schmal sein: Der Menue-Knopf steht nur
+     * unterhalb von `md`.
+     */
+    await seite.setViewportSize({ width: GERAETE[0]!, height: HOEHE });
+    await seite.click('[data-fassung="schublade"] [data-slot="mailbox-mobil-menue"]');
+    await seite.click('[data-fassung="lesen"] [data-slot="attrappe-zeile"]');
+    await seite.click('[data-fassung="assistent"] [data-slot="attrappe-zeile"]');
+    await seite.click('[data-fassung="assistent"] [data-slot="mailbox-mobil-leiste"] [aria-label="Postfach-Assistent"]');
+
+    /* Und der Riegel darauf: Sind die vier Zustaende nicht entstanden, taugt die ganze Reihe nichts. */
+    await seite.waitForSelector('[data-fassung="schublade"] [data-slot="mailbox-schublade-kopf"]');
+    await seite.waitForSelector('[data-fassung="lesen"] [data-slot="mail-message-actions"]');
+    await seite.waitForSelector('[data-fassung="assistent"] [data-slot="mailbox-aside"]');
+
+    for (const breite of GERAETE) {
+        /*
+         * Das FENSTER wird schmal, nicht die Kaesten: `md:` ist eine
+         * Fenster-Abfrage. Ein schmaler Kasten in einem breiten Fenster
+         * zeichnet die Schreibtisch-Fassung.
+         */
+        await seite.setViewportSize({ width: breite, height: HOEHE });
+        await seite.evaluate(() => new Promise((f) => requestAnimationFrame(() => requestAnimationFrame(() => f(null)))));
+
+        const teil = await seite.evaluate(
+        ({ breite, daumen }) => {
+            const ergebnis: Record<string, unknown>[] = [];
+
+            /** Nur was man ANTIPPT. Text darf hinter einem schwebenden Knopf durchlaufen. */
+            const bedienbar = (wurzel: Element) =>
+                [...wurzel.querySelectorAll<HTMLElement>('button, a[href], select, input, [role="combobox"]')].filter((e) => {
+                    const r = e.getBoundingClientRect();
+                    const stil = getComputedStyle(e);
+
+                    return r.width > 0 && r.height > 0 && stil.visibility !== 'hidden' && stil.pointerEvents !== 'none';
+                });
+
+            const name = (e: HTMLElement) =>
+                e.dataset.slot ?? e.getAttribute('aria-label') ?? (e.textContent ?? '').trim().slice(0, 24) ?? e.tagName;
+
+            {
+                for (const kasten of document.querySelectorAll<HTMLElement>('[data-fassung]')) {
+                    const rahmen = kasten.getBoundingClientRect();
+
+                    /*
+                     * Was hinter einer deckenden Flaeche liegt, liegt nicht
+                     * „uebereinander" — es ist schlicht nicht im Bild.
+                     *
+                     * Der Assistent ist unterhalb von `md` ein Overlay mit
+                     * `bg-background` ueber den Flaechen. Die Knoepfe darunter
+                     * sind fuer das Auge weg; ohne diese Unterscheidung meldete
+                     * die Messung jeden von ihnen gegen den Schliessen-Knopf
+                     * des Overlays — und haette damit genau das als Fehler
+                     * ausgegeben, was die Loesung IST.
+                     *
+                     * Die Gegenrichtung bleibt scharf: Deckt ein BEDIENELEMENT
+                     * ein anderes ab (der schwebende Verfassen-Knopf auf der
+                     * Knopfleiste der Mail — beim Bauen genau so passiert),
+                     * steht es weiter in der Liste, denn ein Knopf ist keine
+                     * deckende Flaeche.
+                     */
+                    const overlay = kasten.querySelector<HTMLElement>('[data-slot="mailbox-aside"]');
+                    const deckt =
+                        overlay &&
+                        (() => {
+                            const r = overlay.getBoundingClientRect();
+
+                            return r.width >= rahmen.width - 1 && r.height > rahmen.height / 2;
+                        })();
+
+                    const elemente = bedienbar(kasten).filter((e) => {
+                        if (!deckt || !overlay) return true;
+                        if (overlay.contains(e)) return true;
+
+                        /* Ueber dem Overlay (die schmale Leiste) bleibt sichtbar. */
+                        return e.getBoundingClientRect().bottom <= overlay.getBoundingClientRect().top + 1;
+                    });
+
+                    const ueberlappungen: [string, string][] = [];
+                    const zuKlein: unknown[] = [];
+
+                    for (let i = 0; i < elemente.length; i++) {
+                        const a = elemente[i]!;
+                        const ra = a.getBoundingClientRect();
+
+                        /* Die Daumengroesse gilt fuer die Leiste und das, was schwebt. */
+                        const inLeiste = a.closest('[data-slot="mailbox-mobil-leiste"]') !== null;
+                        const schwebt = a.dataset.slot === 'mailbox-verfassen-mobil';
+                        if ((inLeiste || schwebt) && ra.height < daumen - 0.5) {
+                            zuKlein.push({
+                                markierung: name(a),
+                                x: Math.round(ra.x - rahmen.x),
+                                y: Math.round(ra.y - rahmen.y),
+                                breite: Math.round(ra.width),
+                                hoehe: Math.round(ra.height),
+                            });
+                        }
+
+                        for (let j = i + 1; j < elemente.length; j++) {
+                            const b = elemente[j]!;
+                            if (a.contains(b) || b.contains(a)) continue;
+                            const rb = b.getBoundingClientRect();
+
+                            /* 1 px Toleranz: aneinanderstossende Raender sind keine Ueberlappung. */
+                            const x = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
+                            const y = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
+                            if (x > 1 && y > 1) ueberlappungen.push([name(a), name(b)]);
+                        }
+                    }
+
+                    const leiste = kasten.querySelector<HTMLElement>('[data-slot="mailbox-mobil-leiste"]');
+                    const assistent = kasten.querySelector<HTMLElement>('[data-slot="mailbox-aside"]');
+                    const schublade = kasten.querySelector<HTMLElement>('[data-slot="mailbox-folders"]');
+                    const aktionen = kasten.querySelector<HTMLElement>('[data-slot="mail-message-actions"]');
+                    const rumpf = kasten.querySelector<HTMLElement>('iframe, pre');
+
+                    const sichtbar = (e: Element | null) => {
+                        if (!e) return false;
+                        const r = e.getBoundingClientRect();
+
+                        return r.width > 0 && r.height > 0;
+                    };
+
+                    ergebnis.push({
+                        breite,
+                        fassung: kasten.dataset.fassung,
+                        ueberlappungen,
+                        zuKlein,
+                        ueberlaufX: kasten.scrollWidth - kasten.clientWidth,
+                        leisteHoehe: leiste ? Math.round(leiste.getBoundingClientRect().height) : 0,
+                        /* Wie viele Baender stehen ueber den Flaechen? Frueher drei. */
+                        baenderOben:
+                            (sichtbar(leiste) ? 1 : 0) + (kasten.querySelector('[data-slot="mailbox-pane-nav"]') ? 1 : 0),
+                        assistentSichtbar: sichtbar(assistent),
+                        schubladeSichtbar: sichtbar(schublade),
+                        kontoInSchublade: sichtbar(kasten.querySelector('[data-slot="mailbox-schublade-kopf"]')),
+                        verfassenSichtbar: sichtbar(kasten.querySelector('[data-slot="mailbox-verfassen-mobil"]')),
+                        aktionenUnten:
+                            aktionen && aktionen.getBoundingClientRect().height > 0
+                                ? Math.round(rahmen.bottom - aktionen.getBoundingClientRect().bottom)
+                                : null,
+                        aktionenHoehe: aktionen ? Math.round(aktionen.getBoundingClientRect().height) : 0,
+                        rumpfLuftUnten: rumpf
+                            ? Math.round(parseFloat(getComputedStyle(rumpf.closest('[class*="pb-"]') ?? rumpf).paddingBottom) || 0)
+                            : 0,
+                        textAb: rumpf ? Math.round(rumpf.getBoundingClientRect().top - rahmen.top) : null,
+                    });
+                }
+            }
+
+            return ergebnis as never;
+        },
+        { breite, daumen: DAUMEN },
+        );
+
+        messungen.push(...(teil as Messung[]));
+    }
+
+    await seite.close();
+}, 180_000);
+
+afterAll(async () => {
+    await browser?.close();
+    server?.close();
+    if (verzeichnis) await rm(verzeichnis, { recursive: true, force: true });
+});
+
+function fuer(fassung: Fassung): Messung[] {
+    return messungen.filter((m) => m.fassung === fassung);
+}
+
+function tafel(): string {
+    return [
+        'Breite | Fassung    | Leiste | Text ab | Aktionen vom Rand | Ueberlauf | Ueberlappungen',
+        ...messungen.map(
+            (m) =>
+                `${String(m.breite).padStart(6)} | ${m.fassung.padEnd(10)} | ${String(m.leisteHoehe).padStart(6)} | ` +
+                `${String(m.textAb ?? '—').padStart(7)} | ${String(m.aktionenUnten ?? '—').padStart(17)} | ` +
+                `${String(m.ueberlaufX).padStart(9)} | ${m.ueberlappungen.length}`,
+        ),
+    ].join('\n');
+}
+
+describe('Handy-Layout der Mailflaeche', () => {
+    /* Nur mit `MAILBOX_MESSREIHE=1 npm test` — 36 Zeilen Tafel decken sonst zu, was zaehlt. */
+    it.runIf(process.env.MAILBOX_MESSREIHE === '1')('schreibt die Reihe heraus', () => {
+        process.stdout.write(`\n== Handy-Layout ==\n${tafel()}\n`);
+    });
+
+    it('hat ueberhaupt gemessen — der Riegel gegen einen falsch-gruenen Lauf', () => {
+        expect(messungen).toHaveLength(GERAETE.length * FASSUNGEN.length);
+
+        for (const m of messungen) {
+            expect(m.leisteHoehe, `bei ${m.breite} px (${m.fassung}) war die schmale Leiste nicht da`).toBeGreaterThan(0);
+        }
+    });
+
+    it('legt KEIN Bedienelement auf ein anderes — die gemeldeten „Buttons uebereinander"', () => {
+        const schlimm = messungen.filter((m) => m.ueberlappungen.length > 0);
+        const bericht = schlimm
+            .map((m) => `${m.breite} px / ${m.fassung}: ${m.ueberlappungen.map(([a, b]) => `${a} × ${b}`).join(', ')}`)
+            .join('\n');
+
+        expect(schlimm.map((m) => `${m.breite}/${m.fassung}`), `Bedienelemente liegen uebereinander:\n${bericht}`).toEqual([]);
+    });
+
+    it('laesst nichts waagerecht aus dem Bild laufen', () => {
+        const raus = messungen.filter((m) => m.ueberlaufX > 1);
+
+        expect(raus.map((m) => `${m.breite}/${m.fassung}: ${m.ueberlaufX} px`)).toEqual([]);
+    });
+
+    it('setzt EIN Band ueber die Flaechen, nicht drei', () => {
+        for (const m of messungen) {
+            expect(m.baenderOben, `bei ${m.breite} px (${m.fassung})`).toBe(1);
+            expect(m.leisteHoehe, `die Leiste ist bei ${m.breite} px (${m.fassung}) zu hoch`).toBeLessThanOrEqual(60);
+        }
+    });
+
+    it('macht die Knoepfe der Leiste daumengross', () => {
+        const klein = messungen.flatMap((m) => m.zuKlein.map((k) => `${m.breite}/${m.fassung}: ${k.markierung} ${k.hoehe} px`));
+
+        expect(klein).toEqual([]);
+    });
+
+    describe('die Liste ist der Anfang', () => {
+        it('zeigt weder Assistenten noch Ordner — beides war gemeldet', () => {
+            for (const m of fuer('liste')) {
+                expect(m.assistentSichtbar, `der Assistent stand bei ${m.breite} px offen`).toBe(false);
+                expect(m.schubladeSichtbar, `die Ordner standen bei ${m.breite} px offen`).toBe(false);
+            }
+        });
+
+        it('bietet den Verfassen-Knopf an', () => {
+            for (const m of fuer('liste')) expect(m.verfassenSichtbar).toBe(true);
+        });
+    });
+
+    describe('die Schublade', () => {
+        it('bringt Konto UND Ordner — beides beantwortet „wo bin ich"', () => {
+            for (const m of fuer('schublade')) {
+                expect(m.schubladeSichtbar).toBe(true);
+                expect(m.kontoInSchublade, `die Kontoauswahl fehlte bei ${m.breite} px`).toBe(true);
+            }
+        });
+    });
+
+    describe('die geoeffnete Mail', () => {
+        it('klebt die Aktionen an den unteren Rand', () => {
+            for (const m of fuer('lesen')) {
+                expect(m.aktionenUnten, `bei ${m.breite} px standen die Aktionen nicht unten`).not.toBeNull();
+                expect(Math.abs(m.aktionenUnten ?? 999), `bei ${m.breite} px: ${m.aktionenUnten} px vom unteren Rand`).toBeLessThanOrEqual(1);
+            }
+        });
+
+        it('faengt mit dem Mailtext im oberen Drittel an — vorher bei 750 von 844 px', () => {
+            /*
+             * Vorher fing er bei rund 750 von 844 px an — drei Baender und eine
+             * aufgeklappte Werkzeugleiste standen davor.
+             *
+             * 320 px ist nicht gegriffen, sondern aufaddiert aus dem, was oben
+             * stehen DARF: schmale Leiste 57, Werkzeuge zugeklappt 57,
+             * Polsterung 32, Betreff bis drei Zeilen 84, Kopfdaten zugeklappt
+             * 40, Abstaende und Trennlinien 24 — zusammen 294, gemessen 311.
+             *
+             * Wer eine Zeile dazustellt, faellt auf. Wer den Betreff kuerzt,
+             * um hier durchzukommen, hat den gemeldeten Fehler
+             * wiederhergestellt (unlesbarer Betreff) und faellt in der anderen
+             * Messreihe auf — die beiden Zusicherungen halten sich gegenseitig.
+             */
+            for (const m of fuer('lesen')) {
+                expect(m.textAb, `bei ${m.breite} px fehlte der Rumpf`).not.toBeNull();
+                expect(m.textAb ?? 999, `bei ${m.breite} px fing der Mailtext erst bei ${m.textAb} px an`).toBeLessThanOrEqual(320);
+            }
+        });
+
+        it('haelt unter dem Text so viel Luft frei, wie die Leiste hoch ist', () => {
+            /*
+             * Die Ueberlappungspruefung oben sieht nur BEDIENELEMENTE. Dass die
+             * Leiste auf den letzten Zeilen der Mail liegt, saehe sie nicht —
+             * und genau das war der gemeldete Zustand („der Antworten-Knopf
+             * liegt darueber"). Deshalb hier die Zahl dagegen: Die Polsterung
+             * unter dem Rumpf muss mindestens so gross sein wie die Leiste.
+             *
+             * Das ist zugleich der Riegel gegen eine Leiste, die bei einem
+             * Produkt mit mehr Knoepfen in eine zweite Reihe umbricht: Dann
+             * waechst sie, die Polsterung nicht, und der Test faellt.
+             */
+            for (const m of fuer('lesen')) {
+                expect(m.rumpfLuftUnten, `bei ${m.breite} px: Leiste ${m.aktionenHoehe} px, Luft ${m.rumpfLuftUnten} px`).toBeGreaterThanOrEqual(
+                    m.aktionenHoehe,
+                );
+            }
+        });
+
+        it('zeigt den Verfassen-Knopf NICHT — er laege auf der Knopfleiste', () => {
+            for (const m of fuer('lesen')) expect(m.verfassenSichtbar).toBe(false);
+        });
+    });
+
+    describe('der Assistent', () => {
+        it('deckt nach dem Antippen den ganzen Bildschirm', () => {
+            for (const m of fuer('assistent')) expect(m.assistentSichtbar, `bei ${m.breite} px`).toBe(true);
+        });
+    });
+});

@@ -1,5 +1,6 @@
 import {
     ArrowUpRight,
+    ChevronDown,
     CircleAlert,
     FileText,
     ListChecks,
@@ -196,6 +197,22 @@ export function MailWerkzeugleiste({
     const texte = { ...WERKZEUGLEISTE_VORGABEN, ...labels };
     const [laufend, setLaufend] = useState<string | null>(null);
 
+    /*
+     * Auf dem Telefon ist diese Leiste zugeklappt (#9134).
+     *
+     * Gemessen am 30.10.2026 an Bastians Bild (CRM, iPhone 14): aufgeklappt
+     * rund 180 px von 844 — und das ueber der Mail, die man lesen wollte. Die
+     * Verben sind richtig und sollen bleiben; sie sind nur nicht das, weswegen
+     * jemand eine Mail oeffnet.
+     *
+     * Der Zustand steht hier und nicht in einer Klasse, weil es ein Zustand
+     * IST: Wer aufklappt, will es offen sehen. Dass es den Zustand am
+     * Schreibtisch nicht gibt, erledigt `max-md:hidden` — dort ist die Leiste
+     * immer offen, egal was hier steht. Kein `matchMedia`, kein zweiter Stand,
+     * der beim ersten Zeichnen noch nicht stimmt.
+     */
+    const [offen, setOffen] = useState(false);
+
     /**
      * Was in den Feldern steht, je Werkzeug.
      *
@@ -308,8 +325,26 @@ export function MailWerkzeugleiste({
 
     return (
         <div data-slot="mail-werkzeugleiste" className={cn('flex flex-col gap-1.5 border-b px-3 py-2', className)}>
+            {/*
+                Der Aufklapper gibt es nur am Telefon. Ein Knopf und keine
+                Ueberschrift: Er tut etwas, also muss man ihn mit der Tastatur
+                erreichen und er braucht einen Zustand, den eine Vorlesehilfe
+                ansagen kann.
+            */}
+            <button
+                type="button"
+                data-slot="mail-werkzeugleiste-aufklapper"
+                aria-expanded={offen}
+                className="-mx-1 flex min-h-10 items-center gap-1.5 rounded px-1 text-left text-xs font-medium text-muted-foreground md:hidden"
+                onClick={() => setOffen((war) => !war)}
+            >
+                <ChevronDown className={cn('h-4 w-4 shrink-0 transition-transform', offen && 'rotate-180')} />
+                {texte.titel}
+            </button>
+
+            <div className={cn('flex flex-col gap-1.5', !offen && 'max-md:hidden')} data-slot="mail-werkzeugleiste-inhalt">
             <div className="flex flex-wrap items-center gap-1.5">
-                <span className="mr-1 text-xs font-medium text-muted-foreground">{texte.titel}</span>
+                <span className="mr-1 text-xs font-medium text-muted-foreground max-md:hidden">{texte.titel}</span>
 
                 {laedt && (
                     <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -496,6 +531,7 @@ export function MailWerkzeugleiste({
                     {texte.gescheitert(gescheitert)}
                 </p>
             )}
+            </div>
         </div>
     );
 }

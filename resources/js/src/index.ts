@@ -16,6 +16,8 @@ export * from './MailboxPane';
 export * from './MailFolderList';
 export { default as MailFolderList } from './MailFolderList';
 export * from './MailboxHeader';
+export * from './MailboxMobilLeiste';
+export { default as MailboxMobilLeiste } from './MailboxMobilLeiste';
 export * from './MailAddressBook';
 export * from './useFolderActions';
 export * from './MailFolderManager';

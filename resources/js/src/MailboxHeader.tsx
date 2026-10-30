@@ -81,6 +81,57 @@ export interface MailboxHeaderProps {
     accountAccessory?: MailboxHeaderAccessory;
 }
 
+export interface MailboxKontoAuswahlProps {
+    accounts: MailboxHeaderAccount[];
+    accountId: number | string | null;
+    onAccountChange: (id: string) => void;
+    labels: Pick<MailboxHeaderLabels, 'accountPicker' | 'noAccounts'>;
+    accountAccessory?: MailboxHeaderAccessory;
+    /** Zusatzklassen am Ausloeser — in der Schublade `w-full`, oben 250px. */
+    className?: string;
+}
+
+/**
+ * Die Postfachauswahl fuer sich.
+ *
+ * Herausgeloest am 30.10.2026 fuer #9134: Auf dem Telefon steht sie in der
+ * Schublade und nicht in der Kopfzeile, und beide Stellen sollen DIESELBE
+ * Auswahl zeichnen. Zweimal dasselbe Markup zu schreiben waere die Art
+ * Unterschied, die niemand entscheidet und die trotzdem entsteht — genau der
+ * Grund, aus dem {@see MailboxHeader} ueberhaupt im Paket liegt.
+ *
+ * Dass sie zweimal im Baum STEHT, kostet nichts: Beide lesen denselben Zustand
+ * und melden an denselben Rueckruf; welche man sieht, entscheidet eine Klasse.
+ */
+export function MailboxKontoAuswahl({
+    accounts,
+    accountId,
+    onAccountChange,
+    labels,
+    accountAccessory,
+    className = 'w-[250px]',
+}: MailboxKontoAuswahlProps) {
+    return (
+        <Select value={accountId === null ? '' : String(accountId)} onValueChange={onAccountChange} disabled={accounts.length === 0}>
+            <SelectTrigger className={`max-w-full min-w-0 [&>span]:min-w-0 ${className}`} aria-label={labels.accountPicker}>
+                <SelectValue placeholder={accounts.length === 0 ? labels.noAccounts : labels.accountPicker} />
+            </SelectTrigger>
+            <SelectContent>
+                {accounts.map((konto) => (
+                    <SelectItem key={konto.id} value={String(konto.id)}>
+                        <div className="flex min-w-0 items-center gap-2">
+                            {accountAccessory?.(konto)}
+                            <span className="truncate" title={konto.name}>
+                                {konto.name}
+                            </span>
+                        </div>
+                    </SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
+    );
+}
+
 export function MailboxHeader({
     title,
     labels,
@@ -100,23 +151,13 @@ export function MailboxHeader({
             <div className="flex min-w-0 items-center gap-4 max-md:w-full">
                 <h1 className="shrink-0 text-2xl font-bold">{title}</h1>
 
-                <Select value={accountId === null ? '' : String(accountId)} onValueChange={onAccountChange} disabled={accounts.length === 0}>
-                    <SelectTrigger className="w-[250px] max-w-full min-w-0 [&>span]:min-w-0" aria-label={labels.accountPicker}>
-                        <SelectValue placeholder={accounts.length === 0 ? labels.noAccounts : labels.accountPicker} />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {accounts.map((konto) => (
-                            <SelectItem key={konto.id} value={String(konto.id)}>
-                                <div className="flex min-w-0 items-center gap-2">
-                                    {accountAccessory?.(konto)}
-                                    <span className="truncate" title={konto.name}>
-                                        {konto.name}
-                                    </span>
-                                </div>
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+                <MailboxKontoAuswahl
+                    accounts={accounts}
+                    accountId={accountId}
+                    onAccountChange={onAccountChange}
+                    labels={labels}
+                    accountAccessory={accountAccessory}
+                />
 
                 {error && (
                     <span className="truncate text-sm text-destructive" data-slot="mailbox-header-error">

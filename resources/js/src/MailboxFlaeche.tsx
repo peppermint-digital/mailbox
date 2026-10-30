@@ -7,7 +7,8 @@ import type { WeiterleitenFeldProps } from './inertia/WeiterleitenFeld';
 import { MailAssignmentPicker } from './MailAssignmentPicker';
 import { MailboxBrowser } from './MailboxBrowser';
 import { MailboxChat, type MailboxChatProps } from './MailboxChat';
-import { MailboxHeader } from './MailboxHeader';
+import { MailboxHeader, MailboxKontoAuswahl } from './MailboxHeader';
+import { MailboxMobilLeiste, MailboxVerfassenKnopf } from './MailboxMobilLeiste';
 import { MailboxKuerzelHilfe } from './MailboxKuerzelHilfe';
 import { MailboxSidePanel, MailboxSidePanelHandle } from './MailboxSidePanel';
 import { Button } from './ui/button';
@@ -401,6 +402,93 @@ export function MailboxFlaeche({
           }
         | null;
 
+    /*
+     * Woerter fuer die schmale Leiste auf dem Telefon (#9134).
+     *
+     * Der ORDNERNAME steht dort, wo am Schreibtisch „E-Mails" steht — so macht
+     * es Outlook Mobile, und so war es ausdruecklich gewollt. Der Seitentitel
+     * steht ohnehin schon in der Navigation des Produkts daneben; ihn hier zu
+     * wiederholen kostete eine Zeile und sagte nichts.
+     *
+     * Faellt der Ordner nicht in der Liste auf (eine Suche ueber alle Ordner,
+     * ein Pfad, den der Server noch nicht gemeldet hat), bleibt der Pfad
+     * stehen. Ein leerer Titel waere schlimmer als ein technischer.
+     */
+    const ordnerName = (ordner.folders as MailFolder[]).find((f) => f.path === ordnerPfad)?.name || ordnerPfad || titel;
+
+    const offeneAbsender = (() => {
+        const n = offene.message as { from_name?: string; from_address?: string } | null;
+
+        return n ? n.from_name || n.from_address : undefined;
+    })();
+
+    /*
+     * #9134: Die Kopfzeile wandert in den `toolbar`-Platz des Rahmens.
+     *
+     * Bis zum 30.10.2026 stand sie UEBER `MailboxBrowser` — und damit
+     * ausserhalb von {@see MailboxPaneContext}. Sie konnte deshalb nicht
+     * wissen, ob auf dem Telefon gerade die Liste oder eine geoeffnete Mail
+     * den Bildschirm fuellt, und stand in beiden Faellen gleich hoch im Weg.
+     * Der Platz dafuer war im Rahmen laengst vorgesehen; benutzt hat ihn nur
+     * niemand.
+     *
+     * Am Schreibtisch aendert das NICHTS: Der Rahmen zeichnet `toolbar` als
+     * erstes Kind seiner Spalte, also genau dort, wo die Kopfzeile vorher
+     * stand.
+     */
+    const kopfzeile = (
+        <>
+            <div className="max-md:hidden">
+            <MailboxHeader
+                title={titel}
+                labels={germanLabels.header}
+                accounts={konten.map((k) => ({ id: k.id, name: k.name, geteilt: k.geteilt }))}
+                /*
+                 * A5 (#9116): Der Globus kommt aus dem Konto selbst, nicht
+                 * mehr als durchgereichte Komponente. Der Manager hatte
+                 * ihn, die anderen drei nicht — dabei haben CRM und
+                 * Verwaltung ebenfalls geteilte Postfaecher.
+                 *
+                 * Die Angabe reist MIT dem Konto, statt sie hier wieder
+                 * nachzuschlagen: Ein Nachschlagen braeuchte einen
+                 * Vergleich von Kennungen, und der waere ein Schutz, den
+                 * keine Mutationsprobe treffen kann — weil beide Listen
+                 * ohnehin dieselben Objekte tragen.
+                 */
+                accountAccessory={(k) =>
+                    k.geteilt ? <Globe className="h-4 w-4 shrink-0 text-muted-foreground" data-slot="mailbox-geteilt" /> : null
+                }
+                accountId={konto?.id ?? null}
+                onAccountChange={(wert) => setKonto(konten.find((k) => k.id === Number(wert)) ?? null)}
+                onAddressBook={() => navigieren(`${basis}/address-book`)}
+                onCompose={() => navigieren(`${basis}/compose`)}
+                onRefresh={
+                    konto ? () => void liste.load({ accountId: konto.id, folder: ordnerPfad, page: liste.page, refresh: true }) : undefined
+                }
+                refreshing={liste.refreshing}
+                error={fehler}
+            />
+            </div>
+
+            {/*
+                Und darunter dieselbe Sache fuer das Telefon — EIN Band statt
+                drei. Welche der beiden man sieht, entscheidet die Klasse, nicht
+                JavaScript (siehe {@see MailboxMobilLeiste}).
+            */}
+            <MailboxMobilLeiste
+                ordnerName={ordnerName}
+                absender={offeneAbsender}
+                hatOrdner={ordnerSichtbar}
+                onAssistent={chatVerfuegbar && konto ? assistent.zeigen : undefined}
+                onAdressbuch={() => navigieren(`${basis}/address-book`)}
+                onAktualisieren={
+                    konto ? () => void liste.load({ accountId: konto.id, folder: ordnerPfad, page: liste.page, refresh: true }) : undefined
+                }
+                aktualisiert={liste.refreshing}
+            />
+        </>
+    );
+
     return (
         <>
             {/* Echte Hoehe statt `flex-1`: Der Mail-Browser ist genau so hoch
@@ -422,35 +510,6 @@ export function MailboxFlaeche({
                 anklickbar" aus der Meldung. Am Schreibtisch sind die beiden
                 Einheiten gleich, dort aendert sich nichts. */}
             <div className="flex h-[calc(100dvh-5rem)] flex-col overflow-hidden">
-                <MailboxHeader
-                    title={titel}
-                    labels={germanLabels.header}
-                    accounts={konten.map((k) => ({ id: k.id, name: k.name, geteilt: k.geteilt }))}
-                    /*
-                     * A5 (#9116): Der Globus kommt aus dem Konto selbst, nicht
-                     * mehr als durchgereichte Komponente. Der Manager hatte
-                     * ihn, die anderen drei nicht — dabei haben CRM und
-                     * Verwaltung ebenfalls geteilte Postfaecher.
-                     *
-                     * Die Angabe reist MIT dem Konto, statt sie hier wieder
-                     * nachzuschlagen: Ein Nachschlagen braeuchte einen
-                     * Vergleich von Kennungen, und der waere ein Schutz, den
-                     * keine Mutationsprobe treffen kann — weil beide Listen
-                     * ohnehin dieselben Objekte tragen.
-                     */
-                    accountAccessory={(k) =>
-                        k.geteilt ? <Globe className="h-4 w-4 shrink-0 text-muted-foreground" data-slot="mailbox-geteilt" /> : null
-                    }
-                    accountId={konto?.id ?? null}
-                    onAccountChange={(wert) => setKonto(konten.find((k) => k.id === Number(wert)) ?? null)}
-                    onAddressBook={() => navigieren(`${basis}/address-book`)}
-                    onCompose={() => navigieren(`${basis}/compose`)}
-                    onRefresh={
-                        konto ? () => void liste.load({ accountId: konto.id, folder: ordnerPfad, page: liste.page, refresh: true }) : undefined
-                    }
-                    refreshing={liste.refreshing}
-                    error={fehler}
-                />
 
                 {konten.length === 0 ? (
                     <div className="flex flex-1 items-center justify-center text-muted-foreground">
@@ -458,6 +517,45 @@ export function MailboxFlaeche({
                     </div>
                 ) : (
                     <MailboxBrowser
+                        toolbar={kopfzeile}
+                        /*
+                         * Das Band mit „Ordner" / „Zurueck zur Liste" faellt
+                         * weg: Die schmale Leiste oben traegt beides laengst.
+                         * Zwei Baender uebereinander waren 45 px, die auf einem
+                         * Telefon zaehlen.
+                         */
+                        eigeneNavigation
+                        /*
+                         * Der schwebende Verfassen-Knopf gehoert IN den Rahmen:
+                         * Dort legt er sich auf die Flaechen statt auf das
+                         * Fenster, und er sieht, welche Flaeche gerade vorn ist
+                         * — beim Lesen nimmt er sich selbst weg.
+                         */
+                        schwebend={
+                            konto ? (
+                                <MailboxVerfassenKnopf
+                                    label={germanLabels.header.compose}
+                                    onClick={() => navigieren(`${basis}/compose`)}
+                                />
+                            ) : undefined
+                        }
+                        /*
+                         * In der Schublade steht das Konto ueber den Ordnern.
+                         * Beides beantwortet dieselbe Frage — „wo bin ich" —,
+                         * und am Telefon ist dafuer genau ein Ort da.
+                         */
+                        schubladeKopf={
+                            <MailboxKontoAuswahl
+                                accounts={konten.map((k) => ({ id: k.id, name: k.name, geteilt: k.geteilt }))}
+                                accountId={konto?.id ?? null}
+                                onAccountChange={(wert) => setKonto(konten.find((k) => k.id === Number(wert)) ?? null)}
+                                labels={germanLabels.header}
+                                accountAccessory={(k) =>
+                                    k.geteilt ? <Globe className="h-4 w-4 shrink-0 text-muted-foreground" /> : null
+                                }
+                                className="w-full"
+                            />
+                        }
                         folders={
                             <MailFolderList
                                 folders={ordner.folders}
@@ -682,6 +780,14 @@ export function MailboxFlaeche({
                                             labels={germanLabels.view}
                                             loading={offene.loading}
                                             /*
+                                             * #9134: Auf dem Telefon klebt die Knopfleiste
+                                             * unten am Rand. Die Flaeche darf das zusichern,
+                                             * weil der Rahmen unterhalb von `md` genau EINE
+                                             * Flaeche zeigt — die Leseansicht IST dort der
+                                             * ganze Bildschirm.
+                                             */
+                                            aktionenUnten
+                                            /*
                                              * Es zaehlt der Ordner, in dem die Nachricht WIRKLICH
                                              * liegt — nicht der links ausgewaehlte. Ein Entwurf, den
                                              * man ueber die Suche findet, bleibt einer, auch wenn
@@ -824,20 +930,32 @@ export function MailboxFlaeche({
                     busy={ordnerVerwaltung.busy}
                 />
 
-                {chatVerfuegbar && konto && !assistent.sichtbar && (
-                    <MailboxSidePanelHandle label="AI-Brain-Chat" onClick={assistent.zeigen} />
-                )}
+                {/*
+                    Der schwebende Griff bleibt dem Schreibtisch (#9134).
 
-                {/* Auf schmalen Schirmen ist die Spalte weg, solange sie nur per
-                    Vorgabe offen steht (siehe `asideGewaehlt`). Ohne diesen Griff
-                    waere der Assistent dort gar nicht mehr erreichbar — und ein
-                    Antippen macht aus der Vorgabe eine Wahl, ab da deckt er wie
-                    gehabt ab. */}
-                {chatVerfuegbar && konto && assistent.sichtbar && !assistent.gewaehlt && (
-                    <div className="md:hidden">
+                    Am Telefon sass er unten rechts — und dort sitzt seit heute
+                    der Verfassen-Knopf. Zwei schwebende Knoepfe an derselben
+                    Ecke sind woertlich Bastians „Buttons uebereinander". Der
+                    Assistent ist dort ueber die schmale Leiste erreichbar, und
+                    zwar an jeder Stelle, nicht nur wenn er gerade zu ist.
+                */}
+                {chatVerfuegbar && konto && !assistent.sichtbar && (
+                    <div className="max-md:hidden">
                         <MailboxSidePanelHandle label="AI-Brain-Chat" onClick={assistent.zeigen} />
                     </div>
                 )}
+
+
+
+                {/*
+                    Hier stand bis zum 30.10.2026 ein ZWEITER schwebender Griff,
+                    fuer den Fall, dass der Assistent nur per Vorgabe offen
+                    steht und auf schmalen Schirmen deshalb weg ist
+                    (`asideGewaehlt`). Er ist mit #9134 entfallen: Die schmale
+                    Leiste hat den Assistenten als festen Knopf, in jedem
+                    Zustand und ohne etwas zu verdecken. Zwei Griffe fuer eine
+                    Sache waren ohnehin einer zu viel.
+                */}
             </div>
 
             {/* A7 (#9116): Das Zeilenmenue der Wiedervorlage.

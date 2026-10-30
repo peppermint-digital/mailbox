@@ -120,6 +120,37 @@ export interface MailboxBrowserProps {
     /** Die Woerter der Umschaltung. Nur unterhalb von `md` sichtbar. */
     labels?: MailboxBrowserLabels;
     /**
+     * Was auf dem Telefon UEBER den Ordnern steht — die Kontoauswahl (#9134).
+     *
+     * Die Ordner-Flaeche ist dort die Schublade: Sie nimmt die ganze Breite,
+     * steht per Vorgabe zu und schliesst sich beim Waehlen wieder. Konten und
+     * Ordner gehoeren darin zusammen, weil sie dieselbe Frage beantworten —
+     * „wo bin ich". Am Schreibtisch bleibt die Kontoauswahl in der Kopfzeile;
+     * dieser Platz ist dort leer (`md:hidden`).
+     */
+    schubladeKopf?: ReactNode;
+    /**
+     * Zeichnet der Aufrufer die Umschaltung selbst?
+     *
+     * Vorgabe `false` — dann setzt der Rahmen sein eigenes Band mit „Ordner"
+     * bzw. „Zurueck zur Liste" darueber, wie seit #1079.
+     *
+     * {@see MailboxMobilLeiste} uebernimmt beides in EINE Zeile: Menue-Knopf,
+     * Titel und Zurueck-Pfeil stehen dort, wo sonst die Kopfzeile stand. Dann
+     * waere das Band ein zweites, leeres Band — 45 px, die auf einem Telefon
+     * zaehlen.
+     */
+    eigeneNavigation?: boolean;
+    /**
+     * Was ueber den Flaechen schwebt — am Telefon der Verfassen-Knopf (#9134).
+     *
+     * Es steht hier und nicht neben dem Rahmen, damit es sich auf den BEZUG
+     * des Rahmens legt statt auf das Fenster, und damit es den
+     * {@see MailboxPaneContext} lesen kann: Ein Knopf, der beim Lesen auf der
+     * Knopfleiste der Mail laege, nimmt sich so selbst weg.
+     */
+    schwebend?: ReactNode;
+    /**
      * War das Oeffnen der Seitenspalte eine ENTSCHEIDUNG — oder nur die Vorgabe?
      *
      * Entscheidet, ob sie unterhalb von `md` die Flaechen abdecken darf.
@@ -144,6 +175,9 @@ export function MailboxBrowser({
     listWidth = 'w-80',
     labels = mailboxBrowserLabels,
     asideGewaehlt = true,
+    schubladeKopf,
+    eigeneNavigation = false,
+    schwebend,
 }: MailboxBrowserProps) {
     const [pane, setPane] = useState<MailboxPane>('list');
 
@@ -157,8 +191,7 @@ export function MailboxBrowser({
      * Und sie steht nur da, wenn sie etwas zu sagen hat. Auf der Liste ohne
      * Ordner-Spalte waere sie ein leerer Streifen mit einer Trennlinie.
      */
-    const umschaltung =
-        pane === 'list' ? (
+    const umschaltung = eigeneNavigation ? null : pane === 'list' ? (
             showFolders ? (
                 <button
                     type="button"
@@ -201,6 +234,11 @@ export function MailboxBrowser({
                             className={`${pane === 'folders' ? 'block' : 'hidden'} overflow-y-auto border-r bg-muted/30 max-md:w-full md:block md:w-48`}
                             data-slot="mailbox-folders"
                         >
+                            {schubladeKopf && (
+                                <div className="border-b p-2 md:hidden" data-slot="mailbox-schublade-kopf">
+                                    {schubladeKopf}
+                                </div>
+                            )}
                             <div className="p-2">{folders}</div>
                         </div>
                     )}
@@ -239,6 +277,8 @@ export function MailboxBrowser({
                             {aside}
                         </div>
                     )}
+
+                    {schwebend}
                 </div>
             </div>
         </MailboxPaneContext.Provider>

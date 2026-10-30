@@ -15,6 +15,7 @@
 
 @source '../../../src';
 @source './einstieg.tsx';
+@source './handy.tsx';
 
 /*
  * Die Farbnamen des Produkt-Themes (shadcn). Für die Messung sind sie

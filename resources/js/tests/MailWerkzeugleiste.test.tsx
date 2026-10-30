@@ -3,6 +3,19 @@ import { MailWerkzeugleiste } from '../src/MailWerkzeugleiste';
 import type { MailWerkzeug } from '../src/useMailWerkzeuge';
 import { render } from './support/render';
 
+/*
+ * Die Verben stehen im Inhalt der Leiste, nicht in ihrem Kopf.
+ *
+ * Bis zum 30.10.2026 stand hier schlicht `querySelector('button')` — „der
+ * erste Knopf". Das war so lange dasselbe wie „das erste Verb", wie die Leiste
+ * keinen anderen Knopf hatte. Mit dem Aufklapper fuer das Telefon (#9134) hat
+ * sie einen, und zehn Tests prueften ploetzlich ihn.
+ *
+ * Gemeint war nie „der erste Knopf", sondern „das erste Verb". Das steht jetzt
+ * da.
+ */
+const INHALT = '[data-slot="mail-werkzeugleiste-inhalt"]';
+
 /**
  * Die eine Werkzeugleiste für alle Systeme (#8313/#8316).
  *
@@ -171,7 +184,7 @@ describe('Verweis-Verb gegen Auslöse-Verb', () => {
         });
 
         expect(container.querySelector('a')?.getAttribute('href')).toBe('https://crm.test/kontakte?kette=1');
-        expect(container.querySelector('button')).toBeNull();
+        expect(container.querySelector(`${INHALT} button`)).toBeNull();
         unmount();
     });
 
@@ -185,7 +198,7 @@ describe('Verweis-Verb gegen Auslöse-Verb', () => {
             onMeldung: (m, ok) => meldungen.push([m, ok]),
         });
 
-        container.querySelector('button')!.click();
+        container.querySelector(`${INHALT} button`)!.click();
         await new Promise((r) => setTimeout(r, 0));
 
         expect(ausloesen).toHaveBeenCalledOnce();
@@ -204,7 +217,7 @@ describe('Verweis-Verb gegen Auslöse-Verb', () => {
             onMeldung: (m, ok) => meldungen.push([m, ok]),
         });
 
-        container.querySelector('button')!.click();
+        container.querySelector(`${INHALT} button`)!.click();
         await new Promise((r) => setTimeout(r, 0));
 
         expect(meldungen[0]).toEqual(['Dazu fehlt das Belegdatum.', false]);
@@ -221,7 +234,7 @@ describe('Verweis-Verb gegen Auslöse-Verb', () => {
             ausloesen,
         });
 
-        container.querySelector('button')!.click();
+        container.querySelector(`${INHALT} button`)!.click();
         await new Promise((r) => setTimeout(r, 0));
 
         expect(ausloesen).not.toHaveBeenCalled();
@@ -358,7 +371,7 @@ describe('Felder — die Zusage, hinter der bis zum 20.10.2026 nichts stand', ()
         const { container, unmount } = leiste({ werkzeuge: [mitAuswahl()] });
 
         const auswahl = container.querySelector('select');
-        const knopf = container.querySelector('button');
+        const knopf = container.querySelector(`${INHALT} button`);
 
         expect(auswahl).not.toBeNull();
         expect(auswahl?.querySelectorAll('option')).toHaveLength(3); // „bitte wählen" + zwei
@@ -382,7 +395,7 @@ describe('Felder — die Zusage, hinter der bis zum 20.10.2026 nichts stand', ()
         });
 
         const auswahl = container.querySelector('select')!;
-        const knopf = container.querySelector('button')!;
+        const knopf = container.querySelector(`${INHALT} button`)!;
 
         auswahl.value = 'bodo@example.test';
         auswahl.dispatchEvent(new Event('change', { bubbles: true }));
@@ -417,7 +430,7 @@ describe('Felder — die Zusage, hinter der bis zum 20.10.2026 nichts stand', ()
             ],
         });
 
-        expect(container.querySelector('button')).toBeNull();
+        expect(container.querySelector(`${INHALT} button`)).toBeNull();
         expect(container.textContent).toContain('nicht erfassen');
 
         unmount();
@@ -456,7 +469,7 @@ describe('Felder — die Zusage, hinter der bis zum 20.10.2026 nichts stand', ()
         auswahl.value = 'bodo@example.test';
         auswahl.dispatchEvent(new Event('change', { bubbles: true }));
 
-        const knopf = container.querySelector('button')!;
+        const knopf = container.querySelector(`${INHALT} button`)!;
 
         return vi
             .waitFor(() => expect(knopf.disabled).toBe(false))
@@ -505,7 +518,7 @@ describe('Vorbelegung: den Stand zeigen UND änderbar lassen', () => {
 
         expect(container.querySelector('select')?.value).toBe('bodo@example.test');
         // Nicht aus: Es fehlt nichts, und das Ändern ist hier der Normalfall.
-        expect(container.querySelector('button')?.disabled).toBe(false);
+        expect(container.querySelector(`${INHALT} button`)?.disabled).toBe(false);
 
         unmount();
     });
@@ -522,7 +535,7 @@ describe('Vorbelegung: den Stand zeigen UND änderbar lassen', () => {
             },
         });
 
-        container.querySelector('button')!.click();
+        container.querySelector(`${INHALT} button`)!.click();
 
         await vi.waitFor(() => expect(gesehen).toHaveLength(1));
 
@@ -550,7 +563,7 @@ describe('Vorbelegung: den Stand zeigen UND änderbar lassen', () => {
 
         await vi.waitFor(() => expect(container.querySelector('select')!.value).toBe('anna@example.test'));
 
-        container.querySelector('button')!.click();
+        container.querySelector(`${INHALT} button`)!.click();
 
         await vi.waitFor(() => expect(gesehen).toHaveLength(1));
 
@@ -564,7 +577,7 @@ describe('Vorbelegung: den Stand zeigen UND änderbar lassen', () => {
         const { container, unmount } = leiste({ werkzeuge: [mitVorbelegung('')] });
 
         expect(container.querySelector('select')?.value).toBe('');
-        expect(container.querySelector('button')?.disabled).toBe(true);
+        expect(container.querySelector(`${INHALT} button`)?.disabled).toBe(true);
 
         unmount();
     });
@@ -573,10 +586,10 @@ describe('Vorbelegung: den Stand zeigen UND änderbar lassen', () => {
 describe('ein Verb, das das Produkt selbst bedient (#8434)', () => {
     /** Den Knopf zu einem Verb finden — die Leiste hat mehrere Knoepfe. */
     function knopfMit(container: HTMLElement, text: string): HTMLButtonElement {
-        const treffer = [...container.querySelectorAll('button')].find((k) => (k.textContent ?? '').includes(text));
+        const treffer = [...container.querySelectorAll(`${INHALT} button`)].find((k) => (k.textContent ?? '').includes(text));
 
         if (!treffer) {
-            throw new Error(`Kein Knopf mit „${text}" — vorhanden: ${[...container.querySelectorAll('button')].map((k) => k.textContent).join(' | ')}`);
+            throw new Error(`Kein Knopf mit „${text}" — vorhanden: ${[...container.querySelectorAll(`${INHALT} button`)].map((k) => k.textContent).join(' | ')}`);
         }
 
         return treffer as HTMLButtonElement;

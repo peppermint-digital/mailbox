@@ -1,5 +1,5 @@
-import { Archive, Download, Forward, Loader2, Mail, MailOpen, Paperclip, Pencil, Reply, Star, Trash2, Users } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Archive, ChevronDown, Download, Forward, Loader2, Mail, MailOpen, Paperclip, Pencil, Reply, Star, Trash2, Users } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
 import EmailBodyViewer, { type EmailBodyViewerLabels } from './EmailBodyViewer';
 import { Button } from './ui/button';
 import { cn } from './ui/utils';
@@ -116,6 +116,26 @@ export interface MailMessageViewProps {
     extraActions?: ReactNode;
     /** The folder picker and anything else the product puts in the toolbar. */
     moveControl?: ReactNode;
+    /**
+     * Klebt die Knopfleiste auf dem Telefon an den unteren Rand (#9134).
+     *
+     * Vorgabe `false`, damit sich fuer jeden bestehenden Aufrufer nichts
+     * aendert. {@see MailboxFlaeche} setzt es, weil dort der Rahmen
+     * garantiert, was diese Ansicht allein nicht weiss: Unterhalb von `md`
+     * steht sie als EINZIGE Flaeche auf dem ganzen Schirm (siehe
+     * {@see MailboxPane}). Nur dann ist „unten" auch der untere
+     * Bildschirmrand und nicht das Ende einer schmalen Spalte neben zwei
+     * anderen.
+     *
+     * Warum hier `max-md:` (Fenster) steht und eine Zeile hoeher `@md:`
+     * (Behaelter): Es sind zwei verschiedene Fragen. „Passen Betreff und
+     * Leiste nebeneinander" ist eine Frage an die SPALTE. „Ist diese Ansicht
+     * gerade der ganze Bildschirm" ist eine Frage an das FENSTER — und zwar an
+     * genau die Schwelle, an der der Rahmen auf eine Flaeche umschaltet.
+     * Dieselbe Zahl wie der Rahmen zu nehmen ist hier der Punkt, nicht eine
+     * Nachlaessigkeit.
+     */
+    aktionenUnten?: boolean;
 }
 
 export function MailMessageView({
@@ -139,6 +159,7 @@ export function MailMessageView({
     headerAccessory,
     extraActions,
     moveControl,
+    aktionenUnten = false,
 }: MailMessageViewProps) {
     if (loading) {
         return (
@@ -159,11 +180,28 @@ export function MailMessageView({
         );
     }
 
+    /*
+     * Die Kopfdaten sind auf dem Telefon zugeklappt (#9134).
+     *
+     * Gemessen am 30.10.2026: „Von", „Datum", „An" und „CC" stehen dort
+     * untereinander und sind zusammen rund 80 px — ueber einer Mail, von der
+     * auf 844 px Bildschirm ohnehin wenig uebrig bleibt. Outlook Mobile macht
+     * es genauso: EINE Zeile mit Absender und Zeit, der Rest auf Tippen.
+     *
+     * Der Zustand steht hier und nicht in einer Klasse, weil es ein Zustand
+     * IST. Dass es ihn am Schreibtisch nicht gibt, erledigt `max-md:hidden` —
+     * dort steht das Raster immer offen, egal was hier steht.
+     */
+    const [kopfdatenOffen, setKopfdatenOffen] = useState(false);
+
     const isArchived = message.source === 'stored';
     const hasMoreRecipients = message.cc.length > 0 || message.to.length > 1;
 
     return (
-        <div className="@container flex flex-1 flex-col overflow-hidden" data-slot="mail-message-view">
+        <div
+            className={cn('@container flex flex-1 flex-col overflow-hidden', aktionenUnten && 'max-md:relative')}
+            data-slot="mail-message-view"
+        >
             <div className="space-y-3 border-b p-4">
                 {/*
                     Betreff und Knopfleiste stehen UNTEREINANDER, solange sie
@@ -247,7 +285,24 @@ export function MailMessageView({
                             </span>
                         </div>
                     ) : (
-                        <div className="flex flex-wrap items-center gap-2" data-slot="mail-message-actions">
+                        <div
+                            className={cn(
+                                'flex flex-wrap items-center gap-2',
+                                /*
+                                    Am unteren Rand DIESER Flaeche statt neben
+                                    dem Betreff. `absolute` und nicht `fixed`:
+                                    Der Bezug soll die Leseansicht sein und
+                                    nicht das Fenster — sonst haengt die Leiste
+                                    an einer Vorfahrenkette, die ein Produkt mit
+                                    einem einzigen `transform` unter sich
+                                    wegziehen kann, und sie stuende ploetzlich
+                                    mitten im Bild.
+                                */
+                                aktionenUnten &&
+                                    'max-md:absolute max-md:inset-x-0 max-md:bottom-0 max-md:z-10 max-md:border-t max-md:bg-background max-md:px-3 max-md:py-2',
+                            )}
+                            data-slot="mail-message-actions"
+                        >
                             {isDraft && onEditDraft && (
                                 <Button onClick={onEditDraft} size="sm" title={labels.editDraft}>
                                     <Pencil className="mr-2 h-4 w-4" />
@@ -260,10 +315,25 @@ export function MailMessageView({
                                 Produkten ohne Sendeweg, wo sie beim Klick nichts
                                 taten. Ein Knopf ohne Wirkung sieht aus wie ein
                                 Defekt, nicht wie eine fehlende Funktion. */}
+                            {/*
+                                Auf dem Telefon nur das Symbol (#9134).
+
+                                Mit dem Wort ist „Antworten" rund 114 px breit,
+                                und die neun Knoepfe brauchen zusammen 483 px.
+                                Auf 358 px Inhaltsbreite bricht die Leiste
+                                dadurch in ZWEI Reihen um, von denen die zweite
+                                einen einzigen Knopf traegt — am Bild gesehen,
+                                nicht an den Zahlen. Ohne das Wort sind es
+                                neun gleiche Felder in einer Reihe.
+
+                                Das Wort bleibt als `title` und als Name fuer
+                                die Vorlesehilfe stehen: Es verschwindet aus dem
+                                Bild, nicht aus der Bedienung.
+                            */}
                             {onReply && (
-                                <Button onClick={() => onReply(false)} size="sm" title={labels.reply}>
-                                    <Reply className="mr-2 h-4 w-4" />
-                                    {labels.reply}
+                                <Button onClick={() => onReply(false)} size="sm" title={labels.reply} aria-label={labels.reply}>
+                                    <Reply className={cn('mr-2 h-4 w-4', aktionenUnten && 'max-md:mr-0')} />
+                                    <span className={cn(aktionenUnten && 'max-md:hidden')}>{labels.reply}</span>
                                 </Button>
                             )}
 
@@ -350,7 +420,33 @@ export function MailMessageView({
                     `grid grid-cols-1` allein ergab „358px", also eine Spur.
                     Die Klasse wirkte; das Kind hat sie ueberstimmt.
                 */}
-                <div className="grid grid-cols-1 gap-2 text-sm @md:grid-cols-2">
+                {/*
+                    Die Zusammenfassung fuer das Telefon: Absender und Zeit, wie
+                    in der Liste darueber. Ein Knopf und keine Ueberschrift — er
+                    tut etwas, also gehoert er auf die Tastatur und braucht
+                    einen Zustand, den eine Vorlesehilfe ansagen kann.
+                */}
+                {aktionenUnten && (
+                    <button
+                        type="button"
+                        data-slot="mail-message-kopfdaten-aufklapper"
+                        aria-expanded={kopfdatenOffen}
+                        className="-mx-1 flex min-h-10 w-full items-center gap-2 rounded px-1 text-left text-sm md:hidden"
+                        onClick={() => setKopfdatenOffen((war) => !war)}
+                    >
+                        <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', kopfdatenOffen && 'rotate-180')} />
+                        <span className="min-w-0 flex-1 truncate">{message.from_name || message.from_address}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">{formatDateTime(message.date)}</span>
+                    </button>
+                )}
+
+                <div
+                    className={cn(
+                        'grid grid-cols-1 gap-2 text-sm @md:grid-cols-2',
+                        aktionenUnten && !kopfdatenOffen && 'max-md:hidden',
+                    )}
+                    data-slot="mail-message-kopfdaten"
+                >
                     <div className="min-w-0 break-words">
                         <span className="text-muted-foreground">{labels.from}</span>
                         <span className="ml-2">
@@ -397,7 +493,25 @@ export function MailMessageView({
                 )}
             </div>
 
-            <div className="flex-1 overflow-hidden">
+            {/*
+                Luft unter dem Text, so hoch wie die Leiste werden kann. Ohne
+                sie liegt die Leiste auf den letzten Zeilen der Mail — und
+                „nichts liegt uebereinander" ist der Punkt dieser Aenderung,
+                nicht eine Nebenbedingung.
+
+6rem = 96 px, und die Zahl ist gemessen, nicht gegriffen: Mit
+                NEUN Knoepfen (AI Brain, Verschieben plus „Aus der Ablage
+                entfernen") bricht die Leiste auf 320 px in zwei Reihen und ist
+                89 px hoch. Mit sieben passt sie in eine und ist 49 px hoch.
+
+                Zuerst standen hier 80 px — gerechnet fuer EINE Reihe, weil
+                „Antworten" auf dem Telefon sein Wort verliert und die Reihe
+                damit schmal genug schien. Die Messreihe hat den Fall mit neun
+                Knoepfen gemessen und die 9 px Unterschied gemeldet, bevor
+                irgendwer sie gesehen haette. Sie prueft die Polsterung gegen
+                die gemessene Leistenhoehe — wer hier kuerzt, faellt auf.
+            */}
+            <div className={cn('flex-1 overflow-hidden', aktionenUnten && 'max-md:pb-24')}>
                 <EmailBodyViewer labels={labels.body} bodyHtml={message.body_html} bodyText={message.body_text} blockRemoteImages />
             </div>
         </div>
