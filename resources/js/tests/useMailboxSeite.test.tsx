@@ -778,3 +778,87 @@ describe('eigene Quellen als Fabrik (#9116)', () => {
         unmount();
     });
 });
+
+describe('der Zeilenfilter des Produkts (#9116)', () => {
+    /**
+     * Gemessen am 30.10.2026, VOR der Behebung: Der Filter liess sich umlegen
+     * und die Liste blieb, wie sie war — zwei Zeilen vorher, zwei Zeilen
+     * nachher, obwohl er nur eine durchlaesst.
+     *
+     * Ursache: `zeilenFilter` stand nicht in den Abhaengigkeiten des Memos,
+     * das die Zeilen baut. Das Memo rechnete also erst neu, wenn sich etwas
+     * ANDERES aenderte — Nachrichten, Ketten, Suchmodus. Der Schalter war
+     * bedienbar und wirkungslos, und genau das wollte der Filter verhindern.
+     */
+    function FilterProbe({ an, beobachten }: { an: boolean; beobachten: (anzahl: number) => void }) {
+        const seite = useMailboxSeite({
+            konten: [{ id: 42, email: 'department@example.test', name: 'Abteilung' }],
+            namensraum: 'test.filter',
+            melden: () => {},
+            zeilenFilter: an ? (nachricht) => nachricht.uid === 7 : undefined,
+        });
+
+        beobachten((seite.zeilen as unknown[]).length);
+
+        return null;
+    }
+
+    it('baut die Zeilen neu, sobald der Filter umgelegt wird', async () => {
+        const { fetchStub } = gegenstelle({
+            messages: {
+                success: true,
+                messages: [
+                    { uid: 7, message_id: '<a>', subject: 'A', from_address: 'a@b.test', from_name: 'A', date: '', seen: true, flagged: false, preview: '', has_attachments: false, attachment_count: 0 },
+                    { uid: 8, message_id: '<b>', subject: 'B', from_address: 'b@b.test', from_name: 'B', date: '', seen: true, flagged: false, preview: '', has_attachments: false, attachment_count: 0 },
+                ],
+                total: 2,
+            },
+        });
+        vi.stubGlobal('fetch', fetchStub);
+
+        let anzahl = -1;
+        const beobachten = (n: number) => {
+            anzahl = n;
+        };
+
+        const { rerender, unmount } = render(<FilterProbe an={false} beobachten={beobachten} />);
+
+        await vi.waitFor(() => expect(anzahl).toBe(2));
+
+        await act(async () => {
+            rerender(<FilterProbe an beobachten={beobachten} />);
+        });
+
+        expect(anzahl, 'der Filter wurde umgelegt und die Zeilen blieben, wie sie waren').toBe(1);
+        unmount();
+    });
+
+    it('reicht dem Filter die Zustaendigkeit herein', async () => {
+        // Ohne diese Hilfe muesste ein Produkt den Rueckgabewert dieses Hakens
+        // lesen — waehrend er noch laeuft.
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        let bekommen: unknown = 'nie gerufen';
+
+        function Probe2() {
+            useMailboxSeite({
+                konten: [{ id: 42, email: 'department@example.test', name: 'Abteilung' }],
+                namensraum: 'test.filter2',
+                melden: () => {},
+                zeilenFilter: (_nachricht, hilfen) => {
+                    bekommen = typeof hilfen?.zuweisung;
+
+                    return true;
+                },
+            });
+
+            return null;
+        }
+
+        const { unmount } = render(<Probe2 />);
+
+        await vi.waitFor(() => expect(bekommen).toBe('function'));
+        unmount();
+    });
+});

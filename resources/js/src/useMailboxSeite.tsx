@@ -11,7 +11,7 @@ import { useAktuelleKennung } from './useAktuelleKennung';
 import { useAutoOpen } from './useAutoOpen';
 import { useFolderActions } from './useFolderActions';
 import { conversationRoutes, useMailConversation } from './useMailConversation';
-import { useMailAssignments } from './useMailAssignments';
+import { useMailAssignments, type MailAssignment } from './useMailAssignments';
 import { useMailboxFolders } from './useMailboxFolders';
 import { useMailboxKeyboard } from './useMailboxKeyboard';
 import { useMailboxList } from './useMailboxList';
@@ -92,6 +92,19 @@ export const MAILBOX_SEITE_TEXTE: MailboxSeiteTexte = {
  * der Liste.
  */
 export type QuelleOderFabrik<T> = T | ((kontoId: number | string | null) => T);
+
+/**
+ * Was ein Zeilenfilter ausser der Nachricht noch braucht.
+ *
+ * Gereicht wird es, statt dass der Filter sich selbst bedient: Die
+ * Zustaendigkeiten fuehrt dieser Haken, und ein Filter, der sie ueber seinen
+ * Rueckgabewert laese, griffe waehrend des Laufs auf eine noch nicht
+ * initialisierte Bindung zu.
+ */
+export interface ZeilenFilterHilfen {
+    /** Die Zustaendigkeit dieser Nachricht — oder `null`. */
+    zuweisung: (nachricht: RowMessage) => MailAssignment | null;
+}
 
 export interface MailboxSeiteOptionen {
     /** Die Postfaecher, die dieses Produkt diesem Menschen zeigt. */
@@ -263,7 +276,7 @@ export interface MailboxSeiteOptionen {
      * gewesen — der Schalter haette sich weiter umlegen lassen und nichts
      * getan.
      */
-    zeilenFilter?: (nachricht: RowMessage) => boolean;
+    zeilenFilter?: (nachricht: RowMessage, hilfen: ZeilenFilterHilfen) => boolean;
 }
 
 export function useMailboxSeite({
@@ -441,6 +454,71 @@ export function useMailboxSeite({
                       ),
               );
 
+    /*
+     * Die Zustaendigkeiten stehen hier oben, weil der Zeilenfilter des
+     * Produkts sie braucht (#9116). Vorher standen sie weiter unten — und
+     * ein Filter, der sie lesen wollte, haette auf `seite` zugreifen
+     * muessen, also auf den Rueckgabewert DIESES Hakens. Das ist waehrend
+     * seines eigenen Laufs ein Zugriff vor der Initialisierung.
+     */
+    const zuweisungsQuelle = useMemo(
+        () => ({
+            users: async (id: number | string, signal: AbortSignal) =>
+                (await (await fetch(`${basis}/${id}/assignable-users`, { headers: { Accept: 'application/json' }, signal })).json()).users ?? [],
+            // Die Antwort traegt seit dem 19.10.2026 mit, OB sie eine ist:
+            // „nicht geholt" und „niemand zustaendig" ergeben beide eine leere
+            // Liste, und nur eine davon ist eine Aussage.
+            load: async (id: number | string, signal: AbortSignal) => {
+                const antwort = await (await fetch(`${basis}/${id}/assignments`, { headers: { Accept: 'application/json' }, signal })).json();
+
+                return {
+                    assignments: antwort.assignments ?? [],
+                    // Fehlt die Angabe, ist die Gegenstelle aelter als diese
+                    // Oberflaeche. Dann gilt die Liste als Aussage — so war es
+                    // vorher, und ein erfundener Ausfall waere schlimmer.
+                    reachable: antwort.reachable ?? true,
+                };
+            },
+            assign: async (id: number | string, nachricht: RowMessage, userId: number) =>
+                postJson(
+                    `${basis}/${id}/assignments`,
+                    { message_id: nachricht.message_id ?? '', assigned_to_user_id: userId },
+                    { csrfToken: csrf },
+                ),
+            // Ein echtes DELETE, keine Umdeutung ueber `_method`: Laravel
+            // liest das nur aus Formulardaten, nicht aus einem JSON-Rumpf —
+            // die Anfrage waere auf 405 gelaufen.
+            unassign: async (id: number | string, nachricht: RowMessage) => {
+                const antwort = await fetch(`${basis}/${id}/assignments`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-TOKEN': csrf,
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ message_id: nachricht.message_id ?? '' }),
+                });
+
+                return antwort.ok;
+            },
+        }),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [],
+    );
+
+    const zuweisungen = useMailAssignments({
+        accountId: konto?.id ?? null,
+        source: zuweisungsQuelle,
+        onFailure: setFehler,
+    });
+
+    const zeilenFilterMitHilfen = useMemo(
+        () => (zeilenFilter ? (nachricht: RowMessage) => zeilenFilter(nachricht, { zuweisung: zuweisungen.fuer }) : undefined),
+        [zeilenFilter, zuweisungen.fuer],
+    );
+
     /* eslint-disable-next-line react-hooks/preserve-manual-memoization -- `zeilen` haengt an einer Kette von Ableitungen, die der Compiler nicht nachvollzieht; ohne das Memo wird die ganze Liste bei jedem Tastendruck neu gebaut. */
     const zeilen = useMemo(
         () =>
@@ -451,7 +529,7 @@ export function useMailboxSeite({
                 isSearchMode: suche.isSearchMode,
                 expandedThreads: auswahl.expanded,
                 // Der zusaetzliche Filter des Produkts, etwa die eigenen Zustaendigkeiten.
-                filter: zeilenFilter,
+                filter: zeilenFilterMitHilfen,
                 // Eine Kettennachricht trägt weniger als eine Listenzeile —
                 // was fehlt, wird hier ergänzt statt im Paket geraten.
                 toRow: (m) => ({
@@ -470,7 +548,14 @@ export function useMailboxSeite({
                     stored_id: m.stored_id,
                 }),
             }),
-        [liste.messages, liste.threads, liste.grouped, suche.isSearchMode, auswahl.expanded],
+        /*
+         * `zeilenFilterMitHilfen` steht in der Liste, und das ist der ganze
+         * Punkt: Bis zum 30.10.2026 fehlte es. Wer „nur mir zugewiesene"
+         * umlegte, bekam die Zeilen von vorher — gemessen: zwei Zeilen vorher,
+         * zwei Zeilen nachher, obwohl der Filter nur eine durchlaesst. Der
+         * Schalter liess sich bedienen und tat nichts.
+         */
+        [liste.messages, liste.threads, liste.grouped, suche.isSearchMode, auswahl.expanded, zeilenFilterMitHilfen],
     );
 
     const [filterOffen, setFilterOffen] = useState(false);
@@ -595,58 +680,6 @@ export function useMailboxSeite({
      * Paket; hier stehen die Adressen und — ueber den Endpunkt — wer dieses
      * System kennt.
      */
-    const zuweisungsQuelle = useMemo(
-        () => ({
-            users: async (id: number | string, signal: AbortSignal) =>
-                (await (await fetch(`${basis}/${id}/assignable-users`, { headers: { Accept: 'application/json' }, signal })).json()).users ?? [],
-            // Die Antwort traegt seit dem 19.10.2026 mit, OB sie eine ist:
-            // „nicht geholt" und „niemand zustaendig" ergeben beide eine leere
-            // Liste, und nur eine davon ist eine Aussage.
-            load: async (id: number | string, signal: AbortSignal) => {
-                const antwort = await (await fetch(`${basis}/${id}/assignments`, { headers: { Accept: 'application/json' }, signal })).json();
-
-                return {
-                    assignments: antwort.assignments ?? [],
-                    // Fehlt die Angabe, ist die Gegenstelle aelter als diese
-                    // Oberflaeche. Dann gilt die Liste als Aussage — so war es
-                    // vorher, und ein erfundener Ausfall waere schlimmer.
-                    reachable: antwort.reachable ?? true,
-                };
-            },
-            assign: async (id: number | string, nachricht: RowMessage, userId: number) =>
-                postJson(
-                    `${basis}/${id}/assignments`,
-                    { message_id: nachricht.message_id ?? '', assigned_to_user_id: userId },
-                    { csrfToken: csrf },
-                ),
-            // Ein echtes DELETE, keine Umdeutung ueber `_method`: Laravel
-            // liest das nur aus Formulardaten, nicht aus einem JSON-Rumpf —
-            // die Anfrage waere auf 405 gelaufen.
-            unassign: async (id: number | string, nachricht: RowMessage) => {
-                const antwort = await fetch(`${basis}/${id}/assignments`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest',
-                        'X-CSRF-TOKEN': csrf,
-                    },
-                    credentials: 'same-origin',
-                    body: JSON.stringify({ message_id: nachricht.message_id ?? '' }),
-                });
-
-                return antwort.ok;
-            },
-        }),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [],
-    );
-
-    const zuweisungen = useMailAssignments({
-        accountId: konto?.id ?? null,
-        source: zuweisungsQuelle,
-        onFailure: setFehler,
-    });
 
     /**
      * Was man mit der geoeffneten Nachricht tun kann.
