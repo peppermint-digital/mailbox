@@ -106,6 +106,28 @@ export const MAILBOX_SEITE_TEXTE: MailboxSeiteTexte = {
 export type QuelleOderFabrik<T> = T | ((kontoId: number | string | null) => T);
 
 
+/**
+ * Die geoeffnete Nachricht, wie dieser Haken sie fuehrt: unbesehen (A18, #9116).
+ *
+ * Hier stand `Record<string, never>` — ein Objekt ohne jedes Feld. Gemeint war
+ * „dieser Haken sieht nicht hinein", und das ist richtig: Was ein Rumpf
+ * enthaelt, entscheidet der Server, und die Ansichten nehmen verschiedene
+ * Teile davon.
+ *
+ * Nur sagt `Record<string, never>` etwas anderes. Es behauptet, die Nachricht
+ * habe KEINE Felder — und eine Quelle, die eine echte Nachricht liefert, passt
+ * dann nicht hinein. Jedes Produkt mit eigener Oeffnen-Quelle musste sie
+ * deshalb mit `as never` hereinzwingen (im Projekt-Manager zwei von sieben
+ * solcher Zwaenge, Befund 11 von #9116). Ein Zwang an der Naht eines Pakets
+ * ist keine Nachlaessigkeit des Produkts, sondern eine falsche Zusage des
+ * Pakets.
+ *
+ * `unknown` sagt, was gemeint war, und nimmt jede Quelle ohne Zwang: Lesen
+ * laesst sich daraus nichts, ohne es vorher zu benennen — genau die Haltung,
+ * die die Flaeche an ihrer einen Lesestelle schon einnimmt.
+ */
+export type MailboxNachricht = unknown;
+
 export interface MailboxSeiteOptionen {
     /** Die Postfaecher, die dieses Produkt diesem Menschen zeigt. */
     konten: MailboxSeiteKonto[];
@@ -177,7 +199,7 @@ export interface MailboxSeiteOptionen {
      * Randfunktion: Dort liegen die Mails an Aufgaben und die eigenen
      * gesendeten Nachrichten (#9116).
      */
-    oeffnenQuelle?: QuelleOderFabrik<OpenMessageSource<RowMessage, Record<string, never>>>;
+    oeffnenQuelle?: QuelleOderFabrik<OpenMessageSource<RowMessage, MailboxNachricht>>;
     /**
      * Ob die Liste beim ersten Zeichnen nach Konversationen gruppiert ist.
      *
@@ -471,7 +493,7 @@ export function useMailboxSeite({
 
     const quellen = useMemo(
         () =>
-            httpMailboxSources<RowMessage, Record<string, never>>({
+            httpMailboxSources<RowMessage, MailboxNachricht>({
                 accountId: kennung,
                 onSuchAntwort: (roh) => suchAntwortRef.current?.(roh),
                 routes: {
@@ -554,7 +576,7 @@ export function useMailboxSeite({
     const ordner = useMailboxFolders({ source: quellen.folders });
     const liste = useMailboxList<RowMessage>({ source: quellen.messages, initialGrouped });
     // Die eigene des Produkts, sonst die des Hakens.
-    const offene = useOpenMessage<RowMessage, Record<string, never>>({ source: eigeneOeffnenQuelle ?? quellen.message });
+    const offene = useOpenMessage<RowMessage, MailboxNachricht>({ source: eigeneOeffnenQuelle ?? quellen.message });
     const suche = useMailboxSearch<RowMessage>({
         // Die eigene des Produkts, sonst die des Hakens.
         source: eigeneSuchQuelle ?? quellen.search!,

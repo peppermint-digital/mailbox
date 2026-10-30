@@ -213,22 +213,40 @@ describe('MailMessageView', () => {
 
 describe('die Betreff-Spalte auf schmalen Schirmen', () => {
     /**
-     * Gemessen am 30.10.2026 auf crm.peppermint-digital.com in der
-     * iPhone-14-Emulation (innerWidth 390, DPR 3):
+     * ## Erste Messung, 30.10.2026 (crm.peppermint-digital.com, iPhone 14)
      *
      *     h2   x=16  y=487  BREITE 0  HOEHE 196
      *
      * Der Betreff brach zeichenweise um, und der Antworten-Knopf sass auf
-     * derselben Hoehe darueber. Ursache: Die linke Spalte trug `min-w-0` ohne
-     * `flex-1` — daneben eine Knopfleiste mit `shrink-0`, darum herum
-     * `justify-between`. Auf 390 px blieb fuer den Betreff nichts uebrig, und
-     * `min-w-0` erlaubte genau das.
+     * derselben Hoehe darueber. Die linke Spalte trug `min-w-0` ohne `flex-1`
+     * — daneben eine Knopfleiste mit `shrink-0`, darum herum
+     * `justify-between`.
      *
-     * Was dieser Test NICHT kann: jsdom rechnet kein Layout, er misst also
-     * keine Breite. Er haelt den Klassenvertrag fest, damit `flex-1` nicht
-     * wieder verschwindet. Der Nachweis war die Messung oben.
+     * ## Zweite Messung, 30.10.2026 — `flex-1` reichte NICHT
+     *
+     * Die Session `mail-rollout` hat den ersten Versuch (v0.176.1) am Geraet
+     * nachgemessen, mit dem frisch gebauten Buendel und an der Klassenliste
+     * des lebenden Elements:
+     *
+     *     Betreff-Spalte   BREITE   0
+     *     Knopfleiste      BREITE 490
+     *     Container        BREITE 358
+     *
+     * `flex-1` stand da. Es konnte nur nichts ausrichten: Die Leiste ist
+     * breiter als der Container, es gibt keinen Rest zu verteilen, und
+     * `shrink-0` verbietet ihr, schmaler zu werden.
+     *
+     * Deshalb pruefen die Tests unten jetzt BEIDE Seiten der Zeile. Ein Test
+     * nur an der Betreff-Spalte war die ganze Zeit gruen und die Seite die
+     * ganze Zeit kaputt — er hat gemessen, was dastand, nicht, was es bewirkt.
+     *
+     * ## Was diese Tests NICHT koennen
+     *
+     * jsdom rechnet kein Layout, also keine Breite. Sie halten den
+     * Klassenvertrag fest. Der Nachweis sind die Messungen oben — und die
+     * naechste gehoert dazu, bevor das hier als behoben gilt.
      */
-    it('darf nicht auf null schrumpfen', () => {
+    it('behaelt ihre Breite in der Zeile', () => {
         const { container, unmount } = render(<MailMessageView {...base} message={message()} />);
 
         const betreff = container.querySelector('h2');
@@ -236,6 +254,50 @@ describe('die Betreff-Spalte auf schmalen Schirmen', () => {
 
         expect(spalte?.className).toContain('min-w-0');
         expect(spalte?.className, 'ohne flex-1 schrumpft die Spalte neben der shrink-0-Leiste auf 0').toContain('flex-1');
+        unmount();
+    });
+
+    it('steht unter `sm` UEBER der Knopfleiste, nicht neben ihr', () => {
+        const { container, unmount } = render(<MailMessageView {...base} message={message()} />);
+
+        const zeile = container.querySelector('h2')?.parentElement?.parentElement;
+
+        /*
+         * Das ist der Teil, den `flex-1` nicht leisten konnte: Solange beide
+         * in EINER Zeile stehen und die Leiste 490 px braucht, bleibt fuer den
+         * Betreff nichts. Erst `flex-col` unter `sm` gibt ihm eine eigene.
+         */
+        expect(zeile?.className, 'ohne flex-col stehen Betreff und Leiste auf dem Telefon in einer Zeile').toContain('flex-col');
+        expect(zeile?.className, 'am Schreibtisch soll es nebeneinander bleiben').toContain('sm:flex-row');
+        unmount();
+    });
+
+    it('laesst die Knopfleiste umbrechen, statt sie aus dem Bild laufen zu lassen', () => {
+        const { container, unmount } = render(<MailMessageView {...base} message={message()} />);
+
+        const leiste = container.querySelector('[data-slot="mail-message-actions"]');
+
+        // Gemessen 490 px bei 358 px Container. Eine eigene Zeile allein
+        // reicht nicht — in ihr muessen die Knoepfe auch umbrechen duerfen.
+        expect(leiste?.className, 'ohne flex-wrap laeuft die 490-px-Leiste rechts aus dem Bild').toContain('flex-wrap');
+
+        // Und `shrink-0` nur ab `sm`: In der schmalen Fassung ist es
+        // ueberfluessig, am Schreibtisch haelt es die Knoepfe in Form.
+        expect(leiste?.className).toContain('sm:shrink-0');
+        expect(leiste?.className).toContain('sm:flex-nowrap');
+        unmount();
+    });
+
+    it('setzt Von und Datum unter `sm` untereinander', () => {
+        const { container, unmount } = render(<MailMessageView {...base} message={message()} />);
+
+        // Zwei Spalten auf 358 px sind je rund 175 px; „Von:
+        // department@peppermi" und „Datum:" lagen uebereinander (gemessen
+        // 30.10.2026).
+        const raster = container.querySelector('.grid');
+
+        expect(raster?.className).toContain('grid-cols-1');
+        expect(raster?.className).toContain('sm:grid-cols-2');
         unmount();
     });
 });

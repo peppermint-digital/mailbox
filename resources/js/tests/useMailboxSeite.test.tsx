@@ -1548,3 +1548,67 @@ describe('eine Aktion an einer geoeffneten Nachricht IN DER SUCHE (A16/A17, #911
         unmount();
     });
 });
+
+describe('eine eigene Oeffnen-Quelle passt ohne Zwang hinein (A18, #9116)', () => {
+    /**
+     * Die Quelle unten wird OHNE `as never` hereingegeben, und die Nachricht
+     * kommt unveraendert heraus.
+     *
+     * Der Anlass: Befund 11 von #9116 zaehlte im Projekt-Manager sieben
+     * `as never`/`as …`-Zwaenge in einer Datei. Zwei davon standen an dieser
+     * Naht, und sie waren keine Nachlaessigkeit des Produkts — die Option
+     * behauptete, eine geoeffnete Nachricht habe KEINE Felder
+     * (`Record<string, never>`), und eine Quelle mit einer echten Nachricht
+     * passte deshalb nicht hinein.
+     *
+     * ⚠️ Dieser Test ist KEIN Waechter gegen eine erneute Verengung. Er sieht
+     * echt danach aus, und das war er auch gedacht — gemessen am 30.10.2026
+     * ist er es nicht: `tsconfig.json` fuehrt `include:
+     * ["resources/js/src"]`, die Tests stehen also ausserhalb, und
+     * `npm run typecheck` liest diese Datei gar nicht. Die Mutationsprobe
+     * „Typ wieder auf `Record<string, never>` verengt" lief deshalb gruen
+     * durch.
+     *
+     * Die Tests mit zu uebersetzen bringt 75 Meldungen in 17 Dateien zutage,
+     * fast alle aus `noUncheckedIndexedAccess` — eine eigene Aufgabe, nicht
+     * Teil von #9116. Bis dahin traegt dieser Test, was er zur Laufzeit
+     * leisten kann, und nicht mehr.
+     */
+    interface EigeneNachricht {
+        uid: number | null;
+        subject: string;
+        stored_id?: number;
+    }
+
+    it('und die Nachricht kommt so heraus, wie die Quelle sie gegeben hat', async () => {
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const quelle = {
+            open: async (): Promise<{ message: EigeneNachricht; folder: string | null }> => ({
+                message: { uid: null, subject: 'Aus dem Archiv', stored_id: 12 },
+                folder: null,
+            }),
+        };
+
+        // Kein `as never`: Genau das ist die Zusage dieses Tests.
+        const { unmount } = render(<Probe melden={() => {}} oeffnenQuelle={quelle} />);
+
+        await vi.waitFor(() => expect(zuletzt.offene).toBeDefined());
+
+        await act(async () => {
+            await (zuletzt.offene as { open: (m: unknown, f: string) => Promise<unknown> }).open({ uid: 1, stored_id: 12 }, 'INBOX');
+        });
+
+        await vi.waitFor(() =>
+            expect((zuletzt.offene as { message: EigeneNachricht | null }).message?.subject).toBe('Aus dem Archiv'),
+        );
+
+        // Eine Archiv-Nachricht hat keine IMAP-Kennung — der Haken macht daraus
+        // nichts Erfundenes.
+        expect((zuletzt.offene as { message: EigeneNachricht | null }).message?.uid).toBeNull();
+        expect((zuletzt.offene as { folder: string | null }).folder).toBeNull();
+
+        unmount();
+    });
+});

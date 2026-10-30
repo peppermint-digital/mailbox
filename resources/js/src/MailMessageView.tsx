@@ -165,44 +165,66 @@ export function MailMessageView({
     return (
         <div className="flex flex-1 flex-col overflow-hidden" data-slot="mail-message-view">
             <div className="space-y-3 border-b p-4">
-                <div className="flex items-start justify-between gap-4">
-                    {/*
-                        `flex-1` ist hier nicht Kosmetik, sondern der Unterschied
-                        zwischen lesbar und unlesbar.
+                {/*
+                    Unter `sm` stehen Betreff und Knopfleiste UNTEREINANDER, ab
+                    `sm` nebeneinander wie gehabt.
 
-                        Hier stand bis zum 30.10.2026 nur `min-w-0`. Daneben
-                        sitzt eine Knopfleiste mit `shrink-0`, und darum herum
-                        `justify-between`. Auf einem Telefon nimmt die Leiste
-                        fast die ganze Breite — und `min-w-0` erlaubt der linken
-                        Spalte, bis auf NULL zu schrumpfen. Genau das tat sie.
+                    ## Zwei Versuche, und warum der erste nicht reichte
 
-                        Gemessen am 30.10.2026 auf crm.peppermint-digital.com,
-                        iPhone-14-Emulation (innerWidth 390, DPR 3):
+                    Hier stand bis zum 30.10.2026 nur `min-w-0` an der linken
+                    Spalte. Daneben sitzt eine Knopfleiste mit `shrink-0`, darum
+                    herum `justify-between` — auf einem Telefon schrumpfte die
+                    Spalte dadurch auf NULL, und der Betreff brach zeichenweise
+                    um („N / Partneranfrage: / CRUDE / HARZ …").
 
-                            h2   x=16  y=487  BREITE 0  HOEHE 196
+                    Der erste Versuch (v0.176.1) setzte `flex-1` daneben. Am
+                    Geraet nachgemessen von der Session `mail-rollout`, am
+                    30.10.2026 auf brain.proxy.peppermint-digital.com mit dem
+                    frisch gebauten Buendel, iPhone-14-Emulation (innerWidth
+                    390, DPR 3) — und zwar an der KLASSENLISTE des lebenden
+                    Elements, nicht im Quelltext:
 
-                        Der Betreff brach dadurch zeichenweise um
-                        („N / Partneranfrage: / CRUDE / HARZ / (Stiege, …"), und
-                        der Antworten-Knopf sass auf derselben Hoehe darueber.
+                        Betreff-Spalte   BREITE   0   (HOEHE 196)
+                        Knopfleiste      BREITE 490
+                        Container        BREITE 358
 
-                        Die Zeile stand seit c73810f (14.09.2026) so da. Nicht
-                        aufgefallen ist sie, weil am Schreibtisch genug Platz
-                        ist und auf dem Telefon vorher gar keine Leseansicht
-                        erreichbar war.
-                    */}
+                    `flex-1` stand da und konnte nichts ausrichten: Die Leiste
+                    ist mit 490 px breiter als der Container mit 358 px. Es gibt
+                    keinen Rest zu verteilen, und `shrink-0` verbietet der
+                    Leiste, schmaler zu werden. Die Spalte bekommt deshalb 0 —
+                    mit `flex-1` genauso wie ohne.
+
+                    Die Ursache liegt also eine Ebene hoeher, als sie aussah:
+                    Nicht die Betreff-Spalte schrumpft zu Unrecht, sondern die
+                    Leiste passt bei 390 px nicht in die Zeile. Solange sie dort
+                    steht und nicht schrumpfen darf, ist JEDE Breite fuer den
+                    Betreff geborgt.
+
+                    Deshalb: eigene Zeile unter `sm`, und die Knoepfe duerfen
+                    darin umbrechen. `shrink` zu erlauben waere die naheliegende
+                    Alternative und die falsche — dann stauchen die Knoepfe.
+
+                    ## Warum das der jsdom-Test nicht zeigt
+
+                    Er kann nur festhalten, dass die Klassen dastehen. Das taten
+                    sie beim ersten Versuch ja auch. Die drei Zahlen oben sind
+                    der Nachweis, den jsdom nicht liefert — sie gehoeren
+                    deshalb hierher und nicht in eine Zusicherung.
+                */}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                     <div className="min-w-0 flex-1 space-y-1">
                         <h2 className="text-lg font-semibold">{message.subject}</h2>
                         {headerAccessory}
                     </div>
 
                     {isArchived ? (
-                        <div className="flex shrink-0 items-center gap-2" data-slot="mail-message-archived">
+                        <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:flex-nowrap" data-slot="mail-message-archived">
                             <span className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground" title={labels.archivedTitle}>
                                 {labels.archived}
                             </span>
                         </div>
                     ) : (
-                        <div className="flex shrink-0 items-center gap-2" data-slot="mail-message-actions">
+                        <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:flex-nowrap" data-slot="mail-message-actions">
                             {isDraft && onEditDraft && (
                                 <Button onClick={onEditDraft} size="sm" title={labels.editDraft}>
                                     <Pencil className="mr-2 h-4 w-4" />
@@ -272,15 +294,26 @@ export function MailMessageView({
                     )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>
+                {/*
+                    Eine Spalte unter `sm`, zwei ab `sm`.
+
+                    Zwei Spalten auf 358 px sind je rund 175 px, und eine
+                    Mailadresse bricht nicht von selbst. Gemessen am
+                    30.10.2026 (`mail-rollout`, iPhone 14): „Von:
+                    department@peppermi" und „Datum:" lagen uebereinander.
+                    `break-words` dazu, damit eine lange Adresse umbricht
+                    statt auszulaufen — `truncate` waere hier falsch, eine
+                    halbe Adresse ist keine.
+                */}
+                <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                    <div className="min-w-0 break-words">
                         <span className="text-muted-foreground">{labels.from}</span>
                         <span className="ml-2">
                             {message.from_name || message.from_address}
                             {message.from_name && <span className="text-muted-foreground"> &lt;{message.from_address}&gt;</span>}
                         </span>
                     </div>
-                    <div>
+                    <div className="min-w-0 break-words">
                         <span className="text-muted-foreground">{labels.date}</span>
                         <span className="ml-2">{formatDateTime(message.date)}</span>
                     </div>
