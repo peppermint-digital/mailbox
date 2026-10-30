@@ -804,6 +804,45 @@ describe('der Haken füllt, was er verspricht', () => {
         unmount();
     });
 
+    it('traegt ein abgelehntes Oeffnen in `fehler` — damit es kein Produkt selbst melden muss', async () => {
+        /*
+         * Bug #1142 im Projekt-Manager: „ueber die Suche kann ich die Nachricht
+         * nicht anklicken, sie oeffnet nicht." Der Klick kam an, der Server
+         * lehnte ab, und niemand sagte es — `offene.failure` las keiner.
+         *
+         * Dass dieser Haken den Fehlschlag in `fehler` traegt (und die Flaeche
+         * ihn in die Kopfzeile zeichnet), ist die Stelle, die das verhindert.
+         * Sie war ungeprueft: Der Test darueber deckt die LISTE ab, nicht das
+         * Oeffnen — zwei verschiedene Quellen, dieselbe Bruecke.
+         *
+         * Geprueft wird sie, weil der Manager daraufhin seinen eigenen Toast
+         * ablegt (Befund 4 von #9116: dieselbe Zeile stand doppelt da, als
+         * Einblendung UND in der Kopfzeile). Ohne diesen Test waere die
+         * Ablegung ein Vertrauensvorschuss.
+         */
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const abweisende = {
+            open: async () => ({ failure: 'Diese Nachricht liegt nicht mehr im Postfach.' }),
+        };
+
+        const { unmount } = render(<Probe melden={() => {}} oeffnenQuelle={abweisende as never} />);
+
+        await vi.waitFor(() => expect(zuletzt.offene).toBeDefined());
+        expect(zuletzt.fehler).toBeNull();
+
+        await act(async () => {
+            await (zuletzt.offene as { open: (m: unknown, f: string) => Promise<unknown> }).open({ uid: 9, message_id: '<a@x>' }, 'INBOX');
+        });
+
+        // Der Satz des SERVERS, nicht ein allgemeiner: Eine Ablehnung, die
+        // ihren Grund verliert, ist so wenig brauchbar wie keine.
+        await vi.waitFor(() => expect(String(zuletzt.fehler)).toContain('nicht mehr im Postfach'));
+
+        unmount();
+    });
+
     it('meldet über den Rückruf des Produkts, nicht über eine eigene Bibliothek', async () => {
         // `toast` ist absichtlich nicht mitgewandert: Ein Paket, das `sonner`
         // importiert, wählt für sein Produkt die Toast-Bibliothek aus.
