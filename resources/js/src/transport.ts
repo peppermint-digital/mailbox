@@ -48,12 +48,23 @@ function headersFor(csrfToken: string): Record<string, string> {
  * Returns false rather than throwing: a failed mailbox action is an expected
  * outcome, not an exception, and every caller would otherwise wrap it.
  */
-export async function postJson(url: string, body: Record<string, unknown>, options: MailRequestOptions): Promise<boolean> {
+export async function postJson(
+    url: string,
+    body: Record<string, unknown>,
+    options: MailRequestOptions & {
+        /**
+         * Fuer die seltene Aktion, die loescht statt anzulegen — etwa das
+         * Aufheben einer Wiedervorlage (A7, #9116). Vorgabe bleibt `POST`;
+         * der Name der Funktion stimmt dann weiter.
+         */
+        method?: 'POST' | 'DELETE';
+    },
+): Promise<boolean> {
     const doFetch = options.fetch ?? globalThis.fetch;
 
     try {
         const response = await doFetch(url, {
-            method: 'POST',
+            method: options.method ?? 'POST',
             headers: headersFor(options.csrfToken),
             credentials: 'same-origin',
             body: JSON.stringify(body),

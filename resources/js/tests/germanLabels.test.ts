@@ -71,7 +71,7 @@ function pruefeWoerter(gruppe: Record<string, unknown>, pfad = ''): void {
 }
 
 describe('germanLabels', () => {
-    it('bringt alle sechzehn Gruppen mit', () => {
+    it('bringt alle siebzehn Gruppen mit', () => {
         // Faellt eine weg, verliert ein Produkt lautlos seine Woerter und
         // zeigt `undefined` — oder gar nichts.
         //
@@ -101,6 +101,10 @@ describe('germanLabels', () => {
             'view',
             'weiterleiten',
             'werkzeuge',
+            // A7 (#9116): die Worte der Wiedervorlage. Sie standen im Manager
+            // und in AI Brain — mit zwei verschiedenen Auslegungen von
+            // „heute Abend", wenn 18 Uhr schon vorbei war.
+            'wiedervorlage',
             'zitat',
             // Seit dem 22.10.2026 (#8377): Die Woerter der Zustaendigkeit
             // standen als Literal in jedem Produkt, wortgleich.

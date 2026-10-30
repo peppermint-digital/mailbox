@@ -882,8 +882,45 @@ export function useMailboxSeite({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [konto?.id]);
 
-    const schlummern = async (bis: Date) => {
-        const m = offene.message as { message_id?: string } | null;
+    /**
+     * Die Wiedervorlage einer Nachricht wieder aufheben (A7, #9116).
+     *
+     * Schlummern konnte das Paket laengst, aufwecken nicht — der Manager hatte
+     * dafuer einen eigenen Weg, CRM, Verwaltung und AI Brain gar keinen. Wer
+     * dort eine Mail zur Wiedervorlage legte, bekam sie zur gesetzten Zeit
+     * zurueck und konnte das bis dahin nicht zuruecknehmen.
+     *
+     * Ohne Angabe gilt die geoeffnete Nachricht; mit Angabe die genannte —
+     * damit es auch aus der Liste geht, wo die Mail gerade NICHT offen ist.
+     */
+    const aufwecken = async (nachricht?: { message_id?: string }) => {
+        const m = nachricht ?? (offene.message as { message_id?: string } | null);
+
+        if (!konto || !m?.message_id) {
+            return;
+        }
+
+        const ok = await postJson(
+            `${basis}/${konto.id}/snoozes`,
+            { message_id: m.message_id },
+            { csrfToken: csrf, method: 'DELETE' },
+        );
+
+        if (!ok) {
+            setFehler('Die Wiedervorlage konnte nicht aufgehoben werden.');
+
+            return;
+        }
+
+        const antwort = await fetch(`${basis}/${konto.id}/snoozes`, { headers: { Accept: 'application/json' } });
+        setSchlummernde(antwort.ok ? ((await antwort.json()).snoozes ?? []) : []);
+        await liste.load({ accountId: konto.id, folder: ordnerPfad, page: liste.page, refresh: true });
+    };
+
+    const schlummern = async (bis: Date, nachricht?: { message_id?: string }) => {
+        // Ohne Angabe die geoeffnete, mit Angabe die genannte — fuer den Weg
+        // aus der Liste heraus (A7).
+        const m = nachricht ?? (offene.message as { message_id?: string } | null);
 
         if (!konto || !m?.message_id) {
             return;
@@ -1227,6 +1264,7 @@ export function useMailboxSeite({
         ordnerSichtbar,
         ordnerVerwaltung,
         sammelAktion,
+        aufwecken,
         schlummern,
         sendetAntwort,
         setAntwortAnAlle,
@@ -1258,3 +1296,52 @@ export function useMailboxSeite({
  * EINEN Wert annimmt statt als neununddreissig Eigenschaften.
  */
 export type MailboxSeiteErgebnis = ReturnType<typeof useMailboxSeite>;
+
+/**
+ * Die drei Zeitpunkte der Wiedervorlage (A7, #9116).
+ *
+ * Drei statt eines Kalenders: „spaeter" heisst fast immer eines von dreien,
+ * und wer ein Datum tippen muss, laesst es bleiben.
+ *
+ * Sie standen wortgleich im Manager und in AI Brain — mit einem Unterschied,
+ * der zaehlt: AI Brain schob „heute Abend" um eine Stunde nach vorne, wenn
+ * 18 Uhr schon vorbei war, der Manager auf den naechsten Tag. Hier gilt der
+ * naechste Tag: Eine Wiedervorlage in einer Stunde ist keine Wiedervorlage,
+ * sondern eine Unterbrechung.
+ */
+export const WIEDERVORLAGE_ZEITEN: { schluessel: string; wann: () => Date }[] = [
+    {
+        schluessel: 'heuteAbend',
+        wann: () => {
+            const d = new Date();
+            d.setHours(18, 0, 0, 0);
+
+            if (d <= new Date()) {
+                d.setDate(d.getDate() + 1);
+            }
+
+            return d;
+        },
+    },
+    {
+        schluessel: 'morgenFrueh',
+        wann: () => {
+            const d = new Date();
+            d.setDate(d.getDate() + 1);
+            d.setHours(8, 0, 0, 0);
+
+            return d;
+        },
+    },
+    {
+        schluessel: 'naechsteWoche',
+        wann: () => {
+            const d = new Date();
+            d.setDate(d.getDate() + 7);
+            d.setHours(8, 0, 0, 0);
+
+            return d;
+        },
+    },
+];
+

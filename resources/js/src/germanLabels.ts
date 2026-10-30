@@ -263,6 +263,13 @@ export const germanLabels = {
      * sie eine der Stellen, die sich nur durch das Kopieren unterschieden
      * haetten.
      */
+    wiedervorlage: {
+        titel: 'Wiedervorlage (nur für mich)',
+        heuteAbend: 'Heute Abend (18:00)',
+        morgenFrueh: 'Morgen früh (08:00)',
+        naechsteWoche: 'Nächste Woche',
+        aufheben: 'Wiedervorlage aufheben',
+    },
     kuerzel: {
         titel: 'Tastatur-Kürzel',
         untertitel: 'Schneller arbeiten im Postfach.',

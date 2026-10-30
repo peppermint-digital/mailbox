@@ -179,7 +179,7 @@ describe('der Haken füllt, was er verspricht', () => {
         unmount();
     });
 
-    it('gibt alle 51 Werte heraus — und keinen als undefined', async () => {
+    it('gibt alle 52 Werte heraus — und keinen als undefined', async () => {
         /*
          * Der Wächter gegen den Fehler, den dieser Umbau am leichtesten macht:
          * einen Namen in der Rückgabe zu vergessen. TypeScript fängt das an
@@ -215,6 +215,7 @@ describe('der Haken füllt, was er verspricht', () => {
             'nurEigeneMoeglich',
             'nurEigeneUmschalten',
             'amGeoeffneten', 'antwortAnAlle', 'antwortOffen', 'antwortSenden', 'archivKennungen',
+            'aufwecken',
             'assistent', 'auswahl', 'beschaeftigt', 'chatQuelle', 'csrf', 'fehler', 'filterOffen',
             'konto', 'liste', 'melden', 'nachrichtBeschaeftigt', 'offene', 'offeneKennung', 'ordner',
             'ordnerPfad', 'ordnerSichtbar', 'ordnerVerwaltung', 'sammelAktion', 'schlummern',
@@ -1102,6 +1103,62 @@ describe('die offene Nachricht verschieben (A1, #9116)', () => {
         // Sonst steht die Mail weiter offen da, waehrend sie in der Liste
         // schon woanders liegt — die Ansicht behauptet dann etwas Falsches.
         expect((zuletzt.offene as { message: unknown }).message).toBeNull();
+        unmount();
+    });
+});
+
+describe('die Wiedervorlage wieder aufheben (A7, #9116)', () => {
+    /**
+     * Schlummern konnte das Paket laengst, aufwecken nicht. CRM, Verwaltung
+     * und AI Brain hatten gar keinen Weg zurueck: Wer dort eine Mail auf
+     * spaeter legte, bekam sie zur gesetzten Zeit und konnte das bis dahin
+     * nicht zuruecknehmen.
+     */
+    it('schickt ein DELETE an /snoozes, nicht ein POST', async () => {
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} />);
+
+        await vi.waitFor(() => expect(zuletzt.konto).not.toBeNull());
+
+        await act(async () => {
+            await (zuletzt.aufwecken as (n?: { message_id?: string }) => Promise<void>)({ message_id: '<a@b>' });
+        });
+
+        const ruf = fetchStub.mock.calls.find(
+            (c) => String(c[0]).includes('/snoozes') && (c[1] as { method?: string } | undefined)?.method !== undefined,
+        );
+
+        // Ohne diese Zusicherung bliebe ein POST unbemerkt: Beide Adressen
+        // sind dieselbe, und die Antwort sieht gleich aus. Nur dass ein POST
+        // eine Wiedervorlage ANLEGT, statt sie aufzuheben.
+        expect((ruf?.[1] as { method?: string })?.method).toBe('DELETE');
+        expect(JSON.parse(String((ruf?.[1] as { body?: string })?.body ?? '{}')).message_id).toBe('<a@b>');
+
+        unmount();
+    });
+
+    it('tut nichts ohne message_id', async () => {
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} />);
+        await vi.waitFor(() => expect(zuletzt.konto).not.toBeNull());
+
+        await act(async () => {
+            await (zuletzt.aufwecken as (n?: { message_id?: string }) => Promise<void>)({});
+        });
+
+        /*
+         * Gezielt messen, nicht die Gesamtzahl der Aufrufe: Im Hintergrund
+         * laedt die Seite weiter, und `gesehen.length` waechst auch ohne mein
+         * Zutun. Der erste Anlauf verglich die Gesamtzahl und war deshalb
+         * rot, obwohl der Code stimmte.
+         */
+        const schreibend = fetchStub.mock.calls.filter((c) => (c[1] as { method?: string } | undefined)?.method !== undefined);
+
+        expect(schreibend).toHaveLength(0);
         unmount();
     });
 });

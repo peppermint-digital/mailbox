@@ -1,3 +1,4 @@
+import { act } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { MailboxFlaeche } from '../src/MailboxFlaeche';
 import type { MailboxSeiteErgebnis } from '../src/useMailboxSeite';
@@ -339,43 +340,75 @@ describe('Antworten und Weiterleiten', () => {
         await vi.waitFor(() => expect(container.querySelector('[data-slot="probe-mikrofon"]')).not.toBeNull());
     });
 
-    it('reicht den Rechtsklick auf eine Zeile an das Produkt durch (#9116)', () => {
-        /*
-         * `MailMessageList` nimmt `onRowContextMenu` seit jeher, die Flaeche
-         * gab es nicht weiter. Der Projekt-Manager haengt dort seine
-         * Wiedervorlage an — und seit #7690 ist das Menue der EINZIGE Weg
-         * dorthin. Beim Umstieg waere sie ohne Ersatz verschwunden.
-         */
-        const menue = vi.fn();
-
-        const { container } = render(
+    /*
+     * Hier stand bis zum 30.10.2026 ein Test fuer `zeilenMenue` — einen
+     * Durchgang, durch den das Produkt ein eigenes Menue haengte. Nur der
+     * Manager tat das, und er haengte dort seine Wiedervorlage hinein.
+     *
+     * Mit A7 (#9116) bringt die Flaeche das Menue mit. CRM, Verwaltung und
+     * AI Brain hatten gar keinen Weg, eine Mail aus der LISTE heraus auf
+     * spaeter zu legen.
+     */
+    function mitZeile(nachricht: Record<string, unknown>) {
+        return render(
             <MailboxFlaeche
                 seite={seite({
-                    zeilen: [{ msg: { uid: 5, message_id: '<a@b>', subject: 'Angebot', from_address: 'a@b.test', from_name: 'A', date: '', has_attachments: false, attachment_count: 0, is_read: true, is_flagged: false, preview: '' }, isOutbound: false }] as never,
+                    zeilen: [{ msg: nachricht, isOutbound: false }] as never,
                     sichtbareZeilen: ((z: unknown) => z) as never,
-                    /*
-                     * `ticked` muss ein Set sein — die Liste fragt `.has()`.
-                     * Die Attrappe trug bisher ein Array, und das fiel nie
-                     * auf: Dieser Test ist der erste, der ueberhaupt eine
-                     * Zeile zeichnen laesst.
-                     */
                     auswahl: { ticked: new Set(), targets: [], toggle: vi.fn(), clear: vi.fn(), expanded: new Set(), toggleThread: vi.fn() } as never,
                 })}
                 konten={[{ id: 1, email: 'a@b.test', name: 'A' }]}
                 navigieren={() => {}}
-                zeilenMenue={menue}
             />,
         );
+    }
+
+    const zeileRoh = {
+        uid: 5,
+        subject: 'Angebot',
+        from_address: 'a@b.test',
+        from_name: 'A',
+        date: '',
+        has_attachments: false,
+        attachment_count: 0,
+        is_read: true,
+        is_flagged: false,
+        preview: '',
+    };
+
+    it('oeffnet beim Rechtsklick das Wiedervorlage-Menue', async () => {
+        const { container, unmount } = mitZeile({ ...zeileRoh, message_id: '<a@b>' });
+
+        const zeile = container.querySelector('[data-slot="mail-message-open"]');
+        expect(zeile).not.toBeNull();
+
+        await act(async () => {
+            zeile!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+        });
+
+        const menue = container.querySelector('[data-slot="mailbox-zeilenmenue"]');
+
+        expect(menue).not.toBeNull();
+        expect(menue!.textContent).toContain('Heute Abend');
+        expect(menue!.textContent).toContain('Wiedervorlage aufheben');
+        unmount();
+    });
+
+    it('oeffnet gar kein Menue, wenn die Nachricht nicht schlummern kann', async () => {
+        /*
+         * Die Wiedervorlage haengt an `message_id`. Fehlt sie, waere jeder
+         * Eintrag ein Knopf, der nichts tut — dann lieber kein Menue.
+         */
+        const { container, unmount } = mitZeile(zeileRoh);
 
         const zeile = container.querySelector('[data-slot="mail-message-open"]');
 
-        expect(zeile).not.toBeNull();
+        await act(async () => {
+            zeile!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+        });
 
-        // Ohne `act`: Der Rechtsklick ruft nur einen Rueckruf, er aendert in
-        // dieser Flaeche keinen Zustand.
-        zeile!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
-
-        expect(menue).toHaveBeenCalled();
+        expect(container.querySelector('[data-slot="mailbox-zeilenmenue"]')).toBeNull();
+        unmount();
     });
 
     it('zeigt den Weiterbearbeiten-Knopf nur an einem Entwurf (#9116)', () => {

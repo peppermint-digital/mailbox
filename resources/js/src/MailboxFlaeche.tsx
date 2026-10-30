@@ -1,5 +1,5 @@
-import { type ComponentType, type ReactNode } from 'react';
-import { FolderInput, FolderOpen, Globe, UserCheck } from 'lucide-react';
+import { useState, type ComponentType, type ReactNode } from 'react';
+import { Clock, FolderInput, FolderOpen, Globe, UserCheck } from 'lucide-react';
 import { looksLikeFolder } from './folders';
 import { germanLabels } from './germanLabels';
 import type { InlineAntwortProps } from './InlineAntwort';
@@ -23,7 +23,7 @@ import { postJson } from './transport';
 import { Skeleton } from './ui/skeleton';
 import type { MailFolder } from './MailFolderList';
 import type { RowMessage } from './rows';
-import type { MailboxSeiteErgebnis, MailboxSeiteKonto } from './useMailboxSeite';
+import { WIEDERVORLAGE_ZEITEN, type MailboxSeiteErgebnis, type MailboxSeiteKonto } from './useMailboxSeite';
 import type { MailWerkzeug } from './useMailWerkzeuge';
 
 /**
@@ -180,7 +180,6 @@ export interface MailboxFlaecheProps {
      * unvollstaendige Liste sonst fuer vollstaendig.
      */
     leisteHinweis?: ReactNode;
-    zeilenMenue?: MailMessageListProps<RowMessage>['onRowContextMenu'];
     /**
      * Einen Entwurf weiterbearbeiten.
      *
@@ -214,7 +213,6 @@ export function MailboxFlaeche({
     kettenMoeglich = false,
     leisteHinweis,
     leisteZusatz,
-    zeilenMenue,
     entwurfBearbeiten,
     werkzeugeVerbergen,
     werkzeugeEigene,
@@ -241,6 +239,7 @@ export function MailboxFlaeche({
         antwortSenden,
         archivKennungen,
         assistent,
+        aufwecken,
         auswahl,
         beschaeftigt,
         chatQuelle,
@@ -264,6 +263,7 @@ export function MailboxFlaeche({
         ordnerSichtbar,
         ordnerVerwaltung,
         sammelAktion,
+        schlummern,
         sendetAntwort,
         setAntwortAnAlle,
         setAntwortOffen,
@@ -283,6 +283,20 @@ export function MailboxFlaeche({
     } = seite;
 
     const zeigtAssistent = chatVerfuegbar && konto !== null && assistent.sichtbar;
+
+    /*
+     * Das Zeilenmenue der Wiedervorlage (A7, #9116).
+     *
+     * Es stand im Manager — 92 Zeilen samt Zeitpunkten und Aufheben —, und
+     * CRM, Verwaltung und AI Brain hatten gar keinen Weg, eine Mail aus der
+     * LISTE heraus auf spaeter zu legen. AI Brain und Verwaltung konnten es
+     * nur an der geoeffneten Nachricht.
+     *
+     * Eine Nachricht ohne `message_id` kann nicht schlummern: Die
+     * Wiedervorlage haengt genau daran. Dann geht das Menue gar nicht erst
+     * auf, statt einen Eintrag anzubieten, der nichts tut.
+     */
+    const [zeilenMenu, setZeilenMenu] = useState<{ x: number; y: number; nachricht: RowMessage } | null>(null);
 
     /*
      * Die Ordner, in die verschoben werden darf — fuer das Sammel-Verschieben
@@ -469,7 +483,15 @@ export function MailboxFlaeche({
                                         rows={sichtbareZeilen(zeilen)}
                                         isSearchMode={suche.isSearchMode}
                                         labels={germanLabels.list}
-                                    onRowContextMenu={zeilenMenue}
+                                        onRowContextMenu={(ereignis, nachricht) => {
+                                            ereignis.preventDefault();
+
+                                            if (!nachricht.message_id) {
+                                                return;
+                                            }
+
+                                            setZeilenMenu({ x: ereignis.clientX, y: ereignis.clientY, nachricht });
+                                        }}
                                         loading={liste.loading}
                                         selectedUids={auswahl.ticked}
                                         formatDate={(iso) => (iso ? new Date(iso).toLocaleString('de-DE') : '-')}
@@ -752,6 +774,60 @@ export function MailboxFlaeche({
                     </div>
                 )}
             </div>
+
+            {/* A7 (#9116): Das Zeilenmenue der Wiedervorlage.
+                Die Flaeche darunter faengt den Klick daneben UND den naechsten
+                Rechtsklick ab — sonst stapeln sich zwei Menues. */}
+            {zeilenMenu && (
+                <div
+                    className="fixed inset-0 z-50"
+                    onClick={() => setZeilenMenu(null)}
+                    onContextMenu={(ereignis) => {
+                        ereignis.preventDefault();
+                        setZeilenMenu(null);
+                    }}
+                >
+                    <div
+                        className="absolute min-w-56 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+                        style={{ left: zeilenMenu.x, top: zeilenMenu.y }}
+                        onClick={(ereignis) => ereignis.stopPropagation()}
+                        data-slot="mailbox-zeilenmenue"
+                    >
+                        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{germanLabels.wiedervorlage.titel}</div>
+
+                        {WIEDERVORLAGE_ZEITEN.map(({ schluessel, wann }) => (
+                            <button
+                                key={schluessel}
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+                                onClick={() => {
+                                    const ziel = zeilenMenu.nachricht;
+                                    setZeilenMenu(null);
+                                    void schlummern(wann(), ziel);
+                                }}
+                            >
+                                <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                <span className="truncate">
+                                    {germanLabels.wiedervorlage[schluessel as keyof typeof germanLabels.wiedervorlage]}
+                                </span>
+                            </button>
+                        ))}
+
+                        <button
+                            type="button"
+                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+                            onClick={() => {
+                                const ziel = zeilenMenu.nachricht;
+                                setZeilenMenu(null);
+                                void aufwecken(ziel);
+                            }}
+                        >
+                            <span className="h-4 w-4 shrink-0" />
+                            <span className="truncate text-muted-foreground">{germanLabels.wiedervorlage.aufheben}</span>
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* A4 (#9116): Die Hilfe zur Taste `?` — gezeichnet, wo die Taste
                 gebunden wird. */}
