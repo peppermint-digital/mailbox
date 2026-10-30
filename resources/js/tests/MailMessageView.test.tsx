@@ -257,7 +257,7 @@ describe('die Betreff-Spalte auf schmalen Schirmen', () => {
         unmount();
     });
 
-    it('steht unter `sm` UEBER der Knopfleiste, nicht neben ihr', () => {
+    it('steht in einer schmalen Spalte UEBER der Knopfleiste, nicht neben ihr', () => {
         const { container, unmount } = render(<MailMessageView {...base} message={message()} />);
 
         const zeile = container.querySelector('h2')?.parentElement?.parentElement;
@@ -267,8 +267,8 @@ describe('die Betreff-Spalte auf schmalen Schirmen', () => {
          * in EINER Zeile stehen und die Leiste 490 px braucht, bleibt fuer den
          * Betreff nichts. Erst `flex-col` unter `sm` gibt ihm eine eigene.
          */
-        expect(zeile?.className, 'ohne flex-col stehen Betreff und Leiste auf dem Telefon in einer Zeile').toContain('flex-col');
-        expect(zeile?.className, 'am Schreibtisch soll es nebeneinander bleiben').toContain('sm:flex-row');
+        expect(zeile?.className, 'ohne flex-col stehen Betreff und Leiste in einer Zeile').toContain('flex-col');
+        expect(zeile?.className, 'in einer breiten Spalte soll es nebeneinander bleiben').toContain('@md:flex-row');
         unmount();
     });
 
@@ -283,12 +283,12 @@ describe('die Betreff-Spalte auf schmalen Schirmen', () => {
 
         // Und `shrink-0` nur ab `sm`: In der schmalen Fassung ist es
         // ueberfluessig, am Schreibtisch haelt es die Knoepfe in Form.
-        expect(leiste?.className).toContain('sm:shrink-0');
-        expect(leiste?.className).toContain('sm:flex-nowrap');
+        expect(leiste?.className).toContain('@md:shrink-0');
+        expect(leiste?.className).toContain('@md:flex-nowrap');
         unmount();
     });
 
-    it('setzt Von und Datum unter `sm` untereinander', () => {
+    it('setzt Von und Datum in einer schmalen Spalte untereinander', () => {
         const { container, unmount } = render(<MailMessageView {...base} message={message()} />);
 
         // Zwei Spalten auf 358 px sind je rund 175 px; „Von:
@@ -297,7 +297,7 @@ describe('die Betreff-Spalte auf schmalen Schirmen', () => {
         const raster = container.querySelector('.grid');
 
         expect(raster?.className).toContain('grid-cols-1');
-        expect(raster?.className).toContain('sm:grid-cols-2');
+        expect(raster?.className).toContain('@md:grid-cols-2');
 
         /*
          * Und die ueberbreiten Zeilen spannen erst AB `sm` ueber zwei Spalten.
@@ -320,7 +320,7 @@ describe('die Betreff-Spalte auf schmalen Schirmen', () => {
          */
         const breit = container.querySelector('.grid > *:nth-child(3)');
 
-        expect(breit?.className, 'ohne Breakpoint legt col-span-2 eine zweite Spur an').toContain('sm:col-span-2');
+        expect(breit?.className, 'ohne Breakpoint legt col-span-2 eine zweite Spur an').toContain('@md:col-span-2');
         expect(breit?.className).not.toMatch(/(^|\s)col-span-2(\s|$)/);
         unmount();
     });

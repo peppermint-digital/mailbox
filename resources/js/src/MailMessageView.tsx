@@ -163,7 +163,7 @@ export function MailMessageView({
     const hasMoreRecipients = message.cc.length > 0 || message.to.length > 1;
 
     return (
-        <div className="flex flex-1 flex-col overflow-hidden" data-slot="mail-message-view">
+        <div className="@container flex flex-1 flex-col overflow-hidden" data-slot="mail-message-view">
             <div className="space-y-3 border-b p-4">
                 {/*
                     Unter `sm` stehen Betreff und Knopfleiste UNTEREINANDER, ab
@@ -200,31 +200,55 @@ export function MailMessageView({
                     steht und nicht schrumpfen darf, ist JEDE Breite fuer den
                     Betreff geborgt.
 
-                    Deshalb: eigene Zeile unter `sm`, und die Knoepfe duerfen
-                    darin umbrechen. `shrink` zu erlauben waere die naheliegende
-                    Alternative und die falsche — dann stauchen die Knoepfe.
+                    Deshalb: eigene Zeile, solange es eng ist, und die Knoepfe
+                    duerfen darin umbrechen. `shrink` zu erlauben waere die
+                    naheliegende Alternative und die falsche — dann stauchen die
+                    Knoepfe.
+
+                    ## `@md:`, nicht `sm:` — am BEHAELTER gemessen
+
+                    Der dritte Versuch, und der Anlass war wieder ein Bild.
+                    `sm:` fragt das FENSTER. Diese Ansicht steht aber in einer
+                    Spalte zwischen Ordnerliste, Mailliste und dem
+                    Postfach-Assistenten; wie breit sie ist, hat mit der
+                    Fensterbreite wenig zu tun.
+
+                    Gemessen am 30.10.2026 auf einem MacBook Air (1440 px), mit
+                    offenem Assistenten: Der Lesebereich war rund 280 px breit.
+                    Derselbe Fehler wie auf dem Telefon — Betreff Wort fuer Wort
+                    umgebrochen, „Antworten" darueberliegend — bei einem
+                    Fenster, das jedes `sm:` erfuellt.
+
+                    `@container` am Wurzelkasten und `@md:` an den Zeilen fragen
+                    deshalb die Spalte selbst. Die schmale Fassung ist die
+                    VORGABE und die breite der Zusatz: Fehlt einem System die
+                    `@source`-Zeile fuer dieses Paket, faellt der Zusatz weg und
+                    es bleibt bei untereinander — unschoen am grossen Schirm,
+                    aber lesbar. Andersherum waere es unlesbar.
 
                     ## Warum das der jsdom-Test nicht zeigt
 
                     Er kann nur festhalten, dass die Klassen dastehen. Das taten
-                    sie beim ersten Versuch ja auch. Die drei Zahlen oben sind
-                    der Nachweis, den jsdom nicht liefert — sie gehoeren
-                    deshalb hierher und nicht in eine Zusicherung.
+                    sie bei jedem der drei Versuche. Die Zahlen oben sind der
+                    Nachweis, den jsdom nicht liefert; gemessen wird er in der
+                    Browser-Suite des Projekt-Managers
+                    (`tests/Browser/MailLeseansichtAufDemTelefonTest.php`),
+                    weil ein Paket ohne Anwendung keine Seite oeffnen kann.
                 */}
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                <div className="flex flex-col gap-3 @md:flex-row @md:items-start @md:justify-between @md:gap-4">
                     <div className="min-w-0 flex-1 space-y-1">
                         <h2 className="text-lg font-semibold">{message.subject}</h2>
                         {headerAccessory}
                     </div>
 
                     {isArchived ? (
-                        <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:flex-nowrap" data-slot="mail-message-archived">
+                        <div className="flex flex-wrap items-center gap-2 @md:shrink-0 @md:flex-nowrap" data-slot="mail-message-archived">
                             <span className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground" title={labels.archivedTitle}>
                                 {labels.archived}
                             </span>
                         </div>
                     ) : (
-                        <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:flex-nowrap" data-slot="mail-message-actions">
+                        <div className="flex flex-wrap items-center gap-2 @md:shrink-0 @md:flex-nowrap" data-slot="mail-message-actions">
                             {isDraft && onEditDraft && (
                                 <Button onClick={onEditDraft} size="sm" title={labels.editDraft}>
                                     <Pencil className="mr-2 h-4 w-4" />
@@ -327,7 +351,7 @@ export function MailMessageView({
                     `grid grid-cols-1` allein ergab „358px", also eine Spur.
                     Die Klasse wirkte; das Kind hat sie ueberstimmt.
                 */}
-                <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2 text-sm @md:grid-cols-2">
                     <div className="min-w-0 break-words">
                         <span className="text-muted-foreground">{labels.from}</span>
                         <span className="ml-2">
@@ -340,13 +364,13 @@ export function MailMessageView({
                         <span className="ml-2">{formatDateTime(message.date)}</span>
                     </div>
                     {message.to.length > 0 && (
-                        <div className="min-w-0 break-words sm:col-span-2">
+                        <div className="min-w-0 break-words @md:col-span-2">
                             <span className="text-muted-foreground">{labels.to}</span>
                             <span className="ml-2">{formatAddressList(message.to)}</span>
                         </div>
                     )}
                     {message.cc.length > 0 && (
-                        <div className="min-w-0 break-words sm:col-span-2">
+                        <div className="min-w-0 break-words @md:col-span-2">
                             <span className="text-muted-foreground">{labels.cc}</span>
                             <span className="ml-2">{formatAddressList(message.cc)}</span>
                         </div>
