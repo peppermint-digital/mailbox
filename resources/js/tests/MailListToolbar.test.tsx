@@ -245,6 +245,27 @@ describe('MailListToolbar', () => {
         unmount();
     });
 
+    it('haengt die Referenz des Hakens an das Suchfeld', () => {
+        /*
+         * Der Haken bindet `/` auf `suchFeld.current?.focus()`. Bleibt die
+         * Referenz hier unangeschlossen, ist sie `null` — und `focus()` auf
+         * `null` tut nichts, ohne Fehler. Genau so ging `/` in allen vier
+         * Produkten ins Leere, und ein Test am Haken allein haette es nicht
+         * gesehen: Der haengt sein eigenes Feld an die Referenz.
+         */
+        const feld: { current: HTMLInputElement | null } = { current: null };
+
+        const { container, unmount } = render(<MailListToolbar {...grund} search={suche()} suchFeldRef={feld} />);
+
+        expect(feld.current, 'die Referenz blieb leer — `/` wuerde ins Leere greifen').not.toBeNull();
+
+        // Und zwar das SUCHFELD, nicht irgendeines: Die Leiste fuehrt in den
+        // Filtern weitere Eingabefelder (Von, Betreff, Datum ab).
+        expect(feld.current?.placeholder).toBe('E-Mails durchsuchen...');
+        expect(container.contains(feld.current)).toBe(true);
+        unmount();
+    });
+
     it('sagt, wie alt das Suchverzeichnis ist — aber nur im Suchmodus', () => {
         const verzeichnis = { entries: 412, folders: 7, minutes_ago: 3, stale: false };
 

@@ -18,6 +18,7 @@ import {
     X,
     UserCheck,
 } from 'lucide-react';
+import type { RefObject } from 'react';
 import type { MailFolder } from './MailFolderList';
 import type { MessageHandle } from './rows';
 import { Badge } from './ui/badge';
@@ -237,6 +238,15 @@ export interface MailListToolbarProps {
      */
     onHilfe?: () => void;
     /**
+     * Die Referenz auf das Suchfeld — damit `/` hineinspringen kann (A15, #9116).
+     *
+     * Der Haken bindet die Taste und fuehrt die Referenz; den Knoten hat nur
+     * diese Leiste. Vorher gab es dafuer eine Option am Haken, die kein
+     * Produkt setzen konnte, weil keines das Feld besitzt — `/` ging in allen
+     * vier ins Leere, obwohl die Hilfe „Suche oeffnen" versprach.
+     */
+    suchFeldRef?: RefObject<HTMLInputElement | null>;
+    /**
      * Der Zustand des Suchverzeichnisses, aus dem die Treffer stammen.
      *
      * Erscheint nur im Suchmodus und nur, wenn das Produkt ein Verzeichnis
@@ -278,6 +288,7 @@ export function MailListToolbar({
     onMove,
     onMoveMenuOpen,
     onHilfe,
+    suchFeldRef,
     verzeichnis = null,
     filtersOpen = false,
     onToggleFilters,
@@ -307,6 +318,7 @@ export function MailListToolbar({
                 <div className="relative flex-1">
                     <Search className="absolute top-1/2 left-2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
+                        ref={suchFeldRef}
                         value={search.query}
                         placeholder={labels.searchPlaceholder}
                         className="h-8 pr-8 pl-8 text-sm"

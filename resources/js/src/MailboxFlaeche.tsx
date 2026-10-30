@@ -260,6 +260,7 @@ export function MailboxFlaeche({
         csrf,
         fehler,
         filterOffen,
+        gruppierungUmschalten,
         konto,
         liste,
         melden,
@@ -289,6 +290,7 @@ export function MailboxFlaeche({
         setWeiterleitenOffen,
         sichtbareZeilen,
         suche,
+        suchFeld,
         verlauf,
         weiterleitenOffen,
         werkzeuge,
@@ -483,6 +485,7 @@ export function MailboxFlaeche({
                                     mineOnly={nurEigene}
                                     onToggleMine={nurEigeneMoeglich ? nurEigeneUmschalten : undefined}
                                     onHilfe={() => setHilfeOffen(true)}
+                                    suchFeldRef={suchFeld}
                                     verzeichnis={suchVerzeichnis}
                                     labels={germanLabels.toolbar}
                                     hint={zuweisungen.erreichbar ? null : 'Zuständigkeiten nicht erreichbar'}
@@ -496,7 +499,7 @@ export function MailboxFlaeche({
                                     grouped={liste.grouped}
                                     onToggleGrouped={
                                         kettenMoeglich
-                                            ? () => void liste.setGrouped(!liste.grouped, konto?.id ?? '', ordnerPfad)
+                                            ? () => void gruppierungUmschalten(!liste.grouped, konto?.id ?? '', ordnerPfad)
                                             : undefined
                                     }
                                     filtersOpen={filterOffen}

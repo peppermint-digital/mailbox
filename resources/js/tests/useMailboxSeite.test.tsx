@@ -93,7 +93,8 @@ function Probe({
     suchQuelle,
     oeffnenQuelle,
     initialGrouped,
-    onSuchen,
+    onKontoWechsel,
+    onGruppierung,
     routen,
     eigeneAdresse,
     onSuchAntwort,
@@ -104,7 +105,8 @@ function Probe({
     suchQuelle?: Parameters<typeof useMailboxSeite>[0]['suchQuelle'];
     oeffnenQuelle?: Parameters<typeof useMailboxSeite>[0]['oeffnenQuelle'];
     initialGrouped?: boolean;
-    onSuchen?: () => void;
+    onKontoWechsel?: Parameters<typeof useMailboxSeite>[0]['onKontoWechsel'];
+    onGruppierung?: Parameters<typeof useMailboxSeite>[0]['onGruppierung'];
     routen?: Parameters<typeof useMailboxSeite>[0]['routen'];
     eigeneAdresse?: Parameters<typeof useMailboxSeite>[0]['eigeneAdresse'];
     onSuchAntwort?: Parameters<typeof useMailboxSeite>[0]['onSuchAntwort'];
@@ -121,7 +123,8 @@ function Probe({
         ...(suchQuelle === undefined ? {} : { suchQuelle }),
         ...(oeffnenQuelle === undefined ? {} : { oeffnenQuelle }),
         ...(initialGrouped === undefined ? {} : { initialGrouped }),
-        ...(onSuchen === undefined ? {} : { onSuchen }),
+        ...(onKontoWechsel === undefined ? {} : { onKontoWechsel }),
+        ...(onGruppierung === undefined ? {} : { onGruppierung }),
         ...(routen === undefined ? {} : { routen }),
         ...(eigeneAdresse === undefined ? {} : { eigeneAdresse }),
         ...(onSuchAntwort === undefined ? {} : { onSuchAntwort }),
@@ -182,7 +185,7 @@ describe('der Haken füllt, was er verspricht', () => {
         unmount();
     });
 
-    it('gibt alle 52 Werte heraus — und keinen als undefined', async () => {
+    it('gibt alle 55 Werte heraus — und keinen als undefined', async () => {
         /*
          * Der Wächter gegen den Fehler, den dieser Umbau am leichtesten macht:
          * einen Namen in der Rückgabe zu vergessen. TypeScript fängt das an
@@ -226,6 +229,14 @@ describe('der Haken füllt, was er verspricht', () => {
             'setKonto', 'setOrdnerPfad', 'setOrdnerSichtbar', 'setWeiterleitenOffen',
             'sichtbareZeilen', 'suche', 'verlauf', 'weiterleitenOffen', 'werkzeuge', 'zeilen',
             'zuweisungen',
+            // A14 (#9116): Gruppierung umschalten UND es dem Produkt sagen.
+            // `liste.setGrouped` allein meldete nichts — der Manager merkt die
+            // Wahl serverseitig, und sie fiel bei jedem Laden zurueck.
+            'gruppierungUmschalten',
+            // A15 (#9116): Das Suchfeld, damit `/` hineinspringen kann. Hier
+            // stand eine Option `onSuchen`, die kein Produkt setzen KONNTE —
+            // den Knoten besitzt die Leiste dieses Pakets, nicht das Produkt.
+            'suchFeld',
         ];
 
         expect(Object.keys(zuletzt).sort()).toEqual([...erwartet].sort());
@@ -543,32 +554,46 @@ describe('der Haken füllt, was er verspricht', () => {
             unmount();
         });
 
-        it('oeffnet mit ? die Hilfe selbst und gibt / an das Produkt weiter', async () => {
+        it('oeffnet mit ? die Hilfe und springt mit / ins Suchfeld — beides selbst', async () => {
             /*
-             * `?` ging bis zum 30.10.2026 ans Produkt, weil die Hilfe ein
-             * Dialog aus dessen UI-Kit war. Mit A4 (#9116) bringt das Paket
-             * sie mit — Taste und Fenster stehen jetzt beieinander, und die
-             * Liste der Kuerzel neben den Bindungen.
+             * Beide Tasten gingen bis zum 30.10.2026 ans Produkt.
              *
-             * `/` bleibt beim Produkt: Ein Fokus braucht eine Referenz auf ein
-             * echtes Eingabefeld, und der Haken besitzt keinen Knoten.
+             * `?`, weil die Hilfe ein Dialog aus dessen UI-Kit war — behoben
+             * mit A4 (#9116): Taste und Fenster stehen jetzt beieinander.
+             *
+             * `/`, mit der Begruendung „ein Fokus braucht eine Referenz auf
+             * ein echtes Eingabefeld, und der Haken besitzt keinen Knoten".
+             * Das stimmte und war der falsche Schluss: Den Knoten besitzt auch
+             * kein Produkt, er steht in der Leiste dieses Pakets. Keines hat
+             * die Option je gesetzt, und `/` ging in allen vier ins Leere —
+             * waehrend die Hilfe „Suche oeffnen" versprach. Seit A15 fuehrt der
+             * Haken die Referenz.
              */
             const { fetchStub } = gegenstelle(eineNachricht);
             vi.stubGlobal('fetch', fetchStub);
 
-            const suchen = vi.fn();
-
-            const { unmount } = render(<Probe melden={() => {}} onSuchen={suchen} />);
+            const { unmount } = render(<Probe melden={() => {}} />);
             await oeffneEine();
 
             expect(zuletzt.hilfeOffen).toBe(false);
 
             await taste('?');
-            await taste('/');
-
             expect(zuletzt.hilfeOffen).toBe(true);
-            expect(suchen).toHaveBeenCalledTimes(1);
 
+            /*
+             * Ein echtes Feld an die Referenz haengen und den Fokus messen —
+             * nicht „wurde gerufen". Genau das war der alte Test: Er sah einen
+             * Rueckruf laufen, und hinter dem Rueckruf stand in jedem Produkt
+             * nichts.
+             */
+            const feld = document.createElement('input');
+            document.body.appendChild(feld);
+            (zuletzt.suchFeld as { current: HTMLInputElement | null }).current = feld;
+
+            await taste('/');
+            expect(document.activeElement).toBe(feld);
+
+            feld.remove();
             unmount();
         });
     });
@@ -1223,6 +1248,103 @@ describe('die rohe Antwort einer Suche (A9, #9116)', () => {
 
         expect(zweiteFassung, 'die Suche rief noch die Fassung von vorhin').toHaveBeenCalled();
         expect(ersteFassung).not.toHaveBeenCalled();
+
+        unmount();
+    });
+});
+
+describe('was das Produkt sich merken soll (A14, #9116)', () => {
+    /**
+     * Zwei Wahlen merkt der Projekt-Manager serverseitig an der Person: welches
+     * Postfach zuletzt offen war (`last_account_id`) und ob die Liste nach
+     * Konversationen gruppiert ist (`group_by_thread`). Dieser Haken LAS beides
+     * (`anfangsKonto`, `initialGrouped`) und meldete keine Aenderung zurueck.
+     *
+     * Eine Vorgabe ohne Rueckmeldung ist keine Einstellung, sondern eine Wahl,
+     * die bei jedem Laden zurueckfaellt — und das faellt nicht als Fehler auf,
+     * sondern als „es oeffnet immer das erste Postfach".
+     */
+    it('meldet den Postfach-Wechsel — auch wenn die Adresse schon passt', async () => {
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const gemerkt = vi.fn();
+
+        /*
+         * `anfangsKonto` auf 43: Damit steht beim ersten Zeichnen schon das
+         * zweite Postfach, und ein Wechsel ZURUECK auf 42 geht durch den Zweig,
+         * in dem die Adresse umgeschrieben wird. Der Fall, der die Meldung
+         * verschluckt haette, ist der andere — siehe unten.
+         */
+        const { unmount } = render(<Probe melden={() => {}} anfangsKonto={43} onKontoWechsel={gemerkt} />);
+
+        await vi.waitFor(() => expect(zuletzt.konto).not.toBeNull());
+        expect(gemerkt, 'das erste Zeichnen ist kein Wechsel').not.toHaveBeenCalled();
+
+        await act(async () => {
+            (zuletzt.setKonto as (k: unknown) => void)({ id: 42, email: 'department@example.test', name: 'Abteilung' });
+        });
+
+        // Das ganze Konto, nicht nur die Nummer: Das Produkt entscheidet
+        // selbst, was es davon aufschreibt.
+        expect(gemerkt).toHaveBeenCalledWith({ id: 42, email: 'department@example.test', name: 'Abteilung' });
+
+        unmount();
+    });
+
+    it('meldet auch dann, wenn die Adresse das Postfach bereits nennt', async () => {
+        /*
+         * Der Fall, an dem die Reihenfolge haengt: Steht `?account=43` schon in
+         * der Adresse und jemand waehlt 43, kehrt der Adress-Block frueh
+         * zurueck („nichts umzuschreiben"). Eine Meldung DAHINTER waere genau
+         * dann weg — und zwar bei dem Weg, den der Manager selbst erzeugt
+         * (`NotificationService` verlinkt `/emails?account={id}`).
+         */
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        window.history.replaceState({}, '', '/emails?account=43');
+
+        const gemerkt = vi.fn();
+        const { unmount } = render(<Probe melden={() => {}} anfangsKonto={43} onKontoWechsel={gemerkt} />);
+
+        await vi.waitFor(() => expect(zuletzt.konto).not.toBeNull());
+
+        await act(async () => {
+            (zuletzt.setKonto as (k: unknown) => void)({ id: 43, email: 'zweites@example.test', name: 'Zweites' });
+        });
+
+        expect(gemerkt, 'die Meldung stand hinter einem fruehen return').toHaveBeenCalledTimes(1);
+
+        window.history.replaceState({}, '', '/');
+        unmount();
+    });
+
+    it('meldet die Gruppierung — mit dem neuen Wert, nicht dem alten', async () => {
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const gemerkt = vi.fn();
+        const { unmount } = render(<Probe melden={() => {}} onGruppierung={gemerkt} />);
+
+        /*
+         * Auf die ERSTE Liste warten, nicht nur auf das Postfach: Der Abruf
+         * beim Aufbauen laeuft sonst noch, waehrend hier schon umgeschaltet
+         * wird — und weil er den alten Wert mitfuehrt, setzt seine Antwort die
+         * Gruppierung wieder zurueck. Der Befund sah wie ein Fehler im
+         * Rueckruf aus und war einer in der Reihenfolge des Tests.
+         */
+        await vi.waitFor(() => expect((zuletzt.zeilen as unknown[]).length).toBe(1));
+
+        await act(async () => {
+            await (zuletzt.gruppierungUmschalten as (g: boolean, k: number, o: string) => Promise<void>)(true, 42, 'INBOX');
+        });
+
+        // `true`, nicht `false`: Ein Rueckruf mit dem Wert VOR dem Umschalten
+        // schreibt die Einstellung genau falsch weg, und beim naechsten Laden
+        // steht das Gegenteil da.
+        expect(gemerkt).toHaveBeenCalledWith(true);
+        expect((zuletzt.liste as { grouped: boolean }).grouped).toBe(true);
 
         unmount();
     });

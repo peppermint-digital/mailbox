@@ -207,13 +207,26 @@ export interface MailboxSeiteOptionen {
      */
     initialGrouped?: boolean;
     /**
-     * Was `/` tun soll — ins Suchfeld springen.
+     * Das Postfach hat gewechselt — fuer ein Produkt, das sich das merkt.
      *
-     * Auch das bleibt beim Produkt, aber aus einem anderen Grund: Der Haken
-     * besitzt keinen Knoten. Ein Fokus braucht eine Referenz auf ein echtes
-     * Eingabefeld, und das steht in der Leiste.
+     * Der Projekt-Manager merkt es serverseitig an der Person
+     * (`last_account_id`) und oeffnet beim naechsten Mal dasselbe Postfach;
+     * `anfangsKonto` liest genau das wieder ein. Ohne diese Rueckmeldung
+     * schreibt es niemand mehr, und die Angabe altert still ein — ein Verlust,
+     * den man nur daran merkt, dass immer das erste Postfach aufgeht.
+     *
+     * ⚠️ Eine Referenz, kein Teil der Abhaengigkeiten: siehe `onSuchAntwort`.
      */
-    onSuchen?: () => void;
+    onKontoWechsel?: (konto: MailboxSeiteKonto) => void;
+    /**
+     * Die Gruppierung wurde umgeschaltet — fuer ein Produkt, das sich das merkt.
+     *
+     * Gegenstueck zu {@link MailboxSeiteOptionen.initialGrouped}: Die Option
+     * sagt, womit es anfaengt, diese Rueckmeldung, dass es sich geaendert hat.
+     * Eine Vorgabe ohne Rueckmeldung ist eine Wahl, die bei jedem Laden
+     * zurueckfaellt.
+     */
+    onGruppierung?: (gruppiert: boolean) => void;
     /**
      * Einzelne Adressen anders bauen, als dieser Haken sie vorgibt.
      *
@@ -305,7 +318,8 @@ export function useMailboxSeite({
     suchQuelle,
     oeffnenQuelle,
     initialGrouped = false,
-    onSuchen,
+    onKontoWechsel,
+    onGruppierung,
     routen,
     eigeneAdresse = null,
     onSuchAntwort,
@@ -349,6 +363,15 @@ export function useMailboxSeite({
         if (typeof window === 'undefined' || !naechstes) {
             return;
         }
+
+        /*
+         * VOR dem Umschreiben der Adresse: Das Merken ist die Arbeit, die
+         * Adresse eine Bequemlichkeit — und der Block darunter kehrt bei einer
+         * schon passenden Adresse frueh zurueck. Dahinter waere die Meldung
+         * genau dann weg, wenn jemand ueber `?account=` hereinkommt und dann
+         * wechselt.
+         */
+        kontoWechselRef.current?.(naechstes);
 
         try {
             const adresse = new URL(window.location.href);
@@ -417,10 +440,34 @@ export function useMailboxSeite({
      * erst, wenn jemand sucht — lange nach dem Festschreiben.
      */
     const suchAntwortRef = useRef(onSuchAntwort);
+    /*
+     * Dieselbe Begruendung wie oben, und hier wiegt sie schwerer: `setKonto`
+     * ist ein `useCallback` mit leerer Abhaengigkeitsliste. Der Rueckruf
+     * direkt hineingeschrieben waere fuer immer die erste Fassung.
+     */
+    const kontoWechselRef = useRef(onKontoWechsel);
+    const gruppierungRef = useRef(onGruppierung);
 
     useEffect(() => {
         suchAntwortRef.current = onSuchAntwort;
+        kontoWechselRef.current = onKontoWechsel;
+        gruppierungRef.current = onGruppierung;
     });
+
+    /*
+     * Das Suchfeld, damit `/` hineinspringen kann (A15, #9116).
+     *
+     * Hier stand eine Option `onSuchen`, und ihre Begruendung war: „Der Haken
+     * besitzt keinen Knoten." Das stimmte und war trotzdem der falsche
+     * Schluss — den Knoten besitzt auch kein PRODUKT, er steht in der Leiste
+     * dieses Pakets. Also hat kein einziges Produkt die Option je gesetzt, und
+     * `/` ging in allen vier ins Leere, obwohl die Taste in der Hilfe steht
+     * („Suche oeffnen").
+     *
+     * Eine Referenz loest es ohne Knotenbesitz: Der Haken fuehrt sie, die
+     * Flaeche haengt sie an das Eingabefeld, die Tastatur springt hinein.
+     */
+    const suchFeld = useRef<HTMLInputElement | null>(null);
 
     const quellen = useMemo(
         () =>
@@ -1177,7 +1224,7 @@ export function useMailboxSeite({
         onToggleFlag: () => void markierungUmschalten(),
         onArchive: () => void offeneArchivieren(),
         onDelete: () => void offeneLoeschen(),
-        onSearch: onSuchen,
+        onSearch: () => suchFeld.current?.focus(),
         onHelp: () => setHilfeOffen(true),
         /*
          * Escape raeumt von oben nach unten ab — in der Reihenfolge, in der
@@ -1264,6 +1311,24 @@ export function useMailboxSeite({
         nurEigene,
         nurEigeneMoeglich: Boolean(eigeneAdresse),
         nurEigeneUmschalten: () => setNurEigene((an) => !an),
+        suchFeld,
+        /*
+         * Gruppierung umschalten — und dem Produkt sagen, dass es passiert ist
+         * (A14, #9116). Hier und nicht an der Aufrufstelle in der Flaeche: Die
+         * Flaeche ist eine von mehreren moeglichen Oberflaechen, der Haken ist
+         * die eine Stelle, an der sich der Zustand aendert.
+         *
+         * Gemeldet wird AUCH, wenn der Abruf danach scheitert — bewusst. Was
+         * hier aufgeschrieben wird, ist die WAHL des Menschen, nicht der Stand
+         * der Liste. Ein Netzaussetzer macht den Klick nicht ungueltig, und
+         * beim naechsten Laden gilt die Wahl. Umgekehrt waere der Preis
+         * hoeher: Eine Einstellung, die nur bei gelungenem Abruf haelt, haelt
+         * ausgerechnet dann nicht, wenn das Postfach gerade zickt.
+         */
+        gruppierungUmschalten: async (gruppiert: boolean, kontoId: number | string, ordner: string) => {
+            await liste.setGrouped(gruppiert, kontoId, ordner);
+            gruppierungRef.current?.(gruppiert);
+        },
         antwortAnAlle,
         antwortOffen,
         antwortSenden,
