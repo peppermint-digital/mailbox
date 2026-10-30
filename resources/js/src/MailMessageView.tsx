@@ -166,89 +166,88 @@ export function MailMessageView({
         <div className="@container flex flex-1 flex-col overflow-hidden" data-slot="mail-message-view">
             <div className="space-y-3 border-b p-4">
                 {/*
-                    Unter `sm` stehen Betreff und Knopfleiste UNTEREINANDER, ab
-                    `sm` nebeneinander wie gehabt.
+                    Betreff und Knopfleiste stehen UNTEREINANDER, solange sie
+                    nicht nebeneinander passen — und das entscheidet der Platz,
+                    nicht eine Zahl.
 
-                    ## Zwei Versuche, und warum der erste nicht reichte
+                    ## Vier Anlaeufe, und erst der vierte hat die richtige Frage gestellt
 
-                    Hier stand bis zum 30.10.2026 nur `min-w-0` an der linken
-                    Spalte. Daneben sitzt eine Knopfleiste mit `shrink-0`, darum
-                    herum `justify-between` — auf einem Telefon schrumpfte die
-                    Spalte dadurch auf NULL, und der Betreff brach zeichenweise
-                    um („N / Partneranfrage: / CRUDE / HARZ …").
+                    Gemeldet: Auf dem Telefon schrumpft der Betreff auf Breite 0
+                    und bricht Buchstabe fuer Buchstabe um („N / Partneranfrage:
+                    / CRUDE / HARZ / …"), die Leiste laeuft aus dem Bild.
 
-                    Der erste Versuch (v0.176.1) setzte `flex-1` daneben. Am
-                    Geraet nachgemessen von der Session `mail-rollout`, am
-                    30.10.2026 auf brain.proxy.peppermint-digital.com mit dem
-                    frisch gebauten Buendel, iPhone-14-Emulation (innerWidth
-                    390, DPR 3) — und zwar an der KLASSENLISTE des lebenden
-                    Elements, nicht im Quelltext:
+                    | Anlauf | was dazukam | was er nicht loeste |
+                    |---|---|---|
+                    | v0.176.1 | `flex-1` an die Spalte | `flex-1` verteilt den REST einer Zeile. Es gab keinen: Die Leiste war mit 490 px breiter als der Container mit 358 px, und `shrink-0` verbot ihr zu schrumpfen. |
+                    | v0.183.0 | `sm:col-span-2` an den Kopfdaten | ein echter zweiter Fehler, aber nicht dieser |
+                    | v0.184.0 | `sm:` → `@container`/`@md:` | die richtige FRAGE („wie breit ist meine Spalte"), nur zu frueh beantwortet: `@md` oeffnet bei 28rem = 448 px, die Leiste braucht 444 px (CRM, Verwaltung) bzw. 490 px (AI Brain). Zwischen 448 und ~800 px fiel die Spalte wieder auf 0. |
 
-                        Betreff-Spalte   BREITE   0   (HOEHE 196)
-                        Knopfleiste      BREITE 490
-                        Container        BREITE 358
+                    Die Lehre aus den dreien steht in Memory #5024: Nicht die
+                    Vermutung war falsch, die PRUEFUNG war es. `min-w-0`,
+                    `flex-1` und `shrink-0` beantworten „wie weit darf dieses
+                    Kind schrumpfen bzw. wachsen". Sie beantworten NICHT:
+                    „passen die Kinder ueberhaupt in die Zeile".
 
-                    `flex-1` stand da und konnte nichts ausrichten: Die Leiste
-                    ist mit 490 px breiter als der Container mit 358 px. Es gibt
-                    keinen Rest zu verteilen, und `shrink-0` verbietet der
-                    Leiste, schmaler zu werden. Die Spalte bekommt deshalb 0 —
-                    mit `flex-1` genauso wie ohne.
+                    ## Was jetzt dasteht — drei Teile, und keiner ist entbehrlich
 
-                    Die Ursache liegt also eine Ebene hoeher, als sie aussah:
-                    Nicht die Betreff-Spalte schrumpft zu Unrecht, sondern die
-                    Leiste passt bei 390 px nicht in die Zeile. Solange sie dort
-                    steht und nicht schrumpfen darf, ist JEDE Breite fuer den
-                    Betreff geborgt.
+                    1. `@md:flex-wrap` an DIESER Zeile. Passt die Leiste nicht
+                       neben den Betreff, rutscht sie als Ganzes in die zweite
+                       Zeile, und der Betreff bekommt die volle Breite. Das ist
+                       der Teil, der ohne jede Schwelle auskommt.
+                    2. `@md:basis-80` (20rem = 320 px) an der Betreff-Spalte.
+                       Erst eine Mindestbreite macht aus „passt nicht" einen
+                       Umbruch: `flex-1` ist `flex-basis: 0%`, und `flex-grow`
+                       verteilt nur VERBLEIBENDEN Platz — bei negativem Rest
+                       bleibt die Spalte bei 0, ob die Leiste nun umbrechen darf
+                       oder nicht. Die 320 px sind an der LESBARKEIT bemessen
+                       (ein langer Betreff bleibt darin dreizeilig, bei 240 px
+                       wurde er vierzeilig, gemessen), nicht an der Knopfzahl —
+                       und darum traegt sie auch, wenn ein Produkt ueber
+                       `zusatzAktionen` Knoepfe dazustellt.
+                    3. KEIN `@md:shrink-0` und KEIN `@md:flex-nowrap` mehr an
+                       der Leiste. Mit `shrink-0` behaelt sie ihre volle
+                       Inhaltsbreite und draengt die Spalte heraus; mit
+                       `flex-nowrap` kann sie in ihrer eigenen Zeile nicht
+                       umbrechen.
 
-                    Deshalb: eigene Zeile, solange es eng ist, und die Knoepfe
-                    duerfen darin umbrechen. `shrink` zu erlauben waere die
-                    naheliegende Alternative und die falsche — dann stauchen die
-                    Knoepfe.
+                    Jeder Teil einzeln weggenommen laesst den Fehler
+                    wiederkehren — nachgemessen, siehe den Browsertest.
 
-                    ## `@md:`, nicht `sm:` — am BEHAELTER gemessen
-
-                    Der dritte Versuch, und der Anlass war wieder ein Bild.
-                    `sm:` fragt das FENSTER. Diese Ansicht steht aber in einer
-                    Spalte zwischen Ordnerliste, Mailliste und dem
-                    Postfach-Assistenten; wie breit sie ist, hat mit der
-                    Fensterbreite wenig zu tun.
-
-                    Gemessen am 30.10.2026 auf einem MacBook Air (1440 px), mit
-                    offenem Assistenten: Der Lesebereich war rund 280 px breit.
-                    Derselbe Fehler wie auf dem Telefon — Betreff Wort fuer Wort
-                    umgebrochen, „Antworten" darueberliegend — bei einem
-                    Fenster, das jedes `sm:` erfuellt.
+                    ## Die schmale Fassung ist die Vorgabe
 
                     `@container` am Wurzelkasten und `@md:` an den Zeilen fragen
-                    deshalb die Spalte selbst. Die schmale Fassung ist die
-                    VORGABE und die breite der Zusatz: Fehlt einem System die
-                    `@source`-Zeile fuer dieses Paket, faellt der Zusatz weg und
-                    es bleibt bei untereinander — unschoen am grossen Schirm,
-                    aber lesbar. Andersherum waere es unlesbar.
+                    die Spalte selbst, nicht das Fenster: Diese Ansicht steht
+                    zwischen Ordnerliste, Mailliste und Postfach-Assistent. Ein
+                    MacBook Air mit 1440 px erfuellt jedes `sm:` und hatte eine
+                    Lesespalte von 280 px.
 
-                    ## Warum das der jsdom-Test nicht zeigt
+                    Fehlt einem System die `@source`-Zeile fuer dieses Paket,
+                    fallen alle `@md:`-Klassen weg und es bleibt bei
+                    untereinander — unschoen am grossen Schirm, aber lesbar.
+                    Andersherum waere es unlesbar.
 
-                    Er kann nur festhalten, dass die Klassen dastehen. Das taten
-                    sie bei jedem der drei Versuche. Die Zahlen oben sind der
-                    Nachweis, den jsdom nicht liefert; gemessen wird er in der
-                    Browser-Suite des Projekt-Managers
-                    (`tests/Browser/MailLeseansichtAufDemTelefonTest.php`),
-                    weil ein Paket ohne Anwendung keine Seite oeffnen kann.
+                    ## Wo der Nachweis liegt
+
+                    `resources/js/tests/browser/leseansicht-breiten.test.ts` —
+                    echtes Chromium, echtes Tailwind, 320 bis 1600 px in
+                    40-px-Schritten, fuer 8 und fuer 9 Knoepfe. Der jsdom-Test
+                    daneben haelt nur fest, DASS die Klassen dastehen; das taten
+                    sie bei jedem der vier Anlaeufe.
                 */}
-                <div className="flex flex-col gap-3 @md:flex-row @md:items-start @md:justify-between @md:gap-4">
-                    <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex flex-col gap-3 @md:flex-row @md:flex-wrap @md:items-start @md:justify-between @md:gap-4">
+                    <div className="min-w-0 flex-1 space-y-1 @md:basis-80">
                         <h2 className="text-lg font-semibold">{message.subject}</h2>
                         {headerAccessory}
                     </div>
 
                     {isArchived ? (
-                        <div className="flex flex-wrap items-center gap-2 @md:shrink-0 @md:flex-nowrap" data-slot="mail-message-archived">
+                        <div className="flex flex-wrap items-center gap-2" data-slot="mail-message-archived">
                             <span className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground" title={labels.archivedTitle}>
                                 {labels.archived}
                             </span>
                         </div>
                     ) : (
-                        <div className="flex flex-wrap items-center gap-2 @md:shrink-0 @md:flex-nowrap" data-slot="mail-message-actions">
+                        <div className="flex flex-wrap items-center gap-2" data-slot="mail-message-actions">
                             {isDraft && onEditDraft && (
                                 <Button onClick={onEditDraft} size="sm" title={labels.editDraft}>
                                     <Pencil className="mr-2 h-4 w-4" />

@@ -319,7 +319,31 @@ unread dot would start lying — so the list comes back from the server instead.
 composer install
 vendor/bin/pest      # PHP half
 npm install
-npm test             # JavaScript half
+npm test             # JavaScript half, browser measurements included
+```
+
+### The layout measurements need a real browser
+
+`npm test` includes `resources/js/tests/browser/leseansicht-breiten.test.ts`,
+which drives a real Chromium through widths 320–1600 px in 40 px steps and
+measures the reading pane with `getBoundingClientRect()`.
+
+It is there because jsdom computes no layout. The same subject-line bug was
+declared fixed four times, and each time a green test stood next to it: an
+assertion on class names confirms every version in which the class is present,
+including the broken one. A single width is not enough either — v0.184.0 was
+demonstrably right at 390 px and broken between 448 px and 800 px.
+
+The test builds its own fixture from `resources/js/src` with esbuild and
+compiles real Tailwind over those sources, the same way a product compiles over
+`node_modules/@peppermint-digital/mailbox/dist`. It finds Chromium at
+`/usr/bin/chromium`, in the usual Chrome locations, or wherever
+`MAILBOX_CHROMIUM` points. **It fails rather than skips when there is none** —
+a skipped layout test is exactly the falsely green run this test exists to
+prevent.
+
+```bash
+MAILBOX_MESSREIHE=1 npm test   # prints the full table of measurements
 ```
 
 ### Testing sending, without a mail server

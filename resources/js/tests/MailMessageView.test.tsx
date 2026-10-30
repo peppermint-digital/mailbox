@@ -240,11 +240,25 @@ describe('die Betreff-Spalte auf schmalen Schirmen', () => {
      * nur an der Betreff-Spalte war die ganze Zeit gruen und die Seite die
      * ganze Zeit kaputt — er hat gemessen, was dastand, nicht, was es bewirkt.
      *
-     * ## Was diese Tests NICHT koennen
+     * ## Dritte Messung, 30.10.2026 — v0.184.0 hat ihn VERSCHOBEN (Bug #1197)
+     *
+     * `@md` oeffnet bei 28rem = 448 px, die Leiste braucht 444 px (CRM,
+     * Verwaltung) bzw. 490 px (AI Brain). Zwischen Schwelle und Leistenbreite
+     * gibt es nichts zu verteilen — bei 448 px Container stand die Spalte
+     * wieder auf 0, bei 664 px (Fenster 1440, Assistent zu) auf 126.
+     *
+     * ## Was diese Tests NICHT koennen — und wo der Nachweis jetzt liegt
      *
      * jsdom rechnet kein Layout, also keine Breite. Sie halten den
-     * Klassenvertrag fest. Der Nachweis sind die Messungen oben — und die
-     * naechste gehoert dazu, bevor das hier als behoben gilt.
+     * Klassenvertrag fest, damit niemand die Klassen versehentlich loescht.
+     * Eine Zusicherung auf Klassennamen kann aber nicht falsifizieren: Sie war
+     * bei jedem der vier Anlaeufe gruen.
+     *
+     * Der Nachweis steht daher seit v0.185.0 IM PAKET, in echtem Chromium:
+     * `resources/js/tests/browser/leseansicht-breiten.test.ts` faehrt 320 bis
+     * 1600 px in 40-px-Schritten ab, fuer 8 und fuer 9 Knoepfe. Hier stand bis
+     * zum 30.10.2026, gemessen werde in der Browser-Suite des Projekt-Managers
+     * — das galt, solange das Paket keine Seite oeffnen konnte. Es kann.
      */
     it('behaelt ihre Breite in der Zeile', () => {
         const { container, unmount } = render(<MailMessageView {...base} message={message()} />);
@@ -253,7 +267,21 @@ describe('die Betreff-Spalte auf schmalen Schirmen', () => {
         const spalte = betreff?.parentElement;
 
         expect(spalte?.className).toContain('min-w-0');
-        expect(spalte?.className, 'ohne flex-1 schrumpft die Spalte neben der shrink-0-Leiste auf 0').toContain('flex-1');
+        expect(spalte?.className, 'ohne flex-1 waechst die Spalte nicht in den freien Platz').toContain('flex-1');
+
+        /*
+         * Die Mindestbreite ist der Teil, den `flex-1` NICHT leisten kann:
+         * `flex-1` ist `flex-basis: 0%`, und `flex-grow` verteilt nur
+         * VERBLEIBENDEN Platz. Reicht die Zeile nicht, bleibt die Spalte bei 0
+         * — mit `flex-1` genauso wie ohne. Erst eine Basis macht aus „passt
+         * nicht" einen Umbruch der Zeile (siehe `@md:flex-wrap` unten).
+         *
+         * 20rem = 320 px, bemessen an der Lesbarkeit und NICHT an der
+         * Knopfzahl: Ein Produkt darf ueber `zusatzAktionen` Knoepfe
+         * dazustellen (AI Brain tut es), eine an der Leiste bemessene Zahl
+         * waere wieder geraten.
+         */
+        expect(spalte?.className, 'ohne Mindestbreite faellt die Spalte neben der Leiste auf 0').toContain('@md:basis-80');
         unmount();
     });
 
@@ -269,6 +297,15 @@ describe('die Betreff-Spalte auf schmalen Schirmen', () => {
          */
         expect(zeile?.className, 'ohne flex-col stehen Betreff und Leiste in einer Zeile').toContain('flex-col');
         expect(zeile?.className, 'in einer breiten Spalte soll es nebeneinander bleiben').toContain('@md:flex-row');
+
+        /*
+         * Und nebeneinander nur, SOLANGE ES PASST. Das ist die Antwort auf
+         * Bug #1197: `@md:flex-row` allein erzwingt eine Zeile, in die beide
+         * nicht hineinpassen; mit `@md:flex-wrap` rutscht die Leiste als
+         * Ganzes in die zweite Zeile und der Betreff bekommt die volle Breite.
+         * Ohne Schwelle, und damit unabhaengig von der Knopfzahl.
+         */
+        expect(zeile?.className, 'ohne flex-wrap wird eine Zeile erzwungen, in die beide nicht passen').toContain('@md:flex-wrap');
         unmount();
     });
 
@@ -281,10 +318,22 @@ describe('die Betreff-Spalte auf schmalen Schirmen', () => {
         // reicht nicht — in ihr muessen die Knoepfe auch umbrechen duerfen.
         expect(leiste?.className, 'ohne flex-wrap laeuft die 490-px-Leiste rechts aus dem Bild').toContain('flex-wrap');
 
-        // Und `shrink-0` nur ab `sm`: In der schmalen Fassung ist es
-        // ueberfluessig, am Schreibtisch haelt es die Knoepfe in Form.
-        expect(leiste?.className).toContain('@md:shrink-0');
-        expect(leiste?.className).toContain('@md:flex-nowrap');
+        /*
+         * Und zwar BEI JEDER BREITE. Hier standen bis v0.184.0 `@md:shrink-0`
+         * und `@md:flex-nowrap` — beide haben ab 448 px genau das wieder
+         * verboten, was eine Zeile darueber erlaubt wurde:
+         *
+         * - `shrink-0` laesst der Leiste ihre volle Inhaltsbreite (490 px) und
+         *   draengt die Betreff-Spalte heraus.
+         * - `flex-nowrap` setzt ihre Mindestbreite auf die Summe aller
+         *   Knoepfe, womit sie auch in einer EIGENEN Zeile nicht umbricht.
+         *
+         * Das ist eine Zusicherung auf etwas, das NICHT dasteht — unueblich,
+         * aber hier richtig: Beide Klassen sind schon einmal zurueckgekommen
+         * (v0.184.0), und beide sehen fuer sich genommen vernuenftig aus.
+         */
+        expect(leiste?.className, 'shrink-0 draengt die Betreff-Spalte wieder auf 0 (Bug #1197)').not.toContain('shrink-0');
+        expect(leiste?.className, 'flex-nowrap verbietet der Leiste den Umbruch in ihrer eigenen Zeile').not.toContain('flex-nowrap');
         unmount();
     });
 

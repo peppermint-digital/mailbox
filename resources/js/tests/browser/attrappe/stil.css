@@ -1,0 +1,56 @@
+/*
+ * Das CSS der Attrappe — und zwar auf demselben Weg wie in den Produkten:
+ * echtes Tailwind v4, das die Quellen dieses Pakets abtastet.
+ *
+ * Warum nicht von Hand geschriebenes CSS: Gemessen würde dann, was hier
+ * dasteht, nicht was ein Produkt ausliefert. `@md:` ist eine Container-Abfrage,
+ * `basis-60` eine Zahl aus dem Tailwind-Maßraster — beides muss aus demselben
+ * Werkzeug kommen, das die Produkte benutzen, sonst beweist die Messung nichts.
+ *
+ * Die `@source`-Zeile entspricht der Zeile, die jedes Produkt in seiner
+ * `app.css` auf `node_modules/@peppermint-digital/mailbox/dist` zeigen lässt —
+ * hier auf die Quellen, damit der Test ohne gebautes `dist` läuft.
+ */
+@import 'tailwindcss';
+
+@source '../../../src';
+@source './einstieg.tsx';
+
+/*
+ * Die Farbnamen des Produkt-Themes (shadcn). Für die Messung sind sie
+ * gleichgültig, fehlen sie aber, zeichnet Chromium Knöpfe ohne Rahmen und ein
+ * Bildschirmfoto wäre nicht wiedererkennbar. Die Maße stehen im Knopf selbst
+ * (`h-8`, `px-3`), nicht hier.
+ */
+@theme {
+    --color-background: oklch(1 0 0);
+    --color-foreground: oklch(0.145 0 0);
+    --color-primary: oklch(0.205 0 0);
+    --color-primary-foreground: oklch(0.985 0 0);
+    --color-muted: oklch(0.97 0 0);
+    --color-muted-foreground: oklch(0.556 0 0);
+    --color-accent: oklch(0.97 0 0);
+    --color-accent-foreground: oklch(0.205 0 0);
+    --color-destructive: oklch(0.577 0.245 27.325);
+    --color-border: oklch(0.922 0 0);
+    --color-input: oklch(0.922 0 0);
+    --color-ring: oklch(0.708 0 0);
+}
+
+/*
+ * Die Schrift ist das einzige, was hier gesetzt werden MUSS: Knopfbreiten
+ * hängen an ihr. Die Produkte liefern eine eigene Schriftdatei aus; in einem
+ * Paket ohne Anwendung gibt es die nicht, also die Systemschrift — und deshalb
+ * prüft der Test die Zusicherung („Spalte breit genug, Betreff kurz genug")
+ * und nicht eine Leistenbreite auf den Pixel.
+ */
+html {
+    font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    color: #111;
+}
