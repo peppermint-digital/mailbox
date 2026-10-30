@@ -97,3 +97,82 @@ export function classifyFolder(folder: FolderLike & { name?: string | null }): S
 
     return kinds.find((kind) => looksLikeFolder(folder, kind)) ?? null;
 }
+
+/**
+ * Die Anzeigenamen der Standardordner — und warum sie NICHT aus der Tabelle
+ * oben kommen.
+ *
+ * Gemeldet am 30.10.2026 beim Rollout von v0.187.0 (#9134): Die Verwaltung
+ * zeigt auf dem Telefon „INBOX" als Ordnernamen, weil der Name roh vom Server
+ * kommt. Exchange und Office 365 melden englische oder kodierte Namen
+ * (`INBOX`, `Sent Items`, `Entw&APw-rfe`), Dovecot deutsche — dasselbe
+ * Postfach heisst in zwei Produkten anders, und niemand hat das entschieden.
+ *
+ * ## Zwei verschiedene Fragen, zwei Tabellen
+ *
+ * `STANDARD_FOLDER_ALIASES` beantwortet „darf man hier einen Entwurf
+ * weiterbearbeiten" und „darf dieser Ordner geloescht werden". Das ist
+ * VERHALTEN, und es passt bewusst grosszuegig (Teiltreffer auf dem Pfad), weil
+ * ein verpasster Entwurfsordner teurer ist als einer zu viel.
+ *
+ * Diese Tabelle hier beantwortet „wie heisst der Ordner auf dem Schirm". Das
+ * ist ANZEIGE, und dort ist Grosszuegigkeit ein Fehler: Ein Ordner „Archiv
+ * 2024" darf nicht als „Archiv" erscheinen, und `INBOX.Kunden` ist nicht der
+ * Posteingang. Darum vergleicht sie **genau** und nicht auf Teiltreffer.
+ *
+ * Die beiden zu verschmelzen waere die naheliegende Vereinfachung und die
+ * falsche: Dann muesste eine Aenderung an der Anzeige am Verhalten
+ * gegengeprueft werden, und umgekehrt.
+ */
+const ANZEIGENAMEN: readonly { name: string; flag: string | null; aliase: readonly string[] }[] = [
+    /*
+     * Die Reihenfolge entscheidet, und der Posteingang steht ZULETZT.
+     * `INBOX.Drafts` endet auf „drafts" und faengt mit „inbox" an — wer zuerst
+     * auf den Posteingang prueft, benennt jeden Unterordner so.
+     */
+    { name: 'Entwürfe', flag: 'drafts', aliase: ['drafts', 'entwürfe', 'entwurfe', 'entwurf', 'entw&apw-rfe'] },
+    { name: 'Gesendet', flag: 'sent', aliase: ['sent', 'sent items', 'sent mail', 'gesendet', 'gesendete objekte', 'gesendete elemente'] },
+    { name: 'Spam', flag: 'junk', aliase: ['junk', 'junk e-mail', 'junk-e-mail', 'spam', 'bulk mail'] },
+    { name: 'Papierkorb', flag: 'trash', aliase: ['trash', 'deleted', 'deleted items', 'papierkorb', 'gelöschte elemente', 'geloschte elemente', 'gel&apy-schte elemente'] },
+    { name: 'Archiv', flag: 'archive', aliase: ['archive', 'archiv', 'archived', 'archiviert'] },
+    { name: 'Posteingang', flag: 'inbox', aliase: ['inbox', 'posteingang'] },
+];
+
+/** Der letzte Abschnitt eines IMAP-Pfades. Trenner ist je nach Server `.` oder `/`. */
+function letzterAbschnitt(pfad: string): string {
+    const teile = pfad.split(/[./]/);
+
+    return teile[teile.length - 1] ?? pfad;
+}
+
+/**
+ * Wie der Ordner auf dem Schirm heissen soll.
+ *
+ * Reihenfolge der Fragen, und sie ist dieselbe wie in `looksLikeFolder`:
+ * **Die Flagge des Servers zuerst.** Setzt er `\Drafts`, hat er die Frage
+ * beantwortet, und sein Name ist nur noch Dekoration. Erst ohne Flagge
+ * entscheidet der Name — und dann genau, nicht auf Teiltreffer.
+ *
+ * Kein Treffer heisst: Der Name des Servers bleibt stehen. Ein eigener Ordner
+ * heisst, wie der Mensch ihn genannt hat.
+ */
+export function ordnerAnzeigename(folder: FolderLike & { name?: string | null }): string {
+    const roh = (folder.name ?? folder.path ?? '').trim();
+    const flags = (folder.flags ?? []).map((f) => f.toLowerCase());
+
+    for (const eintrag of ANZEIGENAMEN) {
+        if (eintrag.flag && flags.some((flag) => flag.includes(eintrag.flag!))) {
+            return eintrag.name;
+        }
+    }
+
+    const kandidaten = [roh.toLowerCase(), letzterAbschnitt(folder.path ?? '').toLowerCase()];
+
+    for (const eintrag of ANZEIGENAMEN) {
+        if (kandidaten.some((k) => eintrag.aliase.includes(k))) {
+            return eintrag.name;
+        }
+    }
+
+    return roh;
+}

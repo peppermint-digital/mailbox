@@ -1,6 +1,6 @@
 import { useState, type ComponentType, type ReactNode } from 'react';
 import { Clock, FolderInput, FolderOpen, Globe, UserCheck } from 'lucide-react';
-import { looksLikeFolder } from './folders';
+import { looksLikeFolder, ordnerAnzeigename } from './folders';
 import { germanLabels } from './germanLabels';
 import type { InlineAntwortProps } from './InlineAntwort';
 import type { WeiterleitenFeldProps } from './inertia/WeiterleitenFeld';
@@ -414,7 +414,15 @@ export function MailboxFlaeche({
      * ein Pfad, den der Server noch nicht gemeldet hat), bleibt der Pfad
      * stehen. Ein leerer Titel waere schlimmer als ein technischer.
      */
-    const ordnerName = (ordner.folders as MailFolder[]).find((f) => f.path === ordnerPfad)?.name || ordnerPfad || titel;
+    const ordnerName = (() => {
+        const zeile = (ordner.folders as MailFolder[]).find((f) => f.path === ordnerPfad);
+
+        /*
+         * Auch ohne Zeile uebersetzen: Beim ersten Zeichnen ist die Ordnerliste
+         * noch nicht da, und „INBOX" stand genau dann in der Leiste.
+         */
+        return ordnerAnzeigename(zeile ?? { path: ordnerPfad }) || titel;
+    })();
 
     const offeneAbsender = (() => {
         const n = offene.message as { from_name?: string; from_address?: string } | null;
@@ -635,8 +643,18 @@ export function MailboxFlaeche({
                                 {/* Der eigene Scroll-Container: Die Spalte schneidet nur ab,
                                     damit ein Produkt mit Werkzeugleiste und Blaetterung selbst
                                     entscheidet, WAS darin scrollt. Hier scrollen nur die
-                                    Nachrichten — die Leiste darueber bleibt. */}
-                                <div className="min-h-0 flex-1 overflow-y-auto">
+                                    Nachrichten — die Leiste darueber bleibt.
+
+                                    `max-md:pb-24` gehoert genau HIERHIN und nicht an die Liste
+                                    (#9134, Befund aus dem Rollout am 30.10.2026): Der runde
+                                    Verfassen-Knopf schwebt ueber der letzten sichtbaren Zeile
+                                    und deckte deren Oeffnen-Knopf (56 x 40 px, gemessen im CRM).
+                                    Ein Polster am Bauteil `MailMessageList` haette nicht
+                                    geholfen — gescrollt wird hier, also muss hier der Platz
+                                    entstehen, damit die letzte Zeile unter dem Knopf
+                                    hervorscrollen kann. 6rem = der Knopf (56) plus sein Abstand
+                                    zum Rand (20) plus Luft. */}
+                                <div className="min-h-0 flex-1 overflow-y-auto max-md:pb-24">
                                     <MailMessageList<RowMessage>
                                         rows={sichtbareZeilen(zeilen)}
                                         isSearchMode={suche.isSearchMode}

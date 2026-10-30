@@ -2,6 +2,7 @@ import { FolderOpen, FolderPlus, Inbox } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import { cn } from './ui/utils';
 import { useMailboxPane } from './MailboxPane';
+import { ordnerAnzeigename } from './folders';
 
 /**
  * The folder column of a mailbox.
@@ -109,7 +110,12 @@ export function MailFolderList({
                     )}
                 >
                     {folder.path.toUpperCase() === 'INBOX' ? <Inbox className="h-4 w-4" /> : <FolderOpen className="h-4 w-4" />}
-                    <span className="truncate">{folder.name}</span>
+                    {/* Der Name des Servers nur, wenn es kein Standardordner ist.
+                        „INBOX" stand so auf dem Telefon in der Verwaltung (#9134);
+                        dasselbe Postfach hiess in zwei Produkten verschieden. */}
+                    <span className="truncate" data-slot="mail-folder-name">
+                        {ordnerAnzeigename(folder)}
+                    </span>
                 </button>
             ))}
         </div>

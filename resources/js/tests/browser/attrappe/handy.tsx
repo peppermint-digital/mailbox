@@ -16,7 +16,7 @@
  * Kasten von Geraetegroesse. Der Test faehrt die Geraetebreiten ab und misst
  * in jedem Kasten.
  */
-import { useState } from 'react';
+import { useMailboxSidePanel } from '../../../src/MailboxSidePanel';
 import { germanLabels } from '../../../src/germanLabels';
 import { MailboxBrowser } from '../../../src/MailboxBrowser';
 import { MailboxKontoAuswahl } from '../../../src/MailboxHeader';
@@ -31,13 +31,36 @@ import { FolderInput, Trash2 } from 'lucide-react';
 import type { MailWerkzeug } from '../../../src/useMailWerkzeuge';
 import { createRoot } from 'react-dom/client';
 
+/*
+ * Die Namen, wie ein Exchange sie meldet — nicht die bequemen deutschen.
+ *
+ * Mit „Posteingang / Entwürfe / Gesendet" waere die Attrappe durchgelaufen und
+ * haette den Befund aus dem Rollout nie erzeugt: Die Verwaltung zeigte auf dem
+ * Telefon „INBOX", weil der Name roh vom Server kommt (#9134, 30.10.2026).
+ * Dazu eine kodierte Schreibweise, wie Office 365 sie liefert, und ein eigener
+ * Ordner, der NICHT uebersetzt werden darf.
+ */
 const ORDNER: MailFolder[] = [
-    { name: 'Posteingang', path: 'INBOX' },
-    { name: 'Entwürfe', path: 'INBOX.Drafts' },
-    { name: 'Gesendet', path: 'INBOX.Sent' },
-    { name: 'Archiv', path: 'INBOX.Archive' },
-    { name: 'Papierkorb', path: 'INBOX.Trash' },
+    { name: 'INBOX', path: 'INBOX' },
+    { name: 'Entw&APw-rfe', path: 'Entw&APw-rfe' },
+    { name: 'Sent Items', path: 'Sent Items' },
+    { name: 'Junk E-Mail', path: 'Junk E-Mail' },
+    { name: 'Gelöschte Elemente', path: 'Gelöschte Elemente' },
+    { name: 'Archiv 2024', path: 'Archiv 2024' },
 ];
+
+/*
+ * Der Assistent steht im Speicher auf „offen" — so, wie ihn jemand am
+ * Schreibtisch hinterlaesst. Genau das hat ihn am Telefon ueber die Liste
+ * gelegt, und ohne diese Zeile misst die Attrappe den Fall nicht, der gemeldet
+ * wurde.
+ */
+const SPEICHER = 'attrappe.mailbox.assistent';
+try {
+    localStorage.setItem(SPEICHER, 'true');
+} catch {
+    // Privates Fenster — dann steht die Vorgabe, und der Fall wird nicht geprueft.
+}
 
 const KONTEN = [{ id: 1, name: 'department.purchasing@peppermint-digital.de' }];
 
@@ -76,8 +99,18 @@ const NACHRICHT: MailMessageViewMessage = {
     ],
     cc: [{ email: 'buchhaltung@peppermint-digital.de', name: 'Buchhaltung' }],
     date: '2026-10-30T14:12:00+00:00',
-    body_html: null,
-    body_text: Array.from({ length: 40 }, (_, i) => `Zeile ${i + 1} des Mailtextes, damit es etwas zu scrollen gibt.`).join('\n'),
+    /*
+     * HTML mit einem FREMDEN Bild, nicht nur Text.
+     *
+     * Dann zeichnet `EmailBodyViewer` den Hinweis „Externe Bilder wurden
+     * blockiert" — rund 50 px, die ueber dem Mailtext stehen. Die erste
+     * Fassung dieser Attrappe hatte nur `body_text` und damit keinen Hinweis;
+     * gemessen wurde ein Fall, den eine echte Werbemail nie hat.
+     */
+    body_html:
+        '<p><img src="https://example.invalid/pixel.gif" width="1" height="1" alt=""></p>' +
+        Array.from({ length: 40 }, (_, i) => `<p>Zeile ${i + 1} des Mailtextes, damit es etwas zu scrollen gibt.</p>`).join(''),
+    body_text: null,
     attachments: [],
     is_read: true,
     is_flagged: false,
@@ -116,7 +149,13 @@ function Liste() {
  * ehrlichere Weg, weil dabei die echten Knoepfe des Pakets benutzt werden.
  */
 function Fassung({ kennung }: { kennung: string }) {
-    const [chatOffen, setChatOffen] = useState(false);
+    /*
+     * Der echte Haken, nicht ein `useState`. Nur so wird geprueft, was gemeldet
+     * wurde: dass ein im Speicher liegender, am Schreibtisch gesetzter Zustand
+     * den Assistenten am Telefon aufgehen laesst.
+     */
+    const assistent = useMailboxSidePanel(SPEICHER);
+    const chatOffen = assistent.sichtbar;
 
     return (
         <>
@@ -129,7 +168,7 @@ function Fassung({ kennung }: { kennung: string }) {
                             <MailboxMobilLeiste
                                 ordnerName="Posteingang"
                                 absender={NACHRICHT.from_name || NACHRICHT.from_address}
-                                onAssistent={() => setChatOffen(true)}
+                                onAssistent={assistent.zeigen}
                                 onAdressbuch={() => undefined}
                                 onAktualisieren={() => undefined}
                             />
@@ -202,11 +241,21 @@ function Fassung({ kennung }: { kennung: string }) {
                         </>
                     }
                     schwebend={<MailboxVerfassenKnopf label="Neue E-Mail" onClick={() => undefined} />}
-                    asideGewaehlt={chatOffen}
+                    asideGewaehlt={assistent.gewaehlt}
                     aside={
                         chatOffen ? (
-                            <MailboxSidePanel title="Postfach-Assistent" onClose={() => setChatOffen(false)}>
-                                <div className="p-4 text-sm">Der Assistent.</div>
+                            <MailboxSidePanel title="Postfach-Assistent" onClose={assistent.verbergen}>
+                                <div className="flex h-full flex-col justify-end p-4 text-sm">
+                                    <div className="flex-1">Der Assistent.</div>
+                                    {/* Der Senden-Knopf unten rechts — genau der, auf dem
+                                        der runde Verfassen-Knopf lag (56 x 26 px Ueberlappung,
+                                        gemessen in CRM und Verwaltung). */}
+                                    <div className="flex justify-end">
+                                        <button type="button" className="rounded-md border px-3 py-2" data-slot="attrappe-senden">
+                                            Senden
+                                        </button>
+                                    </div>
+                                </div>
                             </MailboxSidePanel>
                         ) : undefined
                     }

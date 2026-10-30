@@ -278,7 +278,25 @@ export function MailboxBrowser({
                         </div>
                     )}
 
-                    {schwebend}
+                    {/*
+                        Nicht, solange die Seitenspalte abdeckt (#9134, Befund
+                        aus dem Rollout am 30.10.2026).
+
+                        Gemessen in CRM und Verwaltung: Der runde
+                        Verfassen-Knopf (314, 752, 56x56) lag auf dem
+                        Senden-Knopf des Assistenten (302, 782, 74x38) —
+                        Ueberlappung 56 x 26 px. Wer am Telefon etwas in den
+                        Assistenten tippt, trifft beim Senden den falschen
+                        Knopf.
+
+                        `asideGewaehlt` ist dafuer genau die richtige Frage: Es
+                        ist derselbe Wert, der entscheidet, ob die Spalte
+                        unterhalb von `md` ueberhaupt abdeckt. Oberhalb von
+                        `md` deckt sie nichts ab — dort ist das Schwebende
+                        ohnehin `md:hidden`, also aendert sich am Schreibtisch
+                        nichts.
+                    */}
+                    {!(aside && asideGewaehlt) && schwebend}
                 </div>
             </div>
         </MailboxPaneContext.Provider>

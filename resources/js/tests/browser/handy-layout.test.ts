@@ -92,6 +92,7 @@ interface Messung {
     assistentSichtbar: boolean;
     schubladeSichtbar: boolean;
     kontoInSchublade: boolean;
+    ordnerNamen: string[];
     verfassenSichtbar: boolean;
     aktionenUnten: number | null;
     aktionenHoehe: number;
@@ -207,7 +208,25 @@ beforeAll(async () => {
 
     const fehler: string[] = [];
     seite.on('pageerror', (e) => fehler.push(String(e)));
-    seite.on('console', (n) => n.type() === 'error' && fehler.push(n.text()));
+    seite.on('console', (n) => {
+        if (n.type() !== 'error') return;
+
+        /*
+         * Die eine Meldung, die kein Fehler ist, sondern der Beweis: Der Rumpf
+         * der Mail steht in einem Rahmen mit `img-src data:`, und die Attrappe
+         * schickt absichtlich ein fremdes Bild hinein. Chromium meldet die
+         * abgewiesene Anfrage — genau das soll passieren, und daraufhin
+         * zeichnet das Paket den Hinweis „Externe Bilder wurden blockiert".
+         *
+         * Sie hier durchzulassen waere bequem und falsch: Dann liesse sich der
+         * Riegel „die Attrappe hat Fehler geworfen" mit jeder beliebigen
+         * Meldung aushebeln. Deshalb genau diese eine, an zwei Merkmalen.
+         */
+        const istDerBlockierteBildAbruf =
+            n.text().includes('Content Security Policy') && n.text().includes('img-src');
+
+        if (!istDerBlockierteBildAbruf) fehler.push(n.text());
+    });
 
     await seite.goto(ausgeliefert.adresse, { waitUntil: 'load' });
     await seite.waitForSelector('body[data-gezeichnet="ja"]', { timeout: 15_000 });
@@ -356,6 +375,9 @@ beforeAll(async () => {
                         assistentSichtbar: sichtbar(assistent),
                         schubladeSichtbar: sichtbar(schublade),
                         kontoInSchublade: sichtbar(kasten.querySelector('[data-slot="mailbox-schublade-kopf"]')),
+                        ordnerNamen: [...kasten.querySelectorAll('[data-slot="mail-folder-name"]')]
+                            .map((e) => (e.textContent ?? '').trim())
+                            .filter(Boolean),
                         verfassenSichtbar: sichtbar(kasten.querySelector('[data-slot="mailbox-verfassen-mobil"]')),
                         aktionenUnten:
                             aktionen && aktionen.getBoundingClientRect().height > 0
@@ -446,7 +468,18 @@ describe('Handy-Layout der Mailflaeche', () => {
     });
 
     describe('die Liste ist der Anfang', () => {
-        it('zeigt weder Assistenten noch Ordner — beides war gemeldet', () => {
+        it('zeigt weder Assistenten noch Ordner — auch nicht aus dem Speicher', () => {
+            /*
+             * Die Attrappe legt `attrappe.mailbox.assistent = "true"` in den
+             * Speicher, BEVOR sie zeichnet — so, wie jemand den Assistenten am
+             * Schreibtisch offen laesst. Genau das hat ihn am Telefon ueber die
+             * Liste gelegt (gemessen in CRM und Verwaltung am 30.10.2026:
+             * Assistent 707 px hoch ab y=121, erste Listenzeile bei y=219
+             * dahinter).
+             *
+             * `localStorage` haengt am Browser, nicht am Schirm. Ein dort
+             * abgelegter Wunsch ist deshalb keine Wahl FUER DIESEN Schirm.
+             */
             for (const m of fuer('liste')) {
                 expect(m.assistentSichtbar, `der Assistent stand bei ${m.breite} px offen`).toBe(false);
                 expect(m.schubladeSichtbar, `die Ordner standen bei ${m.breite} px offen`).toBe(false);
@@ -465,6 +498,27 @@ describe('Handy-Layout der Mailflaeche', () => {
                 expect(m.kontoInSchublade, `die Kontoauswahl fehlte bei ${m.breite} px`).toBe(true);
             }
         });
+
+        it('nennt die Standardordner deutsch, egal wie der Server sie nennt', () => {
+            /*
+             * Die Attrappe fuehrt Exchange-Namen (`INBOX`, `Sent Items`,
+             * `Entw&APw-rfe`, `Junk E-Mail`, `Gelöschte Elemente`). Die
+             * Verwaltung zeigte am Telefon woertlich „INBOX" (#9134).
+             *
+             * `Archiv 2024` steht absichtlich daneben: Ein eigener Ordner darf
+             * NICHT zu „Archiv" werden, nur weil sein Name so anfaengt.
+             */
+            for (const m of fuer('schublade')) {
+                expect(m.ordnerNamen, `bei ${m.breite} px`).toEqual([
+                    'Posteingang',
+                    'Entwürfe',
+                    'Gesendet',
+                    'Spam',
+                    'Papierkorb',
+                    'Archiv 2024',
+                ]);
+            }
+        });
     });
 
     describe('die geoeffnete Mail', () => {
@@ -480,10 +534,18 @@ describe('Handy-Layout der Mailflaeche', () => {
              * Vorher fing er bei rund 750 von 844 px an — drei Baender und eine
              * aufgeklappte Werkzeugleiste standen davor.
              *
-             * 320 px ist nicht gegriffen, sondern aufaddiert aus dem, was oben
+             * 380 px ist nicht gegriffen, sondern aufaddiert aus dem, was oben
              * stehen DARF: schmale Leiste 57, Werkzeuge zugeklappt 57,
              * Polsterung 32, Betreff bis drei Zeilen 84, Kopfdaten zugeklappt
-             * 40, Abstaende und Trennlinien 24 — zusammen 294, gemessen 311.
+             * 40, Abstaende und Trennlinien 24, und der Hinweis „Externe
+             * Bilder wurden blockiert" 58 — zusammen 352, gemessen 369.
+             *
+             * Der Hinweis kam erst am 30.10.2026 in die Rechnung: Die erste
+             * Fassung der Attrappe fuehrte nur `body_text`, und eine Mail ohne
+             * HTML hat keine fremden Bilder. Mit ihm sind es 58 px mehr — der
+             * groesste einzelne Posten ueber dem Text und der naechste, an dem
+             * sich etwas holen liesse. Ein Fehler ist er nicht: Er sagt, was
+             * das Paket gerade NICHT geladen hat.
              *
              * Wer eine Zeile dazustellt, faellt auf. Wer den Betreff kuerzt,
              * um hier durchzukommen, hat den gemeldeten Fehler
@@ -492,7 +554,7 @@ describe('Handy-Layout der Mailflaeche', () => {
              */
             for (const m of fuer('lesen')) {
                 expect(m.textAb, `bei ${m.breite} px fehlte der Rumpf`).not.toBeNull();
-                expect(m.textAb ?? 999, `bei ${m.breite} px fing der Mailtext erst bei ${m.textAb} px an`).toBeLessThanOrEqual(320);
+                expect(m.textAb ?? 999, `bei ${m.breite} px fing der Mailtext erst bei ${m.textAb} px an`).toBeLessThanOrEqual(380);
             }
         });
 
@@ -523,6 +585,22 @@ describe('Handy-Layout der Mailflaeche', () => {
     describe('der Assistent', () => {
         it('deckt nach dem Antippen den ganzen Bildschirm', () => {
             for (const m of fuer('assistent')) expect(m.assistentSichtbar, `bei ${m.breite} px`).toBe(true);
+        });
+
+        it('nimmt den schwebenden Verfassen-Knopf mit sich — er lag auf „Senden"', () => {
+            /*
+             * Gemessen in CRM und Verwaltung am 30.10.2026: Verfassen-Knopf
+             * (314, 752, 56x56) auf dem Senden-Knopf des Assistenten
+             * (302, 782, 74x38), Ueberlappung 56 x 26 px. Wer etwas tippt und
+             * senden will, trifft den falschen Knopf.
+             *
+             * Die paarweise Ueberlappungspruefung allein haette das NICHT
+             * gemeldet: Sie laesst aus, was hinter einer deckenden Flaeche
+             * liegt — und der Verfassen-Knopf lag DAVOR.
+             */
+            for (const m of fuer('assistent')) {
+                expect(m.verfassenSichtbar, `bei ${m.breite} px schwebte der Verfassen-Knopf ueber dem Assistenten`).toBe(false);
+            }
         });
     });
 });

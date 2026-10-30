@@ -49,6 +49,17 @@ export function useMailboxSidePanel(
      * Gefunden hat das nicht die Messung, sondern ein Screenshot: Die
      * DOM-Werte sagten „Liste sichtbar, 386 px, kein Ueberlauf", und jede Zahl
      * davon stimmte. Sie war nur zugedeckt.
+     *
+     * ## Und dieselbe Frage ein zweites Mal, am 30.10.2026
+     *
+     * Die Unterscheidung war richtig und die Grenze an der falschen Stelle:
+     * Ein Wert aus `localStorage` zaehlte als Wahl. `localStorage` haengt am
+     * Browser, nicht am Schirm — wer den Assistenten am Schreibtisch offen
+     * laesst, bekam ihn am Telefon ueber der Liste. Siehe die Begruendung
+     * unten im Effekt.
+     *
+     * `gewaehlt` heisst deshalb: auf DIESER Seite geholt. Nicht: irgendwann
+     * einmal geholt.
      */
     const [gewaehlt, setGewaehlt] = useState(false);
 
@@ -58,7 +69,29 @@ export function useMailboxSidePanel(
 
             if (gespeichert !== null) {
                 setSichtbar(gespeichert === 'true');
-                setGewaehlt(true);
+                /*
+                 * KEIN `setGewaehlt(true)` — und das ist der Befund vom
+                 * 30.10.2026 aus dem Rollout von v0.187.0 (#9134).
+                 *
+                 * Hier stand es, und es war naheliegend: Wer den Assistenten
+                 * einmal geoeffnet hat, hat gewaehlt, und die Wahl steht im
+                 * Speicher. Nur ist `localStorage` an den BROWSER gebunden und
+                 * nicht an den Schirm — und derselbe Mensch sitzt mal am
+                 * 1440er und mal am Telefon.
+                 *
+                 * Gemessen in CRM und Verwaltung am lebenden Element: Der am
+                 * Schreibtisch offen gelassene Assistent (der Normalfall) lag
+                 * am Telefon ueber der Mailliste, 707 px hoch ab y=121; die
+                 * erste Listenzeile stand bei y=219 dahinter. Genau das, was
+                 * am 29.10. schon einmal behoben wurde — nur kam es diesmal
+                 * nicht aus der Vorgabe, sondern aus dem Speicher.
+                 *
+                 * `gewaehlt` beantwortet deshalb ab jetzt eine engere Frage:
+                 * „Hat jemand den Assistenten AUF DIESER SEITE geholt?" Nur
+                 * dann darf er auf einem schmalen Schirm etwas verdecken. Am
+                 * Schreibtisch aendert das nichts: Dort haengt die Sichtbarkeit
+                 * an `sichtbar`, und die kommt weiter aus dem Speicher.
+                 */
             }
         } catch {
             // Private window or storage denied — then the default stands.

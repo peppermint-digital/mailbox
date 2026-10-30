@@ -100,7 +100,7 @@ describe('useMailboxSidePanel', () => {
         unmount();
     });
 
-    it('ist eine Wahl, sobald jemand schaltet — und bleibt es nach dem Neuladen', () => {
+    it('ist eine Wahl, sobald jemand schaltet', () => {
         const erster = mount('gewaehlt-test');
         act(() => erster.ref.current.verbergen());
         expect(erster.ref.current.gewaehlt).toBe(true);
@@ -108,11 +108,51 @@ describe('useMailboxSidePanel', () => {
         expect(erster.ref.current.gewaehlt).toBe(true);
         expect(erster.ref.current.sichtbar).toBe(true);
         erster.unmount();
+    });
 
-        // Nach dem Neuladen: offen UND gewaehlt — ab hier darf es abdecken.
-        const zweiter = mount('gewaehlt-test');
-        expect(zweiter.ref.current.sichtbar).toBe(true);
-        expect(zweiter.ref.current.gewaehlt).toBe(true);
+    it('ist nach dem Neuladen KEINE Wahl mehr — der Speicher haengt am Browser, nicht am Schirm', () => {
+        /*
+         * Hier stand bis zum 30.10.2026 das Gegenteil: „Nach dem Neuladen:
+         * offen UND gewaehlt — ab hier darf es abdecken." Das klang richtig
+         * und war es nicht.
+         *
+         * Gemessen beim Rollout von v0.187.0 in CRM und Verwaltung, am
+         * lebenden Element: Der am Schreibtisch offen gelassene Assistent (der
+         * Normalfall, `…mailbox.assistent = "true"`) lag auf dem Telefon ueber
+         * der Mailliste — 707 px hoch ab y=121, die erste Listenzeile bei
+         * y=219 dahinter. Dazu lag der schwebende Verfassen-Knopf auf dem
+         * Senden-Knopf des Assistenten.
+         *
+         * `localStorage` ist an den BROWSER gebunden, nicht an den Schirm, und
+         * derselbe Mensch sitzt mal am 1440er und mal am Telefon. Ein dort
+         * abgelegter Wunsch ist deshalb kein „ich will das JETZT HIER sehen".
+         *
+         * `gewaehlt` beantwortet seitdem die engere Frage: Hat jemand das
+         * Panel AUF DIESER SEITE geholt? Nur dann darf es auf einem schmalen
+         * Schirm etwas verdecken.
+         *
+         * `sichtbar` kommt weiter aus dem Speicher — am Schreibtisch aendert
+         * sich nichts, und genau das prueft die zweite Zusicherung hier.
+         */
+        const erster = mount('neulade-test');
+        act(() => erster.ref.current.zeigen());
+        erster.unmount();
+
+        const zweiter = mount('neulade-test');
+        expect(zweiter.ref.current.sichtbar, 'am Schreibtisch steht er weiter offen').toBe(true);
+        expect(zweiter.ref.current.gewaehlt, 'aber als Wahl fuer DIESEN Schirm gilt er nicht').toBe(false);
+        zweiter.unmount();
+    });
+
+    it('merkt sich auch das Schliessen — und das bleibt es nach dem Neuladen', () => {
+        // Die Gegenrichtung, damit die Aenderung oben nicht versehentlich das
+        // Merken selbst abschafft: Wer zumacht, findet es zu wieder.
+        const erster = mount('zu-test');
+        act(() => erster.ref.current.verbergen());
+        erster.unmount();
+
+        const zweiter = mount('zu-test');
+        expect(zweiter.ref.current.sichtbar).toBe(false);
         zweiter.unmount();
     });
 
