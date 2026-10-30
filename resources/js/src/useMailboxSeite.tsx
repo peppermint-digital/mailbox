@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { runBulkAcrossFolders } from './bulk';
 import { germanLabels } from './germanLabels';
 import { httpMailboxSources, type MailboxRoutes } from './httpSources';
@@ -272,6 +272,14 @@ export interface MailboxSeiteOptionen {
      */
     eigeneAdresse?: string | null;
     /**
+     * Die rohe Antwort einer gelungenen Suche (A9, #9116).
+     *
+     * Fuer Felder, die nur EIN Produkt mitschickt — der Manager etwa
+     * `index_status`. Ohne diesen Weg musste er eine eigene Suchquelle
+     * schreiben, 96 Zeilen, nur um ein Feld nicht wegzuwerfen.
+     */
+    onSuchAntwort?: (roh: Record<string, unknown>) => void;
+    /**
      * Welches Postfach beim ersten Zeichnen offen ist — in aller Regel das aus
      * `?account=` der Adresse.
      *
@@ -300,6 +308,7 @@ export function useMailboxSeite({
     onSuchen,
     routen,
     eigeneAdresse = null,
+    onSuchAntwort,
     anfangsKonto = null,
 }: MailboxSeiteOptionen) {
     const texte = { ...MAILBOX_SEITE_TEXTE, ...labels };
@@ -395,10 +404,29 @@ export function useMailboxSeite({
      */
     const kennung = useAktuelleKennung(konto);
 
+    /*
+     * Der Rueckruf in einer Referenz, nicht in den Abhaengigkeiten.
+     *
+     * In die Abhaengigkeiten gehoerte er nicht: Ein Produkt gibt ihn als
+     * Funktionsausdruck mit, die Identitaet wechselt also bei jedem Zeichnen,
+     * und die Quellen wuerden jedes Mal neu gebaut — sie haengen am Takt der
+     * Liste. Ihn wegzulassen hiesse umgekehrt, die erste Fassung fuer immer
+     * festzuhalten.
+     *
+     * Die Referenz loest beides, und sie ist hier zulaessig: Gelesen wird sie
+     * erst, wenn jemand sucht — lange nach dem Festschreiben.
+     */
+    const suchAntwortRef = useRef(onSuchAntwort);
+
+    useEffect(() => {
+        suchAntwortRef.current = onSuchAntwort;
+    });
+
     const quellen = useMemo(
         () =>
             httpMailboxSources<RowMessage, Record<string, never>>({
                 accountId: kennung,
+                onSuchAntwort: (roh) => suchAntwortRef.current?.(roh),
                 routes: {
                     // Die eigenen des Produkts liegen UEBER diesen, siehe `routen`.
                     ...routen,

@@ -96,6 +96,7 @@ function Probe({
     onSuchen,
     routen,
     eigeneAdresse,
+    onSuchAntwort,
     anfangsKonto,
 }: {
     melden: (text: string, gelungen: boolean) => void;
@@ -106,6 +107,7 @@ function Probe({
     onSuchen?: () => void;
     routen?: Parameters<typeof useMailboxSeite>[0]['routen'];
     eigeneAdresse?: Parameters<typeof useMailboxSeite>[0]['eigeneAdresse'];
+    onSuchAntwort?: Parameters<typeof useMailboxSeite>[0]['onSuchAntwort'];
     anfangsKonto?: Parameters<typeof useMailboxSeite>[0]['anfangsKonto'];
 }) {
     const seite = useMailboxSeite({
@@ -122,6 +124,7 @@ function Probe({
         ...(onSuchen === undefined ? {} : { onSuchen }),
         ...(routen === undefined ? {} : { routen }),
         ...(eigeneAdresse === undefined ? {} : { eigeneAdresse }),
+        ...(onSuchAntwort === undefined ? {} : { onSuchAntwort }),
         ...(anfangsKonto === undefined ? {} : { anfangsKonto }),
     });
 
@@ -1159,6 +1162,68 @@ describe('die Wiedervorlage wieder aufheben (A7, #9116)', () => {
         const schreibend = fetchStub.mock.calls.filter((c) => (c[1] as { method?: string } | undefined)?.method !== undefined);
 
         expect(schreibend).toHaveLength(0);
+        unmount();
+    });
+});
+
+describe('die rohe Antwort einer Suche (A9, #9116)', () => {
+    /**
+     * Der Vertrag der Suche nennt nur, was alle vier Produkte brauchen. Der
+     * Manager schickt zusaetzlich `index_status` mit — den Stand seines
+     * Kopfzeilen-Verzeichnisses. Dafuer schrieb er eine eigene Suchquelle:
+     * 96 Zeilen, nur um ein Feld nicht wegzuwerfen.
+     */
+    it('reicht Felder heraus, die nur ein Produkt mitschickt', async () => {
+        const { fetchStub } = gegenstelle({
+            search: {
+                success: true,
+                messages: [],
+                total: 0,
+                index_status: { entries: 1234, folders: 12, minutes_ago: 5, stale: false, oldest_date: null },
+            },
+        });
+        vi.stubGlobal('fetch', fetchStub);
+
+        const gesehen: Record<string, unknown>[] = [];
+
+        const { unmount } = render(<Probe melden={() => {}} onSuchAntwort={(roh) => gesehen.push(roh)} />);
+
+        await vi.waitFor(() => expect(zuletzt.konto).not.toBeNull());
+        await suchen('rechnung');
+
+        expect(gesehen).toHaveLength(1);
+        expect((gesehen[0]?.index_status as { entries?: number })?.entries).toBe(1234);
+
+        unmount();
+    });
+
+    it('haelt nicht die erste Fassung des Rueckrufs fest', async () => {
+        /*
+         * Der Rueckruf kommt als Funktionsausdruck herein, seine Identitaet
+         * wechselt also bei jedem Zeichnen. Stuende er in den Abhaengigkeiten
+         * der Quellen, wuerden die jedes Mal neu gebaut; stuende er nirgends,
+         * gaelte fuer immer die erste Fassung. Deshalb liegt er in einer
+         * Referenz — und das prueft dieser Test.
+         */
+        const { fetchStub } = gegenstelle({ search: { success: true, messages: [], total: 0, marke: 'erste' } });
+        vi.stubGlobal('fetch', fetchStub);
+
+        const ersteFassung = vi.fn();
+        const zweiteFassung = vi.fn();
+
+        const { rerender, unmount } = render(<Probe melden={() => {}} onSuchAntwort={ersteFassung} />);
+
+        await vi.waitFor(() => expect(zuletzt.konto).not.toBeNull());
+
+        await act(async () => {
+            rerender(<Probe melden={() => {}} onSuchAntwort={zweiteFassung} />);
+        });
+
+        await suchen('rechnung');
+
+        expect(zweiteFassung, 'die Suche rief noch die Fassung von vorhin').toHaveBeenCalled();
+        expect(ersteFassung).not.toHaveBeenCalled();
+
         unmount();
     });
 });

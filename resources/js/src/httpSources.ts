@@ -56,6 +56,19 @@ export interface HttpMailboxSourcesOptions {
     routes: MailboxRoutes;
     /** The account being viewed. A function, because it changes as the user switches. */
     accountId: () => number | string;
+    /**
+     * Die ROHE Antwort einer gelungenen Suche (A9, #9116).
+     *
+     * Der Vertrag oben nennt nur, was alle vier Produkte brauchen. Ein
+     * einzelnes Produkt kann mehr mitschicken — der Projekt-Manager etwa
+     * `index_status`, den Stand seines Kopfzeilen-Verzeichnisses.
+     *
+     * Dafuer eine eigene Suchquelle zu schreiben, war der teure Weg: 96 Zeilen
+     * im Produkt, nur um ein Feld nicht wegzuwerfen. Hier kommt es heraus,
+     * ohne den Vertrag mit einem Feld zu belasten, das drei von vier nie
+     * fuellen.
+     */
+    onSuchAntwort?: (roh: Record<string, unknown>) => void;
     /** Injectable for tests and for products with their own client. */
     fetch?: typeof globalThis.fetch;
 }
@@ -74,6 +87,7 @@ export function httpMailboxSources<M extends RowMessage, D>({
     routes,
     accountId,
     fetch: injected,
+    onSuchAntwort,
 }: HttpMailboxSourcesOptions): HttpMailboxSources<M, D> {
     const doFetch = injected ?? ((...args: Parameters<typeof globalThis.fetch>) => globalThis.fetch(...args));
 
@@ -165,6 +179,8 @@ export function httpMailboxSources<M extends RowMessage, D>({
                               // geworfener fetch ist gar keine.
                               return { messages: [], total: 0, failure: daten.message as string | undefined };
                           }
+
+                          onSuchAntwort?.(daten as Record<string, unknown>);
 
                           return {
                               messages: (daten.messages ?? []) as M[],
