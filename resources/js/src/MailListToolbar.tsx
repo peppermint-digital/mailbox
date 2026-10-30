@@ -15,6 +15,7 @@ import {
     Trash2,
     TriangleAlert,
     X,
+    UserCheck,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { MailFolder } from './MailFolderList';
@@ -83,6 +84,9 @@ export interface MailListToolbarLabels {
     /** Heading when filters alone produced the hits and no words were typed. */
     searchResultsFiltered: string;
     back: string;
+    /** Der Schalter „nur mir zugewiesene" — und sein Gegenwort. */
+    mineOnly: string;
+    allMail: string;
     groupByThread: string;
     /** Why grouping is unavailable while search hits are shown. */
     groupDisabledInSearch: string;
@@ -156,6 +160,16 @@ export interface MailListToolbarProps {
     grouped?: boolean;
     onToggleGrouped?: () => void;
 
+    /**
+     * Nur die Mails zeigen, fuer die ich zustaendig bin (A3, #9116).
+     *
+     * Erscheint nur, wenn `onToggleMine` da ist — und das ist es nur, wenn das
+     * Produkt gesagt hat, WER „ich" ist. Ein Schalter ohne diese Angabe
+     * koennte nicht entscheiden und waere ein Knopf, der nichts tut.
+     */
+    mineOnly?: boolean;
+    onToggleMine?: () => void;
+
     /** The ticked rows. Without any, the bulk bar does not appear. */
     selected?: ReadonlySet<MessageHandle>;
     /** Messages the action would really touch — larger than `selected` for threads. */
@@ -196,6 +210,8 @@ export function MailListToolbar({
     hint = null,
     onPage,
     grouped = false,
+    mineOnly = false,
+    onToggleMine,
     onToggleGrouped,
     selected,
     affected,
@@ -370,6 +386,18 @@ export function MailListToolbar({
 
             <div className="flex items-center justify-between border-b p-2 text-sm text-muted-foreground">
                 <div className="flex items-center gap-1">
+                    {onToggleMine && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className={`h-6 w-6 ${mineOnly ? 'bg-muted text-foreground' : ''}`}
+                            title={mineOnly ? labels.allMail : labels.mineOnly}
+                            aria-label={labels.mineOnly}
+                            onClick={onToggleMine}
+                        >
+                            <UserCheck className="h-4 w-4" />
+                        </Button>
+                    )}
                     {onToggleGrouped && (
                         <Button
                             variant="ghost"

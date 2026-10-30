@@ -175,6 +175,8 @@ const toolbar: MailListToolbarLabels = {
     searchResultsFor: (q) => `Suchergebnisse für "${q}"`,
     searchResultsFiltered: 'Suchergebnisse (Filter)',
     back: 'Zurück',
+    mineOnly: 'Nur mir zugewiesene zeigen',
+    allMail: 'Alle E-Mails zeigen',
     groupByThread: 'Nach Konversation gruppieren',
     groupDisabledInSearch:
         'Suchtreffer werden einzeln gezeigt — sie stammen aus verschiedenen Ordnern und lassen sich nicht zu Konversationen bündeln',

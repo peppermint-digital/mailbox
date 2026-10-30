@@ -96,7 +96,7 @@ function Probe({
     onHilfe,
     onSuchen,
     routen,
-    zeilenFilter,
+    eigeneAdresse,
     anfangsKonto,
 }: {
     melden: (text: string, gelungen: boolean) => void;
@@ -107,7 +107,7 @@ function Probe({
     onHilfe?: () => void;
     onSuchen?: () => void;
     routen?: Parameters<typeof useMailboxSeite>[0]['routen'];
-    zeilenFilter?: Parameters<typeof useMailboxSeite>[0]['zeilenFilter'];
+    eigeneAdresse?: Parameters<typeof useMailboxSeite>[0]['eigeneAdresse'];
     anfangsKonto?: Parameters<typeof useMailboxSeite>[0]['anfangsKonto'];
 }) {
     const seite = useMailboxSeite({
@@ -124,7 +124,7 @@ function Probe({
         ...(onHilfe === undefined ? {} : { onHilfe }),
         ...(onSuchen === undefined ? {} : { onSuchen }),
         ...(routen === undefined ? {} : { routen }),
-        ...(zeilenFilter === undefined ? {} : { zeilenFilter }),
+        ...(eigeneAdresse === undefined ? {} : { eigeneAdresse }),
         ...(anfangsKonto === undefined ? {} : { anfangsKonto }),
     });
 
@@ -182,7 +182,7 @@ describe('der Haken füllt, was er verspricht', () => {
         unmount();
     });
 
-    it('gibt alle 46 Werte heraus — und keinen als undefined', async () => {
+    it('gibt alle 49 Werte heraus — und keinen als undefined', async () => {
         /*
          * Der Wächter gegen den Fehler, den dieser Umbau am leichtesten macht:
          * einen Namen in der Rückgabe zu vergessen. TypeScript fängt das an
@@ -208,6 +208,11 @@ describe('der Haken füllt, was er verspricht', () => {
             // konnte das Paket es laengst, einzeln nicht — jedes Produkt
             // haette es selbst bauen muessen, und der Manager hatte es auch.
             'offeneVerschieben',
+            // A3 (#9116): „nur mir zugewiesene" — Zustand, Moeglichkeit und
+            // Schalter. Vorher baute das jedes Produkt selbst.
+            'nurEigene',
+            'nurEigeneMoeglich',
+            'nurEigeneUmschalten',
             'amGeoeffneten', 'antwortAnAlle', 'antwortOffen', 'antwortSenden', 'archivKennungen',
             'assistent', 'auswahl', 'beschaeftigt', 'chatQuelle', 'csrf', 'fehler', 'filterOffen',
             'konto', 'liste', 'melden', 'nachrichtBeschaeftigt', 'offene', 'offeneKennung', 'ordner',
@@ -596,30 +601,106 @@ describe('der Haken füllt, was er verspricht', () => {
         unmount();
     });
 
-    it('überspringt Zeilen, die der Filter des Produkts ablehnt (#9116)', async () => {
+    it('zeigt nur die Mails, fuer die ich zustaendig bin (A3, #9116)', async () => {
         /*
-         * Der Manager filtert auf die eigenen Zustaendigkeiten — Wissen, das
-         * nur er hat. Ohne diesen Platz waere der Schalter nach dem Umstieg
-         * ohne Wirkung gewesen: umlegbar, aber wirkungslos.
+         * Hier stand bis zum 30.10.2026 ein Test fuer `zeilenFilter` — einen
+         * Platz, an dem jedes Produkt seinen eigenen Filter hereinreichte.
+         * Mit A3 fuehrt das Paket den Schalter selbst; der Platz ist weg.
+         *
+         * Verglichen wird ueber die ADRESSE. Eine Zustaendigkeit kann fuer
+         * jemanden stehen, den dieses System nicht kennt — dann ist `user_id`
+         * null und nur `email` traegt. Und sie ist dieselbe ueber alle vier
+         * Systeme, eine oertliche Nummer waere es nicht.
          */
-        const { fetchStub } = gegenstelle();
+        const { fetchStub } = gegenstelle({
+            assignments: {
+                assignments: [
+                    { message_id: '<fremd@x>', thread_id: null, user_id: 9, email: 'wer.anders@example.test', name: 'Wer Anders', initials: 'WA' },
+                ],
+                reachable: true,
+            },
+        });
         vi.stubGlobal('fetch', fetchStub);
 
-        const { unmount } = render(<Probe melden={() => {}} zeilenFilter={() => false} />);
+        const { unmount } = render(<Probe melden={() => {}} eigeneAdresse="ich@example.test" />);
 
         /*
          * ERST warten, bis die Liste wirklich etwas hat — sonst ist dieser
          * Test wertlos: Null Zeilen stimmen auch vor dem Laden, und dann ist
-         * er gruen, ob der Filter verdrahtet ist oder nicht.
-         *
-         * Genau das ist passiert. Aufgefallen ist es nicht beim Schreiben,
-         * sondern an der Mutationsprobe: Den Filter zu entfernen liess alle
-         * zwanzig Tests gruen.
+         * er gruen, ob der Filter verdrahtet ist oder nicht. Genau das ist
+         * beim ersten Anlauf passiert und erst an der Mutationsprobe
+         * aufgefallen.
          */
         await vi.waitFor(() => expect((zuletzt.liste as { messages: unknown[] }).messages.length).toBe(1));
+        expect((zuletzt.zeilen as unknown[]).length).toBe(1);
 
+        await act(async () => {
+            (zuletzt.nurEigeneUmschalten as () => void)();
+        });
+
+        // Die eine Nachricht ist jemand anderem zugewiesen, also bleibt nichts.
         expect((zuletzt.zeilen as unknown[]).length).toBe(0);
 
+        unmount();
+    });
+
+    it('zaehlt eine Mail als meine, wenn die ADRESSE passt — auch ohne oertliche Nummer', async () => {
+        const { fetchStub } = gegenstelle({
+            assignments: {
+                assignments: [
+                    // `user_id: null` ist ein echter Fall: Die Zustaendigkeit
+                    // liegt in der Mitte und steht fuer jemanden, den DIESES
+                    // System nicht kennt. Ueber die Nummer waere sie nicht
+                    // meine — ueber die Adresse ist sie es.
+                    { message_id: '<a@b>', thread_id: null, user_id: null, email: 'ich@example.test', name: 'Ich', initials: 'I' },
+                ],
+                reachable: true,
+            },
+            messages: {
+                success: true,
+                messages: [
+                    {
+                        uid: 7,
+                        message_id: '<a@b>',
+                        subject: 'Anfrage zum Ferienpass',
+                        from_address: 'anna@example.test',
+                        from_name: 'Anna Meier',
+                        date: '2026-10-20T08:00:00+02:00',
+                        seen: true,
+                        flagged: false,
+                        preview: '',
+                        has_attachments: false,
+                        attachment_count: 0,
+                    },
+                ],
+                total: 1,
+            },
+        });
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} eigeneAdresse="ich@example.test" />);
+
+        await vi.waitFor(() => expect((zuletzt.liste as { messages: unknown[] }).messages.length).toBe(1));
+
+        await act(async () => {
+            (zuletzt.nurEigeneUmschalten as () => void)();
+        });
+
+        expect((zuletzt.zeilen as unknown[]).length).toBe(1);
+        unmount();
+    });
+
+    it('bietet den Schalter nicht an, wenn niemand gesagt hat, wer ich bin', async () => {
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} />);
+
+        await vi.waitFor(() => expect(zuletzt.konto).not.toBeNull());
+
+        // Ein Schalter, der nicht entscheiden kann, waere ein Knopf, der
+        // nichts tut.
+        expect(zuletzt.nurEigeneMoeglich).toBe(false);
         unmount();
     });
 
@@ -786,86 +867,47 @@ describe('eigene Quellen als Fabrik (#9116)', () => {
     });
 });
 
-describe('der Zeilenfilter des Produkts (#9116)', () => {
+describe('der Schalter „nur mir zugewiesene" rechnet die Liste neu (A3, #9116)', () => {
     /**
-     * Gemessen am 30.10.2026, VOR der Behebung: Der Filter liess sich umlegen
-     * und die Liste blieb, wie sie war — zwei Zeilen vorher, zwei Zeilen
-     * nachher, obwohl er nur eine durchlaesst.
+     * Gemessen am 30.10.2026, als der Filter noch ein Platz fuer das Produkt
+     * war: Er liess sich umlegen und die Liste blieb, wie sie war — zwei
+     * Zeilen vorher, zwei nachher, obwohl er nur eine durchlaesst.
      *
-     * Ursache: `zeilenFilter` stand nicht in den Abhaengigkeiten des Memos,
-     * das die Zeilen baut. Das Memo rechnete also erst neu, wenn sich etwas
-     * ANDERES aenderte — Nachrichten, Ketten, Suchmodus. Der Schalter war
-     * bedienbar und wirkungslos, und genau das wollte der Filter verhindern.
+     * Ursache: Der Filter stand nicht in den Abhaengigkeiten des Memos, das
+     * die Zeilen baut. Das Memo rechnete erst neu, wenn sich etwas ANDERES
+     * aenderte. Der Schalter war bedienbar und wirkungslos.
+     *
+     * Der Platz ist inzwischen weg, der Schalter steckt im Paket — die Falle
+     * bleibt dieselbe, deshalb bleibt der Test.
      */
-    function FilterProbe({ an, beobachten }: { an: boolean; beobachten: (anzahl: number) => void }) {
-        const seite = useMailboxSeite({
-            konten: [{ id: 42, email: 'department@example.test', name: 'Abteilung' }],
-            namensraum: 'test.filter',
-            melden: () => {},
-            zeilenFilter: an ? (nachricht) => nachricht.uid === 7 : undefined,
-        });
-
-        beobachten((seite.zeilen as unknown[]).length);
-
-        return null;
-    }
-
-    it('baut die Zeilen neu, sobald der Filter umgelegt wird', async () => {
+    it('rechnet beim Umlegen neu, nicht erst beim naechsten Laden', async () => {
         const { fetchStub } = gegenstelle({
-            messages: {
-                success: true,
-                messages: [
-                    { uid: 7, message_id: '<a>', subject: 'A', from_address: 'a@b.test', from_name: 'A', date: '', seen: true, flagged: false, preview: '', has_attachments: false, attachment_count: 0 },
-                    { uid: 8, message_id: '<b>', subject: 'B', from_address: 'b@b.test', from_name: 'B', date: '', seen: true, flagged: false, preview: '', has_attachments: false, attachment_count: 0 },
+            assignments: {
+                assignments: [
+                    { message_id: '<a@b>', thread_id: null, user_id: null, email: 'wer.anders@example.test', name: 'Wer Anders', initials: 'WA' },
                 ],
-                total: 2,
+                reachable: true,
             },
         });
         vi.stubGlobal('fetch', fetchStub);
 
-        let anzahl = -1;
-        const beobachten = (n: number) => {
-            anzahl = n;
-        };
+        const { unmount } = render(<Probe melden={() => {}} eigeneAdresse="ich@example.test" />);
 
-        const { rerender, unmount } = render(<FilterProbe an={false} beobachten={beobachten} />);
-
-        await vi.waitFor(() => expect(anzahl).toBe(2));
+        await vi.waitFor(() => expect((zuletzt.zeilen as unknown[]).length).toBe(1));
 
         await act(async () => {
-            rerender(<FilterProbe an beobachten={beobachten} />);
+            (zuletzt.nurEigeneUmschalten as () => void)();
         });
 
-        expect(anzahl, 'der Filter wurde umgelegt und die Zeilen blieben, wie sie waren').toBe(1);
-        unmount();
-    });
+        expect((zuletzt.zeilen as unknown[]).length, 'der Schalter wurde umgelegt und die Zeilen blieben, wie sie waren').toBe(0);
 
-    it('reicht dem Filter die Zustaendigkeit herein', async () => {
-        // Ohne diese Hilfe muesste ein Produkt den Rueckgabewert dieses Hakens
-        // lesen — waehrend er noch laeuft.
-        const { fetchStub } = gegenstelle();
-        vi.stubGlobal('fetch', fetchStub);
+        // Und zurueck: Ein Schalter, der nur in eine Richtung wirkt, ist
+        // genauso kaputt wie einer, der gar nichts tut.
+        await act(async () => {
+            (zuletzt.nurEigeneUmschalten as () => void)();
+        });
 
-        let bekommen: unknown = 'nie gerufen';
-
-        function Probe2() {
-            useMailboxSeite({
-                konten: [{ id: 42, email: 'department@example.test', name: 'Abteilung' }],
-                namensraum: 'test.filter2',
-                melden: () => {},
-                zeilenFilter: (_nachricht, hilfen) => {
-                    bekommen = typeof hilfen?.zuweisung;
-
-                    return true;
-                },
-            });
-
-            return null;
-        }
-
-        const { unmount } = render(<Probe2 />);
-
-        await vi.waitFor(() => expect(bekommen).toBe('function'));
+        expect((zuletzt.zeilen as unknown[]).length).toBe(1);
         unmount();
     });
 });

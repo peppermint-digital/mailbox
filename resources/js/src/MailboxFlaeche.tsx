@@ -262,6 +262,9 @@ export function MailboxFlaeche({
         liste,
         melden,
         nachrichtBeschaeftigt,
+        nurEigene,
+        nurEigeneMoeglich,
+        nurEigeneUmschalten,
         offeneVerschieben,
         offene,
         offeneKennung,
@@ -396,6 +399,13 @@ export function MailboxFlaeche({
                         list={
                             <>
                                 <MailListToolbar
+                                    /*
+                                     * A3 (#9116): Erscheint nur, wenn das Produkt
+                                     * `eigeneAdresse` mitgegeben hat — sonst wuesste der
+                                     * Schalter nicht, was „mir" heisst.
+                                     */
+                                    mineOnly={nurEigene}
+                                    onToggleMine={nurEigeneMoeglich ? nurEigeneUmschalten : undefined}
                                     extras={leisteZusatz}
                                     notice={leisteHinweis}
                                     labels={germanLabels.toolbar}

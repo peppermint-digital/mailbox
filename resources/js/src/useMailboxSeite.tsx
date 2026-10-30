@@ -93,18 +93,6 @@ export const MAILBOX_SEITE_TEXTE: MailboxSeiteTexte = {
  */
 export type QuelleOderFabrik<T> = T | ((kontoId: number | string | null) => T);
 
-/**
- * Was ein Zeilenfilter ausser der Nachricht noch braucht.
- *
- * Gereicht wird es, statt dass der Filter sich selbst bedient: Die
- * Zustaendigkeiten fuehrt dieser Haken, und ein Filter, der sie ueber seinen
- * Rueckgabewert laese, griffe waehrend des Laufs auf eine noch nicht
- * initialisierte Bindung zu.
- */
-export interface ZeilenFilterHilfen {
-    /** Die Zustaendigkeit dieser Nachricht — oder `null`. */
-    zuweisung: (nachricht: RowMessage) => MailAssignment | null;
-}
 
 export interface MailboxSeiteOptionen {
     /** Die Postfaecher, die dieses Produkt diesem Menschen zeigt. */
@@ -266,17 +254,19 @@ export interface MailboxSeiteOptionen {
      */
     routen?: Partial<MailboxRoutes>;
     /**
-     * Zeilen, die die Liste ueberspringt — zusaetzlich zum Schlummern.
+     * Die eigene Adresse — damit „nur mir zugewiesene" entscheiden kann, was
+     * „mir" heisst (A3, #9116).
      *
-     * Der Projekt-Manager hat einen Filter fuer die eigenen Zustaendigkeiten,
-     * und der braucht Wissen, das nur er hat: wem eine Nachricht zugewiesen
-     * ist und wer gerade angemeldet ist.
+     * Die ADRESSE, nicht die oertliche Benutzer-Nummer. Eine Zustaendigkeit
+     * kann fuer jemanden stehen, den dieses System gar nicht kennt; dann ist
+     * `user_id` null und nur `email` traegt. Das Paket schickt sie deshalb
+     * immer mit (`HandlesAssignments::formatAssignment`), und sie ist
+     * dieselbe ueber alle vier Systeme — eine Nummer waere es nicht.
      *
-     * Ohne diesen Platz waere der Filter nach dem Umstieg ohne Wirkung
-     * gewesen — der Schalter haette sich weiter umlegen lassen und nichts
-     * getan.
+     * Ohne Angabe gibt es den Schalter nicht. Ein Schalter, der nicht weiss,
+     * wer „ich" bin, koennte nicht entscheiden.
      */
-    zeilenFilter?: (nachricht: RowMessage, hilfen: ZeilenFilterHilfen) => boolean;
+    eigeneAdresse?: string | null;
     /**
      * Welches Postfach beim ersten Zeichnen offen ist — in aller Regel das aus
      * `?account=` der Adresse.
@@ -306,7 +296,7 @@ export function useMailboxSeite({
     onHilfe,
     onSuchen,
     routen,
-    zeilenFilter,
+    eigeneAdresse = null,
     anfangsKonto = null,
 }: MailboxSeiteOptionen) {
     const texte = { ...MAILBOX_SEITE_TEXTE, ...labels };
@@ -579,9 +569,20 @@ export function useMailboxSeite({
         onFailure: setFehler,
     });
 
+    /*
+     * „Nur mir zugewiesene" (A3). Der Zustand liegt hier und nicht im
+     * Produkt: Sonst baut ihn jedes Produkt neu, und die Filterung selbst
+     * muesste es auch — der Manager hatte dafuer 24 Zeilen, die anderen drei
+     * gar nichts, obwohl alle vier Zustaendigkeiten fuehren.
+     */
+    const [nurEigene, setNurEigene] = useState(false);
+
     const zeilenFilterMitHilfen = useMemo(
-        () => (zeilenFilter ? (nachricht: RowMessage) => zeilenFilter(nachricht, { zuweisung: zuweisungen.fuer }) : undefined),
-        [zeilenFilter, zuweisungen.fuer],
+        () =>
+            nurEigene && eigeneAdresse
+                ? (nachricht: RowMessage) => zuweisungen.fuer(nachricht as never)?.email === eigeneAdresse
+                : undefined,
+        [nurEigene, eigeneAdresse, zuweisungen.fuer],
     );
 
     /* eslint-disable-next-line react-hooks/preserve-manual-memoization -- `zeilen` haengt an einer Kette von Ableitungen, die der Compiler nicht nachvollzieht; ohne das Memo wird die ganze Liste bei jedem Tastendruck neu gebaut. */
@@ -1183,6 +1184,9 @@ export function useMailboxSeite({
         offeneArchivieren,
         offeneLoeschen,
         offeneVerschieben,
+        nurEigene,
+        nurEigeneMoeglich: Boolean(eigeneAdresse),
+        nurEigeneUmschalten: () => setNurEigene((an) => !an),
         antwortAnAlle,
         antwortOffen,
         antwortSenden,
