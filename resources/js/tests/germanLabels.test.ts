@@ -71,7 +71,7 @@ function pruefeWoerter(gruppe: Record<string, unknown>, pfad = ''): void {
 }
 
 describe('germanLabels', () => {
-    it('bringt alle fünfzehn Gruppen mit', () => {
+    it('bringt alle sechzehn Gruppen mit', () => {
         // Faellt eine weg, verliert ein Produkt lautlos seine Woerter und
         // zeigt `undefined` — oder gar nichts.
         //
@@ -86,6 +86,9 @@ describe('germanLabels', () => {
             'editor',
             'folders',
             'header',
+            // A4 (#9116): die Woerter der Tastatur-Hilfe. Sie lag im Manager,
+            // waehrend die Tasten hier gebunden wurden.
+            'kuerzel',
             'list',
             // Seit #1079: die Umschaltung des Rahmens, die es nur auf schmalen
             // Bildschirmen gibt. Als EINZIGE Gruppe auch die Vorgabe des

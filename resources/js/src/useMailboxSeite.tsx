@@ -207,14 +207,6 @@ export interface MailboxSeiteOptionen {
      */
     initialGrouped?: boolean;
     /**
-     * Was `?` tun soll — die Tastaturhilfe des Produkts.
-     *
-     * Das Paket bringt keine mit: Eine Hilfe ist eine Liste von Tasten in
-     * einem Dialog, und der Dialog kommt aus dem UI-Kit des Produkts.
-     * Fehlt die Angabe, tut `?` nichts — wie bisher.
-     */
-    onHilfe?: () => void;
-    /**
      * Was `/` tun soll — ins Suchfeld springen.
      *
      * Auch das bleibt beim Produkt, aber aus einem anderen Grund: Der Haken
@@ -305,7 +297,6 @@ export function useMailboxSeite({
     suchQuelle,
     oeffnenQuelle,
     initialGrouped = false,
-    onHilfe,
     onSuchen,
     routen,
     eigeneAdresse = null,
@@ -588,6 +579,13 @@ export function useMailboxSeite({
      * gar nichts, obwohl alle vier Zustaendigkeiten fuehren.
      */
     const [nurEigene, setNurEigene] = useState(false);
+
+    /*
+     * Die Tastatur-Hilfe (A4). Der Zustand gehoert hierher, weil die Taste
+     * `?` hier gebunden wird — im Produkt waeren Taste und Fenster zwei
+     * Orte fuer eine Sache.
+     */
+    const [hilfeOffen, setHilfeOffen] = useState(false);
 
     const zeilenFilterMitHilfen = useMemo(
         () =>
@@ -1115,7 +1113,7 @@ export function useMailboxSeite({
         onArchive: () => void offeneArchivieren(),
         onDelete: () => void offeneLoeschen(),
         onSearch: onSuchen,
-        onHelp: onHilfe,
+        onHelp: () => setHilfeOffen(true),
         /*
          * Escape raeumt von oben nach unten ab — in der Reihenfolge, in der
          * die Felder aufgegangen sind. Ohne das schliesst ein Escape im
@@ -1196,6 +1194,8 @@ export function useMailboxSeite({
         offeneArchivieren,
         offeneLoeschen,
         offeneVerschieben,
+        hilfeOffen,
+        setHilfeOffen,
         nurEigene,
         nurEigeneMoeglich: Boolean(eigeneAdresse),
         nurEigeneUmschalten: () => setNurEigene((an) => !an),

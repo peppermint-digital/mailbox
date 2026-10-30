@@ -106,6 +106,10 @@ export function useMailboxKeyboard<M extends RowMessage>(optionen: MailboxKeyboa
             // Zeichen beim Browser haengen, ohne dass etwas passiert.
             const mitNachricht = (fn?: () => void) => (o.hasMessage && fn ? fn : undefined);
 
+            // Die Hilfe darunter (`MAILBOX_KUERZEL`) beschreibt GENAU diese
+            // Liste. Wer hier eine Taste ergaenzt, ergaenzt sie dort mit — und
+            // wenn nicht, faellt der Test „jede Taste, die die Hilfe nennt,
+            // tut auch etwas" darueber.
             const taten: Record<string, (() => void) | undefined> = {
                 j: o.onOpen ? () => springe(1) : undefined,
                 k: o.onOpen ? () => springe(-1) : undefined,
@@ -134,3 +138,25 @@ export function useMailboxKeyboard<M extends RowMessage>(optionen: MailboxKeyboa
         return () => window.removeEventListener('keydown', behandle);
     }, []);
 }
+
+/**
+ * Was die Tastatur im Postfach kann — zum Anzeigen.
+ *
+ * Steht in DIESER Datei, weil daneben die Bindungen stehen. Im Manager lag
+ * die Liste bis zum 30.10.2026 im Produkt, waehrend die Tasten hier gebunden
+ * wurden: zwei Orte fuer eine Sache, die zwangslaeufig auseinanderlaufen.
+ * Aufgefallen ist es daran, dass `Entf` gebunden war und in der Hilfe fehlte.
+ */
+export const MAILBOX_KUERZEL: { taste: string; bedeutung: string }[] = [
+    { taste: 'j / k', bedeutung: 'Nächste / vorherige E-Mail' },
+    { taste: 'r', bedeutung: 'Antworten' },
+    { taste: 'a', bedeutung: 'Allen antworten' },
+    { taste: 'f', bedeutung: 'Weiterleiten' },
+    { taste: 'e', bedeutung: 'Archivieren' },
+    { taste: '# / Entf', bedeutung: 'Löschen' },
+    { taste: 'u', bedeutung: 'Gelesen / ungelesen' },
+    { taste: 's', bedeutung: 'Markieren' },
+    { taste: '/', bedeutung: 'Suche öffnen' },
+    { taste: '?', bedeutung: 'Diese Hilfe' },
+    { taste: 'Esc', bedeutung: 'Schließen / abbrechen' },
+];

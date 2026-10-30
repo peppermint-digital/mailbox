@@ -8,6 +8,7 @@ import { MailAssignmentPicker } from './MailAssignmentPicker';
 import { MailboxBrowser } from './MailboxBrowser';
 import { MailboxChat, type MailboxChatProps } from './MailboxChat';
 import { MailboxHeader } from './MailboxHeader';
+import { MailboxKuerzelHilfe } from './MailboxKuerzelHilfe';
 import { MailboxSidePanel, MailboxSidePanelHandle } from './MailboxSidePanel';
 import { Button } from './ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
@@ -249,10 +250,12 @@ export function MailboxFlaeche({
         konto,
         liste,
         melden,
+        hilfeOffen,
         nachrichtBeschaeftigt,
         nurEigene,
         nurEigeneMoeglich,
         nurEigeneUmschalten,
+        setHilfeOffen,
         offeneVerschieben,
         offene,
         offeneKennung,
@@ -749,6 +752,10 @@ export function MailboxFlaeche({
                     </div>
                 )}
             </div>
+
+            {/* A4 (#9116): Die Hilfe zur Taste `?` — gezeichnet, wo die Taste
+                gebunden wird. */}
+            <MailboxKuerzelHilfe offen={hilfeOffen} onOffenChange={setHilfeOffen} />
 
             {nachDerSeite}
         </>

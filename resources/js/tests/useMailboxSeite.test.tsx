@@ -93,7 +93,6 @@ function Probe({
     suchQuelle,
     oeffnenQuelle,
     initialGrouped,
-    onHilfe,
     onSuchen,
     routen,
     eigeneAdresse,
@@ -104,7 +103,6 @@ function Probe({
     suchQuelle?: Parameters<typeof useMailboxSeite>[0]['suchQuelle'];
     oeffnenQuelle?: Parameters<typeof useMailboxSeite>[0]['oeffnenQuelle'];
     initialGrouped?: boolean;
-    onHilfe?: () => void;
     onSuchen?: () => void;
     routen?: Parameters<typeof useMailboxSeite>[0]['routen'];
     eigeneAdresse?: Parameters<typeof useMailboxSeite>[0]['eigeneAdresse'];
@@ -121,7 +119,6 @@ function Probe({
         ...(suchQuelle === undefined ? {} : { suchQuelle }),
         ...(oeffnenQuelle === undefined ? {} : { oeffnenQuelle }),
         ...(initialGrouped === undefined ? {} : { initialGrouped }),
-        ...(onHilfe === undefined ? {} : { onHilfe }),
         ...(onSuchen === undefined ? {} : { onSuchen }),
         ...(routen === undefined ? {} : { routen }),
         ...(eigeneAdresse === undefined ? {} : { eigeneAdresse }),
@@ -182,7 +179,7 @@ describe('der Haken füllt, was er verspricht', () => {
         unmount();
     });
 
-    it('gibt alle 49 Werte heraus — und keinen als undefined', async () => {
+    it('gibt alle 51 Werte heraus — und keinen als undefined', async () => {
         /*
          * Der Wächter gegen den Fehler, den dieser Umbau am leichtesten macht:
          * einen Namen in der Rückgabe zu vergessen. TypeScript fängt das an
@@ -210,6 +207,10 @@ describe('der Haken füllt, was er verspricht', () => {
             'offeneVerschieben',
             // A3 (#9116): „nur mir zugewiesene" — Zustand, Moeglichkeit und
             // Schalter. Vorher baute das jedes Produkt selbst.
+            // A4 (#9116): Die Tastatur-Hilfe gehoert dorthin, wo die Taste
+            // gebunden wird.
+            'hilfeOffen',
+            'setHilfeOffen',
             'nurEigene',
             'nurEigeneMoeglich',
             'nurEigeneUmschalten',
@@ -538,26 +539,30 @@ describe('der Haken füllt, was er verspricht', () => {
             unmount();
         });
 
-        it('gibt ? und / an das Produkt weiter', async () => {
+        it('oeffnet mit ? die Hilfe selbst und gibt / an das Produkt weiter', async () => {
             /*
-             * Beide bleiben beim Produkt, aus zwei verschiedenen Gründen: Eine
-             * Tastaturhilfe ist ein Dialog aus dem UI-Kit des Produkts, und ein
-             * Fokus braucht eine Referenz auf ein echtes Eingabefeld — der
-             * Haken besitzt keinen Knoten.
+             * `?` ging bis zum 30.10.2026 ans Produkt, weil die Hilfe ein
+             * Dialog aus dessen UI-Kit war. Mit A4 (#9116) bringt das Paket
+             * sie mit — Taste und Fenster stehen jetzt beieinander, und die
+             * Liste der Kuerzel neben den Bindungen.
+             *
+             * `/` bleibt beim Produkt: Ein Fokus braucht eine Referenz auf ein
+             * echtes Eingabefeld, und der Haken besitzt keinen Knoten.
              */
             const { fetchStub } = gegenstelle(eineNachricht);
             vi.stubGlobal('fetch', fetchStub);
 
-            const hilfe = vi.fn();
             const suchen = vi.fn();
 
-            const { unmount } = render(<Probe melden={() => {}} onHilfe={hilfe} onSuchen={suchen} />);
+            const { unmount } = render(<Probe melden={() => {}} onSuchen={suchen} />);
             await oeffneEine();
+
+            expect(zuletzt.hilfeOffen).toBe(false);
 
             await taste('?');
             await taste('/');
 
-            expect(hilfe).toHaveBeenCalledTimes(1);
+            expect(zuletzt.hilfeOffen).toBe(true);
             expect(suchen).toHaveBeenCalledTimes(1);
 
             unmount();

@@ -263,6 +263,10 @@ export const germanLabels = {
      * sie eine der Stellen, die sich nur durch das Kopieren unterschieden
      * haetten.
      */
+    kuerzel: {
+        titel: 'Tastatur-Kürzel',
+        untertitel: 'Schneller arbeiten im Postfach.',
+    },
     zuweisung: {
         assign: 'Jemandem zuweisen',
         assignedTo: (name: string) => `Zuständig: ${name}`,

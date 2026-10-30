@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { DisplayRow, RowMessage } from '../src/rows';
-import { useMailboxKeyboard, type MailboxKeyboardOptions } from '../src/useMailboxKeyboard';
+import { MAILBOX_KUERZEL, useMailboxKeyboard, type MailboxKeyboardOptions } from '../src/useMailboxKeyboard';
 import { render } from './support/render';
 
 /**
@@ -190,5 +190,73 @@ describe('useMailboxKeyboard', () => {
 
         expect(gerufen).toEqual(['r', 'a', 'f', 'u', 's', 'del', '/', '?']);
         unmount();
+    });
+});
+
+describe('die Hilfe sagt die Wahrheit (A4, #9116)', () => {
+    /**
+     * `MAILBOX_KUERZEL` steht neben den Bindungen, damit beide zusammen
+     * geaendert werden. Dieser Test prueft, dass sie es auch sind.
+     *
+     * Der Anlass: Im Manager lag die Liste im Produkt, waehrend die Tasten
+     * hier gebunden wurden. `Entf` war gebunden und fehlte in der Hilfe —
+     * niemand haette das je bemerkt, denn eine Hilfe, die etwas verschweigt,
+     * sieht genauso aus wie eine vollstaendige.
+     *
+     * Geprueft wird das VERHALTEN, nicht der Text: Jede Taste, die die Hilfe
+     * nennt, muss etwas ausloesen.
+     */
+    const ausnahmen: Record<string, string> = {
+        Esc: 'Escape schliesst Felder und Masken, nicht den Haken — es wird hier bewusst nicht als Tat gefuehrt.',
+    };
+
+    /**
+     * „j / k" -> ['j','k'], „# / Entf" -> ['#','Delete'].
+     *
+     * Geteilt wird am Trenner MIT Leerzeichen. Ohne das zerfiel die Taste
+     * „/" in zwei leere Stuecke — und der Test meldete, die Suche tue nichts,
+     * obwohl sie es tat.
+     */
+    function tastenVon(beschriftung: string): string[] {
+        return beschriftung
+            .split(' / ')
+            .map((teil) => teil.trim())
+            .map((teil) => (teil === 'Entf' ? 'Delete' : teil));
+    }
+
+    it.each(MAILBOX_KUERZEL.filter(({ taste: t }) => !ausnahmen[t]).map(({ taste: t, bedeutung }) => [t, bedeutung]))(
+        'die Taste %s (%s) loest etwas aus',
+        (beschriftung) => {
+            for (const key of tastenVon(String(beschriftung))) {
+                const gerufen = vi.fn();
+                const { unmount } = haenge({
+                    openedUid: 2,
+                    onOpen: gerufen,
+                    onReply: gerufen,
+                    onReplyAll: gerufen,
+                    onForward: gerufen,
+                    onArchive: gerufen,
+                    onDelete: gerufen,
+                    onToggleSeen: gerufen,
+                    onToggleFlag: gerufen,
+                    onSearch: gerufen,
+                    onHelp: gerufen,
+                });
+
+                taste(key);
+
+                expect(gerufen, `die Hilfe nennt „${key}", aber nichts passiert`).toHaveBeenCalled();
+                unmount();
+            }
+        },
+    );
+
+    it('nennt jede Taste, die wirklich gebunden ist', () => {
+        // Die Gegenrichtung: Eine gebundene Taste, die in der Hilfe fehlt, ist
+        // genau der Fall, der `Entf` jahrelang verschwiegen hat.
+        const genannt = new Set(MAILBOX_KUERZEL.flatMap(({ taste: t }) => tastenVon(t)));
+        const gebunden = ['j', 'k', 'r', 'a', 'f', 'e', 'u', 's', '#', 'Delete', '/', '?'];
+
+        expect(gebunden.filter((key) => !genannt.has(key))).toEqual([]);
     });
 });

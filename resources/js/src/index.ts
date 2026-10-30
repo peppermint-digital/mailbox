@@ -45,6 +45,8 @@ export * from './useMessageSelection';
 export * from './MailboxChat';
 export { default as MailboxChat } from './MailboxChat';
 export * from './mailboxChatSource';
+export * from './MailboxKuerzelHilfe';
+export { default as MailboxKuerzelHilfe } from './MailboxKuerzelHilfe';
 export * from './MailboxSidePanel';
 export { default as MailboxSidePanel } from './MailboxSidePanel';
 export * from './httpSources';
