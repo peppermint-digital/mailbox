@@ -97,6 +97,7 @@ function Probe({
     onSuchen,
     routen,
     zeilenFilter,
+    anfangsKonto,
 }: {
     melden: (text: string, gelungen: boolean) => void;
     basis?: string;
@@ -107,6 +108,7 @@ function Probe({
     onSuchen?: () => void;
     routen?: Parameters<typeof useMailboxSeite>[0]['routen'];
     zeilenFilter?: Parameters<typeof useMailboxSeite>[0]['zeilenFilter'];
+    anfangsKonto?: Parameters<typeof useMailboxSeite>[0]['anfangsKonto'];
 }) {
     const seite = useMailboxSeite({
         konten: [
@@ -123,6 +125,7 @@ function Probe({
         ...(onSuchen === undefined ? {} : { onSuchen }),
         ...(routen === undefined ? {} : { routen }),
         ...(zeilenFilter === undefined ? {} : { zeilenFilter }),
+        ...(anfangsKonto === undefined ? {} : { anfangsKonto }),
     });
 
     zuletzt = seite as unknown as Geprobt;
@@ -859,6 +862,95 @@ describe('der Zeilenfilter des Produkts (#9116)', () => {
         const { unmount } = render(<Probe2 />);
 
         await vi.waitFor(() => expect(bekommen).toBe('function'));
+        unmount();
+    });
+});
+
+describe('welches Postfach beim ersten Zeichnen offen ist (#9116)', () => {
+    /**
+     * Im Manager erzeugt `NotificationService` an drei Stellen Verweise der
+     * Form `/emails?account={id}`, und AI Brain zeigt sie im Posteingang an.
+     * Ohne `anfangsKonto` oeffnete so ein Verweis das erste Postfach statt des
+     * gemeinten — der Klick waere umsonst.
+     */
+    it('oeffnet das Postfach aus der Adresse', async () => {
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { container, unmount } = render(<Probe melden={() => {}} anfangsKonto={43} />);
+
+        await vi.waitFor(() => expect(container.textContent).toContain('zweites@example.test'));
+        unmount();
+    });
+
+    it('nimmt das erste, wenn es die Nummer nicht gibt — und meldet nichts', async () => {
+        // Eine unbekannte Nummer in einer Adresse ist ein alter Verweis, kein
+        // Fehler des Benutzers. Ihn mit einer Stoerung zu begruessen hiesse,
+        // ihm etwas vorzuwerfen, das er nicht getan hat.
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { container, unmount } = render(<Probe melden={() => {}} anfangsKonto={9999} />);
+
+        await vi.waitFor(() => expect(container.textContent).toContain('department@example.test'));
+        expect(zuletzt.fehler).toBeNull();
+        unmount();
+    });
+
+    it('vergleicht Zeichenkette gegen Zahl', async () => {
+        // Aus der Adresse kommt '43', aus den Konten 43 — und '43' === 43 ist
+        // falsch. Ohne diesen Test faellt genau das niemandem auf.
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { container, unmount } = render(<Probe melden={() => {}} anfangsKonto="43" />);
+
+        await vi.waitFor(() => expect(container.textContent).toContain('zweites@example.test'));
+        unmount();
+    });
+});
+
+describe('die Adresse fuehrt das offene Postfach mit (#9116)', () => {
+    it('schreibt es per replaceState zurueck — mit dem vorhandenen Zustand', async () => {
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        /*
+         * Die Adresse zuruecksetzen. jsdom behaelt sie ueber Tests derselben
+         * Datei hinweg, und ein frueherer Test hat schon auf Postfach 43
+         * gewechselt — dann griffe unten die Abkuerzung „steht schon da" und
+         * der Test waere gruen, ohne etwas geprueft zu haben.
+         */
+        const alterZustand = { page: 'inertia-zustand' };
+        window.history.replaceState(alterZustand, '', 'http://localhost:3000/emails');
+
+        const ersetzt = vi.spyOn(window.history, 'replaceState').mockImplementation(() => {});
+        const geschoben = vi.spyOn(window.history, 'pushState').mockImplementation(() => {});
+
+        const { unmount } = render(<Probe melden={() => {}} />);
+
+        await vi.waitFor(() => expect(zuletzt.konto).not.toBeNull());
+
+        await act(async () => {
+            (zuletzt.setKonto as (k: unknown) => void)({ id: 43, email: 'zweites@example.test', name: 'Zweites' });
+        });
+
+        expect(ersetzt).toHaveBeenCalled();
+
+        const [zustand, , adresse] = ersetzt.mock.calls.at(-1) as [unknown, string, string];
+
+        // Der ganze Punkt von Bug #1129: NICHT `{}`. An `history.state` haengt
+        // bei Inertia das ganze Page-Objekt — ein frisches Objekt loescht es,
+        // und der Zurueck-Knopf holt die Seite danach per XHR neu.
+        expect(zustand).toBe(alterZustand);
+        expect(String(adresse)).toContain('account=43');
+
+        // Und kein pushState: Sonst braucht man nach vier Wechseln vier Mal
+        // „zurueck", um dahin zu kommen, wo man herkam.
+        expect(geschoben).not.toHaveBeenCalled();
+
+        ersetzt.mockRestore();
+        geschoben.mockRestore();
         unmount();
     });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { runBulkAcrossFolders } from './bulk';
 import { germanLabels } from './germanLabels';
 import { httpMailboxSources, type MailboxRoutes } from './httpSources';
@@ -277,6 +277,21 @@ export interface MailboxSeiteOptionen {
      * getan.
      */
     zeilenFilter?: (nachricht: RowMessage, hilfen: ZeilenFilterHilfen) => boolean;
+    /**
+     * Welches Postfach beim ersten Zeichnen offen ist — in aller Regel das aus
+     * `?account=` der Adresse.
+     *
+     * Ohne Angabe, oder wenn es dieses Postfach nicht gibt: das erste. Und
+     * zwar ohne Meldung. Eine unbekannte Nummer in einer Adresse ist ein alter
+     * Verweis, kein Fehler des Benutzers; ihn mit einer Stoerung zu begruessen
+     * hiesse, ihm etwas vorzuwerfen, das er nicht getan hat.
+     *
+     * Im Manager erzeugt `NotificationService` solche Verweise an drei
+     * Stellen (`/emails?account={id}`), und AI Brain zeigt sie im Posteingang.
+     * Ohne diese Option oeffnete so ein Verweis das erste Postfach statt des
+     * gemeinten — der Klick waere umsonst.
+     */
+    anfangsKonto?: number | string | null;
 }
 
 export function useMailboxSeite({
@@ -292,10 +307,60 @@ export function useMailboxSeite({
     onSuchen,
     routen,
     zeilenFilter,
+    anfangsKonto = null,
 }: MailboxSeiteOptionen) {
     const texte = { ...MAILBOX_SEITE_TEXTE, ...labels };
 
-    const [konto, setKonto] = useState<MailboxSeiteKonto | null>(konten[0] ?? null);
+    /*
+     * Nur beim ERSTEN Zeichnen gelesen (die Form mit der Funktion). Spaeter
+     * entscheidet der Waehler, und eine Adresse, die sich inzwischen geaendert
+     * hat, darf ihn nicht ueberstimmen.
+     *
+     * Verglichen wird als Zeichenkette: Aus der Adresse kommt sie als solche,
+     * aus den Konten als Zahl, und `'7' === 7` ist falsch.
+     */
+    const [konto, setKontoRoh] = useState<MailboxSeiteKonto | null>(
+        () => konten.find((k) => String(k.id) === String(anfangsKonto)) ?? konten[0] ?? null,
+    );
+
+    /**
+     * Postfach wechseln — und die Adresse mitfuehren.
+     *
+     * `replaceState`, nicht `pushState`: Sonst legt jeder Wechsel einen
+     * Eintrag im Zurueck-Verlauf an, und wer sich durch vier Postfaecher
+     * geklickt hat, braucht vier Mal „zurueck", um dahin zu kommen, wo er
+     * herkam.
+     *
+     * Erstes Argument ist der VORHANDENE Zustand, nicht `{}`. An
+     * `history.state` haengt bei Inertia das ganze Page-Objekt; ein frisches
+     * Objekt loescht es, und der Zurueck-Knopf holt die Seite dann per XHR neu
+     * statt den verlassenen Stand zu zeigen. Das ist Bug #1129 im Manager,
+     * dort dreimal passiert — es soll nicht hier zum vierten Mal entstehen.
+     *
+     * Und alles in `try`: Firefox wirft bei zu vielen Aufrufen
+     * NS_ERROR_ILLEGAL_VALUE. Ein Postfachwechsel, der an der Adresszeile
+     * scheitert, ist trotzdem ein Postfachwechsel.
+     */
+    const setKonto = useCallback((naechstes: MailboxSeiteKonto | null) => {
+        setKontoRoh(naechstes);
+
+        if (typeof window === 'undefined' || !naechstes) {
+            return;
+        }
+
+        try {
+            const adresse = new URL(window.location.href);
+
+            if (adresse.searchParams.get('account') === String(naechstes.id)) {
+                return;
+            }
+
+            adresse.searchParams.set('account', String(naechstes.id));
+            window.history.replaceState(window.history.state, '', adresse.toString());
+        } catch {
+            // Die Adresse ist eine Bequemlichkeit, kein Teil der Arbeit.
+        }
+    }, []);
     const [ordnerPfad, setOrdnerPfad] = useState('INBOX');
     const [fehler, setFehler] = useState<string | null>(null);
 
