@@ -530,33 +530,32 @@ describe('der Postfach-Assistent', () => {
     });
 });
 
-describe('der Zusatz am Postfach-Namen', () => {
+describe('geteilte Postfaecher (A5, #9116)', () => {
     /**
-     * Der Manager unterscheidet ein Gruppenpostfach von einem eigenen durch
-     * einen Globus neben dem Namen. Welches Postfach geteilt ist, weiss nur
-     * das Produkt — `MailboxSeiteKonto` kennt id, email und name, sonst
-     * nichts. `MailboxHeader` konnte das seit jeher (`accountAccessory`), die
-     * Flaeche hat es nur nicht weitergereicht.
+     * Hier stand bis zum 30.10.2026 ein Test fuer `kontoZusatz` — einen
+     * Durchgang, durch den jedes Produkt eine eigene Komponente neben den
+     * Postfach-Namen haengte. Nur der Manager tat das.
      *
-     * Ohne diesen Durchgang verloere der Manager den Globus beim Umstieg auf
-     * die Flaeche (#9116) — eine Unterscheidung, die beim Antworten darueber
-     * entscheidet, ob man einer Person oder einem Team schreibt.
+     * Jetzt ist es eine Eigenschaft des Kontos, und die Flaeche zeichnet. Das
+     * macht den Unterschied aus, um den es geht: ob man einer Person oder
+     * einem Team schreibt — in allen vier Systemen gleich sichtbar.
      */
-    it('reicht den Zusatz an die Kopfzeile durch', () => {
+    it('setzt den Globus neben ein geteiltes Postfach', () => {
         const { container, unmount } = flaeche({
-            kontoZusatz: (konto) => <span data-testid="zusatz">geteilt:{konto.id}</span>,
+            konten: [{ id: 1, email: 'team@example.test', name: 'Team', geteilt: true }],
         });
 
-        expect(container.querySelector('[data-testid="zusatz"]')).not.toBeNull();
+        expect(container.querySelector('[data-slot="mailbox-geteilt"]')).not.toBeNull();
         unmount();
     });
 
-    it('kommt ohne ihn aus', () => {
-        // Die drei anderen Produkte geben keinen mit. Ein Pflichtfeld waere
-        // dort ein Zusatz, der nichts zu sagen hat.
-        const { container, unmount } = flaeche({});
+    it('laesst ein eigenes Postfach unmarkiert', () => {
+        // Die Gegenprobe: Ein Zeichen, das ueberall steht, unterscheidet nichts.
+        const { container, unmount } = flaeche({
+            konten: [{ id: 1, email: 'ich@example.test', name: 'Ich' }],
+        });
 
-        expect(container.querySelector('[data-testid="zusatz"]')).toBeNull();
+        expect(container.querySelector('[data-slot="mailbox-geteilt"]')).toBeNull();
         unmount();
     });
 });

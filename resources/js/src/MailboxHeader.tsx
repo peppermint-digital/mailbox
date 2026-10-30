@@ -44,6 +44,8 @@ export interface MailboxHeaderAccount {
     id: number | string;
     /** What the picker shows. Products decide: label, address, or both. */
     name: string;
+    /** Ein Postfach, in das mehrere Leute sehen (A5, #9116). */
+    geteilt?: boolean;
 }
 
 /**

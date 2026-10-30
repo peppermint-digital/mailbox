@@ -57,6 +57,18 @@ export interface MailboxSeiteKonto {
     id: number;
     email: string;
     name: string;
+    /**
+     * Ein Postfach, in das mehrere Leute sehen (A5, #9116).
+     *
+     * Steht neben dem Namen im Waehler, weil es beim Antworten darueber
+     * entscheidet, ob man einer Person oder einem Team schreibt. Welches
+     * Postfach geteilt ist, weiss nur das Produkt — gezeichnet wird es hier,
+     * damit es in allen vier Systemen gleich aussieht.
+     *
+     * Ohne Angabe: kein Zusatz. Ein Produkt ohne geteilte Postfaecher soll
+     * nichts dazusagen muessen.
+     */
+    geteilt?: boolean;
 }
 
 /** Die Woerter, die dieser Haken selbst braucht. */

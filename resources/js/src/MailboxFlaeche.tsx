@@ -1,5 +1,5 @@
 import { type ComponentType, type ReactNode } from 'react';
-import { FolderInput, FolderOpen, UserCheck } from 'lucide-react';
+import { FolderInput, FolderOpen, Globe, UserCheck } from 'lucide-react';
 import { looksLikeFolder } from './folders';
 import { germanLabels } from './germanLabels';
 import type { InlineAntwortProps } from './InlineAntwort';
@@ -7,7 +7,7 @@ import type { WeiterleitenFeldProps } from './inertia/WeiterleitenFeld';
 import { MailAssignmentPicker } from './MailAssignmentPicker';
 import { MailboxBrowser } from './MailboxBrowser';
 import { MailboxChat, type MailboxChatProps } from './MailboxChat';
-import { MailboxHeader, type MailboxHeaderAccessory } from './MailboxHeader';
+import { MailboxHeader } from './MailboxHeader';
 import { MailboxSidePanel, MailboxSidePanelHandle } from './MailboxSidePanel';
 import { Button } from './ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
@@ -144,17 +144,6 @@ export interface MailboxFlaecheProps {
      * kommt nur, WANN es aufgeht.
      */
     /**
-     * Was neben einem Postfach-Namen im Waehler steht — ein Schloss, ein
-     * Globus, nichts. Welche Postfaecher geteilt sind, weiss nur das Produkt:
-     * `MailboxSeiteKonto` kennt id, email und name, sonst nichts. Ohne diesen
-     * Durchgang verlaere der Manager beim Umstieg auf die Flaeche den Globus,
-     * der ein Gruppenpostfach von einem eigenen unterscheidet (#9116).
-     *
-     * `MailboxHeader` kann das seit jeher (`accountAccessory`) — die Flaeche
-     * hat es nur nicht weitergereicht.
-     */
-    kontoZusatz?: MailboxHeaderAccessory;
-    /**
      * Eigene Knoepfe am rechten Rand der Listenleiste — ein Filter, eine
      * Hilfe, was das Produkt dort braucht. Der Manager haengt dort „nur mir
      * zugewiesene" und die Tastenkuerzel hin (#9116).
@@ -222,7 +211,6 @@ export function MailboxFlaeche({
     weiterleitenFeld: WeiterleitenFeld,
     chatZusatz,
     kettenMoeglich = false,
-    kontoZusatz,
     leisteHinweis,
     leisteZusatz,
     zeilenMenue,
@@ -361,10 +349,24 @@ export function MailboxFlaeche({
                 <MailboxHeader
                     title={titel}
                     labels={germanLabels.header}
-                    accounts={konten.map((k) => ({ id: k.id, name: k.name }))}
+                    accounts={konten.map((k) => ({ id: k.id, name: k.name, geteilt: k.geteilt }))}
+                    /*
+                     * A5 (#9116): Der Globus kommt aus dem Konto selbst, nicht
+                     * mehr als durchgereichte Komponente. Der Manager hatte
+                     * ihn, die anderen drei nicht — dabei haben CRM und
+                     * Verwaltung ebenfalls geteilte Postfaecher.
+                     *
+                     * Die Angabe reist MIT dem Konto, statt sie hier wieder
+                     * nachzuschlagen: Ein Nachschlagen braeuchte einen
+                     * Vergleich von Kennungen, und der waere ein Schutz, den
+                     * keine Mutationsprobe treffen kann — weil beide Listen
+                     * ohnehin dieselben Objekte tragen.
+                     */
+                    accountAccessory={(k) =>
+                        k.geteilt ? <Globe className="h-4 w-4 shrink-0 text-muted-foreground" data-slot="mailbox-geteilt" /> : null
+                    }
                     accountId={konto?.id ?? null}
                     onAccountChange={(wert) => setKonto(konten.find((k) => k.id === Number(wert)) ?? null)}
-                    accountAccessory={kontoZusatz}
                     onAddressBook={() => navigieren(`${basis}/address-book`)}
                     onCompose={() => navigieren(`${basis}/compose`)}
                     onRefresh={
