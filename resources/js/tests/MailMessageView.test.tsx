@@ -210,3 +210,32 @@ describe('MailMessageView', () => {
         unmount();
     });
 });
+
+describe('die Betreff-Spalte auf schmalen Schirmen', () => {
+    /**
+     * Gemessen am 30.10.2026 auf crm.peppermint-digital.com in der
+     * iPhone-14-Emulation (innerWidth 390, DPR 3):
+     *
+     *     h2   x=16  y=487  BREITE 0  HOEHE 196
+     *
+     * Der Betreff brach zeichenweise um, und der Antworten-Knopf sass auf
+     * derselben Hoehe darueber. Ursache: Die linke Spalte trug `min-w-0` ohne
+     * `flex-1` — daneben eine Knopfleiste mit `shrink-0`, darum herum
+     * `justify-between`. Auf 390 px blieb fuer den Betreff nichts uebrig, und
+     * `min-w-0` erlaubte genau das.
+     *
+     * Was dieser Test NICHT kann: jsdom rechnet kein Layout, er misst also
+     * keine Breite. Er haelt den Klassenvertrag fest, damit `flex-1` nicht
+     * wieder verschwindet. Der Nachweis war die Messung oben.
+     */
+    it('darf nicht auf null schrumpfen', () => {
+        const { container, unmount } = render(<MailMessageView {...base} message={message()} />);
+
+        const betreff = container.querySelector('h2');
+        const spalte = betreff?.parentElement;
+
+        expect(spalte?.className).toContain('min-w-0');
+        expect(spalte?.className, 'ohne flex-1 schrumpft die Spalte neben der shrink-0-Leiste auf 0').toContain('flex-1');
+        unmount();
+    });
+});

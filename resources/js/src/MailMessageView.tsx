@@ -166,7 +166,31 @@ export function MailMessageView({
         <div className="flex flex-1 flex-col overflow-hidden" data-slot="mail-message-view">
             <div className="space-y-3 border-b p-4">
                 <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0 space-y-1">
+                    {/*
+                        `flex-1` ist hier nicht Kosmetik, sondern der Unterschied
+                        zwischen lesbar und unlesbar.
+
+                        Hier stand bis zum 30.10.2026 nur `min-w-0`. Daneben
+                        sitzt eine Knopfleiste mit `shrink-0`, und darum herum
+                        `justify-between`. Auf einem Telefon nimmt die Leiste
+                        fast die ganze Breite — und `min-w-0` erlaubt der linken
+                        Spalte, bis auf NULL zu schrumpfen. Genau das tat sie.
+
+                        Gemessen am 30.10.2026 auf crm.peppermint-digital.com,
+                        iPhone-14-Emulation (innerWidth 390, DPR 3):
+
+                            h2   x=16  y=487  BREITE 0  HOEHE 196
+
+                        Der Betreff brach dadurch zeichenweise um
+                        („N / Partneranfrage: / CRUDE / HARZ / (Stiege, …"), und
+                        der Antworten-Knopf sass auf derselben Hoehe darueber.
+
+                        Die Zeile stand seit c73810f (14.09.2026) so da. Nicht
+                        aufgefallen ist sie, weil am Schreibtisch genug Platz
+                        ist und auf dem Telefon vorher gar keine Leseansicht
+                        erreichbar war.
+                    */}
+                    <div className="min-w-0 flex-1 space-y-1">
                         <h2 className="text-lg font-semibold">{message.subject}</h2>
                         {headerAccessory}
                     </div>
