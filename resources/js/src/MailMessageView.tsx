@@ -304,6 +304,28 @@ export function MailMessageView({
                     `break-words` dazu, damit eine lange Adresse umbricht
                     statt auszulaufen — `truncate` waere hier falsch, eine
                     halbe Adresse ist keine.
+
+                    ## Und `sm:col-span-2`, nicht `col-span-2`
+
+                    Das ist der Teil, den eine Zusicherung auf Klassennamen
+                    NICHT gefunden haette, und den erst ein Bild zeigte:
+                    `grid-cols-1` stand da und das Raster war trotzdem
+                    zweispaltig.
+
+                    Gemessen am 30.10.2026 im echten Browser auf 390 px, am
+                    Element mit `grid grid-cols-1 … sm:grid-cols-2`:
+
+                        gridTemplateColumns   „166px 184px"
+
+                    Zwei Spuren, und zwar UNGLEICHE — das ist kein
+                    `grid-cols-2` (das waere zweimal 1fr). Ein Kind mit
+                    `col-span-2` zwingt das Raster, eine zweite Spur ANZULEGEN,
+                    auch wenn die Vorlage nur eine nennt. Die beiden kurzen
+                    Felder darueber rutschen dann nebeneinander hinein.
+
+                    Zur Kontrolle im selben Lauf ein Probe-Element eingehaengt:
+                    `grid grid-cols-1` allein ergab „358px", also eine Spur.
+                    Die Klasse wirkte; das Kind hat sie ueberstimmt.
                 */}
                 <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                     <div className="min-w-0 break-words">
@@ -318,13 +340,13 @@ export function MailMessageView({
                         <span className="ml-2">{formatDateTime(message.date)}</span>
                     </div>
                     {message.to.length > 0 && (
-                        <div className="col-span-2">
+                        <div className="min-w-0 break-words sm:col-span-2">
                             <span className="text-muted-foreground">{labels.to}</span>
                             <span className="ml-2">{formatAddressList(message.to)}</span>
                         </div>
                     )}
                     {message.cc.length > 0 && (
-                        <div className="col-span-2">
+                        <div className="min-w-0 break-words sm:col-span-2">
                             <span className="text-muted-foreground">{labels.cc}</span>
                             <span className="ml-2">{formatAddressList(message.cc)}</span>
                         </div>

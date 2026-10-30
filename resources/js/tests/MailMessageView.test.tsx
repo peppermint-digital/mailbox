@@ -298,6 +298,30 @@ describe('die Betreff-Spalte auf schmalen Schirmen', () => {
 
         expect(raster?.className).toContain('grid-cols-1');
         expect(raster?.className).toContain('sm:grid-cols-2');
+
+        /*
+         * Und die ueberbreiten Zeilen spannen erst AB `sm` ueber zwei Spalten.
+         *
+         * `col-span-2` ohne Breakpoint macht `grid-cols-1` wirkungslos: Ein
+         * Kind, das zwei Spalten verlangt, zwingt das Raster, eine zweite Spur
+         * ANZULEGEN — die Vorlage nennt dann eine, das Raster hat zwei, und die
+         * beiden kurzen Felder rutschen nebeneinander hinein.
+         *
+         * Im echten Browser auf 390 px gemessen (30.10.2026):
+         * `gridTemplateColumns` war „166px 184px" — zwei UNGLEICHE Spuren, also
+         * kein `grid-cols-2`, sondern eine implizite Spur. Ein Probe-Element
+         * mit `grid grid-cols-1` ergab im selben Lauf „358px": Die Klasse
+         * wirkte, das Kind hat sie ueberstimmt.
+         *
+         * Dieser Test kann das nicht messen (jsdom rechnet kein Layout) — er
+         * haelt fest, dass der Breakpoint dasteht. Gemessen wird es in der
+         * Browser-Suite des Projekt-Managers,
+         * `tests/Browser/MailLeseansichtAufDemTelefonTest.php`.
+         */
+        const breit = container.querySelector('.grid > *:nth-child(3)');
+
+        expect(breit?.className, 'ohne Breakpoint legt col-span-2 eine zweite Spur an').toContain('sm:col-span-2');
+        expect(breit?.className).not.toMatch(/(^|\s)col-span-2(\s|$)/);
         unmount();
     });
 });
