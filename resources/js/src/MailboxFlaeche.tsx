@@ -1,4 +1,5 @@
 import { type ComponentType, type ReactNode } from 'react';
+import { FolderInput, FolderOpen } from 'lucide-react';
 import { looksLikeFolder } from './folders';
 import { germanLabels } from './germanLabels';
 import type { InlineAntwortProps } from './InlineAntwort';
@@ -8,6 +9,8 @@ import { MailboxBrowser } from './MailboxBrowser';
 import { MailboxChat, type MailboxChatProps } from './MailboxChat';
 import { MailboxHeader, type MailboxHeaderAccessory } from './MailboxHeader';
 import { MailboxSidePanel, MailboxSidePanelHandle } from './MailboxSidePanel';
+import { Button } from './ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { MailConversationPane } from './MailConversationPane';
 import { MailFolderList } from './MailFolderList';
 import { MailFolderManager } from './MailFolderManager';
@@ -188,30 +191,11 @@ export interface MailboxFlaecheProps {
      */
     leisteHinweis?: ReactNode;
     /**
-     * Wird gerufen, bevor das Verschieben-Menue aufgeht. Produkte, die ihre
-     * Ordner erst bei Bedarf holen, laden sie hier nach — ohne das steht im
-     * Menue nur, was zufaellig schon geladen war.
-     *
-     * DIE EINZIGE DURCHREICHE OHNE TEST, und das steht hier, damit es nicht
-     * wie ein Versehen aussieht: Der Rueckruf haengt an `onOpenChange` eines
-     * Radix-Menues, und das oeffnet in jsdom auf einen schlichten Klick nicht
-     * (es wartet auf Zeigerereignisse). Ein Test haette also nur bestaetigt,
-     * dass nichts passiert.
-     *
-     * Geprueft wird sie stattdessen im Browser, beim Nachweis zu #9116.
-     */
-    onVerschiebenMenue?: () => void;
-    /**
      * Was neben dem Betreff der geoeffneten Nachricht steht. Im Manager das
      * Abzeichen „Zugewiesen an …" — eine Anzeige, kein Bedienelement;
      * geaendert wird die Zuweisung am Abzeichen in der Zeile.
      */
     ansichtZusatz?: ReactNode;
-    /**
-     * Der Knopf „In Ordner verschieben" an der geoeffneten Nachricht. Steckt
-     * im Produkt, weil die Ordnerliste und ihr Nachladen dort liegen.
-     */
-    verschiebenKnopf?: ReactNode;
     zeilenMenue?: MailMessageListProps<RowMessage>['onRowContextMenu'];
     /**
      * Einen Entwurf weiterbearbeiten.
@@ -248,8 +232,6 @@ export function MailboxFlaeche({
     kontoZusatz,
     leisteHinweis,
     leisteZusatz,
-    onVerschiebenMenue,
-    verschiebenKnopf,
     zeilenMenue,
     entwurfBearbeiten,
     werkzeugeVerbergen,
@@ -287,6 +269,7 @@ export function MailboxFlaeche({
         liste,
         melden,
         nachrichtBeschaeftigt,
+        offeneVerschieben,
         offene,
         offeneKennung,
         ordner,
@@ -313,6 +296,24 @@ export function MailboxFlaeche({
     } = seite;
 
     const zeigtAssistent = chatVerfuegbar && konto !== null && assistent.sichtbar;
+
+    /*
+     * Die Ordner, in die verschoben werden darf — fuer das Sammel-Verschieben
+     * in der Leiste UND fuer die eine offene Nachricht. Dieselbe Liste, weil
+     * es dieselbe Frage ist (A1, #9116).
+     *
+     * `targets` kommt aus `{basis}/{konto}/all-folders` und ist vollstaendig;
+     * `folders` ist die Seitenleiste und laesst z. B. den Postausgang weg.
+     * Bis zum 30.10.2026 nahm die Sammelleiste `folders`, und `targets` wurde
+     * NIE geladen — `loadTargetsOnce` rief niemand.
+     *
+     * Der Rueckfall ist Absicht: Zwischen dem Oeffnen des Menues und der
+     * Antwort liegt ein Augenblick, und ein leeres Menue sieht kaputt aus.
+     * Solange die vollstaendige Liste fehlt, stehen die bekannten Ordner da.
+     */
+    const verschiebeZiele = (ordner.targets.length > 0 ? ordner.targets : ordner.folders) as MailFolder[];
+
+    const zieleLaden = () => void ordner.loadTargetsOnce(konto?.id ?? '');
 
     /*
      * EIN Lesezugriff auf die geoeffnete Nachricht, mit erklaerter Form.
@@ -404,7 +405,6 @@ export function MailboxFlaeche({
                                 <MailListToolbar
                                     extras={leisteZusatz}
                                     notice={leisteHinweis}
-                                    onMoveMenuOpen={onVerschiebenMenue}
                                     labels={germanLabels.toolbar}
                                     hint={zuweisungen.erreichbar ? null : 'Zuständigkeiten nicht erreichbar'}
                                     showFolders={ordnerSichtbar}
@@ -430,7 +430,8 @@ export function MailboxFlaeche({
                                     onArchive={() => void sammelAktion('archive')}
                                     onDelete={() => void sammelAktion('delete')}
                                     onClearSelection={auswahl.clear}
-                                    moveTargets={ordner.folders as MailFolder[]}
+                                    moveTargets={verschiebeZiele}
+                                    onMoveMenuOpen={zieleLaden}
                                     currentFolder={ordnerPfad}
                                     onMove={(ziel) => void sammelAktion('move', ziel)}
                                     search={{
@@ -615,8 +616,47 @@ export function MailboxFlaeche({
                                             }}
                                             onForward={() => setWeiterleitenOffen(true)}
                                             extraActions={zusatzAktionen}
+                                            /*
+                                             * A1 (#9116): Die Flaeche zeichnet ihn selbst.
+                                             * Vorher baute ihn jedes Produkt — im Manager
+                                             * 56 Zeilen, in den anderen dreien gar keiner,
+                                             * obwohl alle vier die Adresse haben.
+                                             */
+                                            moveControl={
+                                                <DropdownMenu onOpenChange={(offen) => offen && zieleLaden()}>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            disabled={nachrichtBeschaeftigt}
+                                                            title={germanLabels.toolbar.moveTitle}
+                                                            aria-label={germanLabels.toolbar.moveTitle}
+                                                        >
+                                                            <FolderInput className="h-4 w-4" />
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end" className="max-h-80 overflow-auto">
+                                                        {verschiebeZiele.map((ziel) => (
+                                                            <DropdownMenuItem
+                                                                key={ziel.path}
+                                                                /*
+                                                                 * Am Ordner der NACHRICHT messen, nicht am
+                                                                 * links gewaehlten: Bei einem Suchtreffer
+                                                                 * aus einem anderen Ordner sperrte der
+                                                                 * Manager bis #7690 den falschen Eintrag
+                                                                 * und liess den wirkungslosen zu.
+                                                                 */
+                                                                disabled={ziel.path === (offene.folder ?? ordnerPfad)}
+                                                                onSelect={() => void offeneVerschieben(ziel.path)}
+                                                            >
+                                                                <FolderOpen className="mr-2 h-4 w-4" />
+                                                                {ziel.name}
+                                                            </DropdownMenuItem>
+                                                        ))}
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            }
                                             headerAccessory={ansichtZusatz}
-                                            moveControl={verschiebenKnopf}
                                             onToggleRead={() => void gelesenUmschalten()}
                                             onToggleFlag={() => void markierungUmschalten()}
                                             archiveCount={archivKennungen.length}

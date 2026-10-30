@@ -182,7 +182,7 @@ describe('der Haken füllt, was er verspricht', () => {
         unmount();
     });
 
-    it('gibt alle 45 Werte heraus — und keinen als undefined', async () => {
+    it('gibt alle 46 Werte heraus — und keinen als undefined', async () => {
         /*
          * Der Wächter gegen den Fehler, den dieser Umbau am leichtesten macht:
          * einen Namen in der Rückgabe zu vergessen. TypeScript fängt das an
@@ -204,6 +204,10 @@ describe('der Haken füllt, was er verspricht', () => {
             'markierungUmschalten',
             'offeneArchivieren',
             'offeneLoeschen',
+            // A1 (#9116): Verschieben der EINEN offenen Nachricht. Sammelweise
+            // konnte das Paket es laengst, einzeln nicht — jedes Produkt
+            // haette es selbst bauen muessen, und der Manager hatte es auch.
+            'offeneVerschieben',
             'amGeoeffneten', 'antwortAnAlle', 'antwortOffen', 'antwortSenden', 'archivKennungen',
             'assistent', 'auswahl', 'beschaeftigt', 'chatQuelle', 'csrf', 'fehler', 'filterOffen',
             'konto', 'liste', 'melden', 'nachrichtBeschaeftigt', 'offene', 'offeneKennung', 'ordner',
@@ -951,6 +955,106 @@ describe('die Adresse fuehrt das offene Postfach mit (#9116)', () => {
 
         ersetzt.mockRestore();
         geschoben.mockRestore();
+        unmount();
+    });
+});
+
+describe('die offene Nachricht verschieben (A1, #9116)', () => {
+    /**
+     * Sammelweise konnte das Paket das laengst, einzeln nicht. Jedes Produkt
+     * haette es selbst bauen muessen — der Manager hatte dafuer 56 Zeilen, die
+     * anderen drei gar nichts, obwohl alle vier dieselbe Adresse kennen
+     * (`{basis}/{konto}/message/{uid}/move`; bei AI Brain aus dem Mail-Plugin).
+     */
+    async function mitOffenerNachricht() {
+        /*
+         * Die Gegenstelle muss den EINZELABRUF beantworten. Ohne diesen
+         * Eintrag kommt `{ success: true }` ohne Nachricht zurueck, `offene`
+         * bleibt leer, und die Adresse unten wuerde `/message//move` lauten.
+         * Gemerkt habe ich das daran, dass der Pfad nicht auftauchte — nicht
+         * daran, dass ein Test rot wurde: `not.toBeNull()` laesst `undefined`
+         * durch.
+         */
+        const { fetchStub, gesehen } = gegenstelle({
+            'message/7': {
+                success: true,
+                message: { uid: 7, message_id: '<a@b>', subject: 'Anfrage', attachments: [], to: [], cc: [] },
+                /*
+                 * NICHT 'INBOX', und das ist der ganze Zweck: Die Nachricht
+                 * liegt woanders als der links gewaehlte Ordner — so wie ein
+                 * Suchtreffer. Mit 'INBOX' waeren die beiden gleich, und der
+                 * Test unten koennte nicht unterscheiden, welchen von beiden
+                 * der Code mitschickt. Genau so war er zuerst, und die
+                 * Mutationsprobe lief gruen durch.
+                 */
+                folder: 'Archive',
+            },
+        });
+        vi.stubGlobal('fetch', fetchStub);
+
+        const gemalt = render(<Probe melden={() => {}} />);
+
+        await vi.waitFor(() => expect((zuletzt.zeilen as unknown[]).length).toBe(1));
+
+        await act(async () => {
+            await (zuletzt.offene as { open: (m: unknown, f: string) => Promise<unknown> }).open({ uid: 7 }, 'INBOX');
+        });
+
+        return { ...gemalt, gesehen, fetchStub };
+    }
+
+    it('schickt den Ordner der Nachricht als Herkunft mit', async () => {
+        const { gesehen, fetchStub, unmount } = await mitOffenerNachricht();
+
+        await act(async () => {
+            await (zuletzt.offeneVerschieben as (z: string) => Promise<void>)('Rechnungen');
+        });
+
+        expect(gesehen.some((p) => p.includes('/42/message/7/move'))).toBe(true);
+
+        const ruf = fetchStub.mock.calls.find((c) => String(c[0]).includes('/move'));
+        const rumpf = JSON.parse(String((ruf?.[1] as { body?: string })?.body ?? '{}'));
+
+        // Beides, und das ist der Punkt: Der Server muss wissen, WOHER die
+        // Nachricht kommt. Eine Kennung ist nur innerhalb ihres Ordners
+        // eindeutig — mit dem falschen Ordner trifft man eine fremde Mail,
+        // die dort zufaellig dieselbe Nummer traegt (Bug #587 im Manager).
+        expect(rumpf.folder).toBe('Archive');
+        expect(rumpf.target_folder).toBe('Rechnungen');
+
+        unmount();
+    });
+
+    it('tut nichts, wenn das Ziel der Ordner ist, in dem sie schon liegt', async () => {
+        const { gesehen, unmount } = await mitOffenerNachricht();
+        const vorher = gesehen.length;
+
+        await act(async () => {
+            await (zuletzt.offeneVerschieben as (z: string) => Promise<void>)('Archive');
+        });
+
+        // Kein Aufruf, keine Meldung. Ein Verschieben an denselben Ort ist
+        // keine Aktion, die scheitern darf — sie findet nicht statt.
+        expect(gesehen.length).toBe(vorher);
+        unmount();
+    });
+
+    it('schliesst die Nachricht danach', async () => {
+        const { unmount } = await mitOffenerNachricht();
+
+        // Nicht `not.toBeNull()`: Das liesse `undefined` durch, und genau so
+        // sah dieser Test gruen aus, als gar nichts offen war.
+        expect((zuletzt.offene as { message: { uid?: number } | null }).message?.uid).toBe(7);
+
+        await act(async () => {
+            // Nicht 'Archive' — dort liegt sie schon, und dann faende gar
+            // nichts statt.
+            await (zuletzt.offeneVerschieben as (z: string) => Promise<void>)('Rechnungen');
+        });
+
+        // Sonst steht die Mail weiter offen da, waehrend sie in der Liste
+        // schon woanders liegt — die Ansicht behauptet dann etwas Falsches.
+        expect((zuletzt.offene as { message: unknown }).message).toBeNull();
         unmount();
     });
 });

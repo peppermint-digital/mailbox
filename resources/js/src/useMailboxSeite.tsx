@@ -1047,6 +1047,37 @@ export function useMailboxSeite({
             true,
         );
 
+    /**
+     * Die geoeffnete Nachricht in einen anderen Ordner legen (#9116, A1).
+     *
+     * Das Sammel-Verschieben gab es hier laengst, dieses nicht — jedes Produkt
+     * haette es selbst bauen muessen, und der Manager hatte es auch. Alle vier
+     * kennen die Adresse `{basis}/{konto}/message/{uid}/move`, bei AI Brain
+     * ueber das Mail-Plugin.
+     *
+     * Gemessen wird am Ordner der NACHRICHT, nicht am links ausgewaehlten: Bei
+     * einem Suchtreffer aus einem anderen Ordner laegen die beiden
+     * auseinander, und dann verschoebe man eine Nachricht, die dort gar nicht
+     * liegt — oder sperrte den falschen Eintrag im Menue.
+     */
+    const offeneVerschieben = (ziel: string) => {
+        const herkunft = offene.folder ?? ordnerPfad;
+
+        if (ziel === herkunft) {
+            return Promise.resolve();
+        }
+
+        return amGeoeffneten(
+            () =>
+                postJson(
+                    `${basis}/${konto?.id}/message/${offeneKennung()}/move`,
+                    { folder: herkunft, target_folder: ziel },
+                    { csrfToken: csrf },
+                ),
+            true,
+        );
+    };
+
     useMailboxKeyboard<RowMessage>({
         rows: zeilen,
         openedUid: (offene.message as { uid?: number } | null)?.uid ?? null,
@@ -1151,6 +1182,7 @@ export function useMailboxSeite({
         markierungUmschalten,
         offeneArchivieren,
         offeneLoeschen,
+        offeneVerschieben,
         antwortAnAlle,
         antwortOffen,
         antwortSenden,

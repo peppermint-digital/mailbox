@@ -72,7 +72,13 @@ function seite(teil: Partial<MailboxSeiteErgebnis> = {}): MailboxSeiteErgebnis {
         nachrichtBeschaeftigt: false,
         offene: { message: null, loading: false, open: vi.fn(), close: vi.fn() },
         offeneKennung: () => 1,
-        ordner: { folders: [], loading: false },
+        /*
+         * `targets` und `loadTargetsOnce` seit A1 (#9116): Die Flaeche zeichnet
+         * das Verschieben-Menue jetzt selbst und fragt dafuer die vollstaendige
+         * Ordnerliste. Die Attrappe trug beides nicht — und dann faellt sie
+         * mit „Cannot read properties of undefined", nicht der Code.
+         */
+        ordner: { folders: [], targets: [], loading: false, loadTargetsOnce: vi.fn() },
         ordnerPfad: 'INBOX',
         ordnerSichtbar: true,
         ordnerVerwaltung: {
@@ -670,7 +676,7 @@ describe('was die Flaeche an die Liste durchreicht (#1177)', () => {
     });
 });
 
-describe('die fuenf Durchreichen fuer den Manager (#9116)', () => {
+describe('die Durchreichen fuer den Manager (#9116)', () => {
     /**
      * Der Manager baut seine Mailseite bisher selbst zusammen und gibt dabei
      * Dinge mit, die `MailboxFlaeche` nicht kannte. Beim Umstieg waeren sie
@@ -707,13 +713,20 @@ describe('die fuenf Durchreichen fuer den Manager (#9116)', () => {
         unmount();
     });
 
-    it('setzt den Verschieben-Knopf an die geoeffnete Nachricht', () => {
+    /*
+     * Hier stand bis zum 30.10.2026 ein Test fuer `verschiebenKnopf` — einen
+     * Durchgang, durch den jedes Produkt seinen eigenen Knopf hereinreichte.
+     * Mit A1 (#9116) zeichnet ihn die Flaeche selbst, der Durchgang ist weg.
+     *
+     * Der Test wandert mit statt zu verschwinden: Geprueft wird jetzt, dass
+     * der Knopf OHNE Zutun des Produkts da ist.
+     */
+    it('zeichnet den Verschieben-Knopf selbst, ohne Zutun des Produkts', () => {
         const { container, unmount } = flaeche({
             seite: seite({ offene: { message: entwurf(), loading: false } as never }),
-            verschiebenKnopf: <button type="button">In Ordner verschieben</button>,
         });
 
-        expect(container.textContent).toContain('In Ordner verschieben');
+        expect(container.querySelector('[aria-label="In Ordner verschieben"]')).not.toBeNull();
         unmount();
     });
 
