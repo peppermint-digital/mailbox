@@ -5,7 +5,7 @@ import { httpMailboxSources, type MailboxRoutes } from './httpSources';
 import type { MailFolder } from './MailFolderList';
 import { httpMailboxChatSource } from './mailboxChatSource';
 import { useMailboxSidePanel } from './MailboxSidePanel';
-import { buildDisplayRows, type RowMessage, threadActionUids, threadOf } from './rows';
+import { buildDisplayRows, type MessageHandle, type RowMessage, threadActionUids, threadOf } from './rows';
 import { postCounted, postJson } from './transport';
 import { useAktuelleKennung } from './useAktuelleKennung';
 import { useAutoOpen } from './useAutoOpen';
@@ -855,10 +855,47 @@ export function useMailboxSeite({
     const [antwortAnAlle, setAntwortAnAlle] = useState(false);
     const [sendetAntwort, setSendetAntwort] = useState(false);
 
-    const amGeoeffneten = async (tun: () => Promise<boolean>, schliessen = false) => {
+    /**
+     * Eine Aktion an der geoeffneten Nachricht — und was danach mit der Liste
+     * passiert.
+     *
+     * ## Warum nicht einfach nachladen (A17, #9116)
+     *
+     * Hier stand `liste.load({ folder: ordnerPfad })`, immer. In der SUCHE ist
+     * das falsch: Die Liste zeigt dann Treffer aus mehreren Ordnern, und ein
+     * Nachladen ersetzt sie durch den einen links gewaehlten Ordner —
+     * waehrend das Banner darueber weiter „Suchergebnisse fuer …" sagt und
+     * einen „Zurueck"-Knopf anbietet. Wer in Treffern arbeitet und eine Mail
+     * archiviert, sieht danach seinen Posteingang, beschriftet als
+     * Suchergebnis.
+     *
+     * Das betraf alle fuenf Aktionen und alle vier Produkte. Gemeldet war es
+     * als Befund 6 von #9116, und nur fuer die Wiedervorlage.
+     *
+     * In der Suche wird deshalb die Liste an der Stelle berichtigt, statt sie
+     * zu ersetzen: Die Zeile verschwindet, wenn die Nachricht den Ordner
+     * verlaesst, und aendert sich, wenn nur eine Markierung umgeht. Ein
+     * Nachladen der Treffer waere die Alternative — es kostet aber eine Suche
+     * ueber alle Ordner fuer eine Zeile, die man kennt.
+     */
+    const amGeoeffneten = async (
+        tun: () => Promise<boolean>,
+        /**
+         * `verlaesst`: Die Nachricht liegt danach nicht mehr in ihrem Ordner —
+         * die Ansicht geht zu, die Zeile fällt weg.
+         *
+         * `zeile`: Was sich an der Zeile geaendert hat, wenn die Nachricht
+         * bleibt. Ohne Angabe wird in der Suche gar nichts berichtigt, und
+         * eine umgeschaltete Markierung sähe dort aus, als habe sie nicht
+         * gewirkt.
+         */
+        nachher: { verlaesst?: boolean; zeile?: Partial<RowMessage> } = {},
+    ) => {
         if (!konto || nachrichtBeschaeftigt) {
             return;
         }
+
+        const kennung = offeneKennung();
 
         setNachrichtBeschaeftigt(true);
 
@@ -869,8 +906,18 @@ export function useMailboxSeite({
                 return;
             }
 
-            if (schliessen) {
+            if (nachher.verlaesst) {
                 offene.close();
+            }
+
+            if (suche.isSearchMode) {
+                if (nachher.verlaesst) {
+                    liste.removeRows([kennung]);
+                } else if (nachher.zeile) {
+                    liste.patchRow(kennung, nachher.zeile as Partial<RowMessage>);
+                }
+
+                return;
             }
 
             await liste.load({ accountId: konto.id, folder: ordnerPfad, page: liste.page, refresh: true });
@@ -989,6 +1036,16 @@ export function useMailboxSeite({
 
         const antwort = await fetch(`${basis}/${konto.id}/snoozes`, { headers: { Accept: 'application/json' } });
         setSchlummernde(antwort.ok ? ((await antwort.json()).snoozes ?? []) : []);
+
+        /*
+         * In der Suche steht die Zeile schon da, wo sie hingehoert — ein
+         * Nachladen wuerde die Treffer durch den links gewaehlten Ordner
+         * ersetzen (A17, #9116).
+         */
+        if (suche.isSearchMode) {
+            return;
+        }
+
         await liste.load({ accountId: konto.id, folder: ordnerPfad, page: liste.page, refresh: true });
     };
 
@@ -1013,9 +1070,23 @@ export function useMailboxSeite({
             return;
         }
 
+        const kennung = m === offene.message ? offeneKennung() : ((m as { uid?: MessageHandle }).uid ?? '');
+
         offene.close();
         const antwort = await fetch(`${basis}/${konto.id}/snoozes`, { headers: { Accept: 'application/json' } });
         setSchlummernde(antwort.ok ? ((await antwort.json()).snoozes ?? []) : []);
+
+        /*
+         * In der Suche die Zeile wegnehmen statt den Ordner nachzuladen —
+         * dieselbe Begruendung wie bei {@link amGeoeffneten} (A17, #9116).
+         * Genau dieser Weg war Befund 6 von #9116.
+         */
+        if (suche.isSearchMode) {
+            liste.removeRows([kennung]);
+
+            return;
+        }
+
         await liste.load({ accountId: konto.id, folder: ordnerPfad, page: liste.page, refresh: true });
     };
 
@@ -1130,23 +1201,48 @@ export function useMailboxSeite({
      * und Nutzlast unveraendert; die Flaeche ruft jetzt dieselben Funktionen
      * statt sie nachzubauen.
      */
-    const gelesenUmschalten = () =>
-        amGeoeffneten(() =>
-            postJson(
-                `${basis}/${konto?.id}/message/${offeneKennung()}/seen`,
-                { folder: ordnerPfad, seen: !(offene.message as { is_read?: boolean } | null)?.is_read },
-                { csrfToken: csrf },
-            ),
-        );
+    /**
+     * Der Ordner, in dem die geoeffnete Nachricht WIRKLICH liegt (A16, #9116).
+     *
+     * Hier stand in vier der fuenf Aktionen `ordnerPfad` — der links
+     * ausgewaehlte. Bei einem Suchtreffer aus einem anderen Ordner liegen die
+     * beiden auseinander, und dann trifft die Aktion eine Kennung in einem
+     * Ordner, in dem sie etwas anderes bedeutet oder gar nichts.
+     *
+     * `offeneVerschieben` rechnete seit A1 richtig, und seine Begruendung
+     * stand sogar daneben — die vier anderen wurden damals nicht mitgezogen.
+     * Genau die Form, die das Paket schon mehrfach bezahlt hat: Eine Regel an
+     * einer von fuenf Stellen liest sich wie erledigt.
+     */
+    const offenerOrdner = () => offene.folder ?? ordnerPfad;
 
-    const markierungUmschalten = () =>
-        amGeoeffneten(() =>
-            postJson(
-                `${basis}/${konto?.id}/message/${offeneKennung()}/flagged`,
-                { folder: ordnerPfad, flagged: !(offene.message as { is_flagged?: boolean } | null)?.is_flagged },
-                { csrfToken: csrf },
-            ),
+    const gelesenUmschalten = () => {
+        const gelesen = !(offene.message as { is_read?: boolean } | null)?.is_read;
+
+        return amGeoeffneten(
+            () =>
+                postJson(
+                    `${basis}/${konto?.id}/message/${offeneKennung()}/seen`,
+                    { folder: offenerOrdner(), seen: gelesen },
+                    { csrfToken: csrf },
+                ),
+            { zeile: { is_read: gelesen } },
         );
+    };
+
+    const markierungUmschalten = () => {
+        const markiert = !(offene.message as { is_flagged?: boolean } | null)?.is_flagged;
+
+        return amGeoeffneten(
+            () =>
+                postJson(
+                    `${basis}/${konto?.id}/message/${offeneKennung()}/flagged`,
+                    { folder: offenerOrdner(), flagged: markiert },
+                    { csrfToken: csrf },
+                ),
+            { zeile: { is_flagged: markiert } },
+        );
+    };
 
     const offeneArchivieren = () =>
         amGeoeffneten(
@@ -1154,20 +1250,20 @@ export function useMailboxSeite({
                 postJson(
                     `${basis}/${konto?.id}/bulk`,
                     {
-                        folder: ordnerPfad,
+                        folder: offenerOrdner(),
                         action: 'archive',
                         // Eine ganze Kette, wenn eine offen ist — sonst die eine Nachricht.
                         uids: archivKennungen.length > 0 ? archivKennungen : [offeneKennung()],
                     },
                     { csrfToken: csrf },
                 ),
-            true,
+            { verlaesst: true },
         );
 
     const offeneLoeschen = () =>
         amGeoeffneten(
-            () => postJson(`${basis}/${konto?.id}/message/${offeneKennung()}/delete`, { folder: ordnerPfad }, { csrfToken: csrf }),
-            true,
+            () => postJson(`${basis}/${konto?.id}/message/${offeneKennung()}/delete`, { folder: offenerOrdner() }, { csrfToken: csrf }),
+            { verlaesst: true },
         );
 
     /**
@@ -1184,7 +1280,7 @@ export function useMailboxSeite({
      * liegt — oder sperrte den falschen Eintrag im Menue.
      */
     const offeneVerschieben = (ziel: string) => {
-        const herkunft = offene.folder ?? ordnerPfad;
+        const herkunft = offenerOrdner();
 
         if (ziel === herkunft) {
             return Promise.resolve();
@@ -1197,7 +1293,7 @@ export function useMailboxSeite({
                     { folder: herkunft, target_folder: ziel },
                     { csrfToken: csrf },
                 ),
-            true,
+            { verlaesst: true },
         );
     };
 

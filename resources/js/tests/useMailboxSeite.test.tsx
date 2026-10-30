@@ -1388,3 +1388,163 @@ describe('was das Produkt sich merken soll (A14, #9116)', () => {
         unmount();
     });
 });
+
+describe('eine Aktion an einer geoeffneten Nachricht IN DER SUCHE (A16/A17, #9116)', () => {
+    /**
+     * Zwei Befunde, die zusammengehoeren und beide alle vier Produkte treffen.
+     *
+     * A16: Vier der fuenf Aktionen schickten `ordnerPfad` — den links
+     * ausgewaehlten Ordner. Ein Suchtreffer liegt aber oft in einem anderen,
+     * und dann trifft die Kennung dort etwas anderes oder nichts.
+     * `offeneVerschieben` rechnete seit A1 richtig, mit der Begruendung
+     * daneben; die vier anderen wurden nicht mitgezogen.
+     *
+     * A17: Danach lief immer `liste.load({ folder: ordnerPfad })`. In der Suche
+     * ersetzt das die Treffer durch den einen Ordner — waehrend das Banner
+     * weiter „Suchergebnisse fuer …" sagt. Gemeldet war das als Befund 6 von
+     * #9116, und nur fuer die Wiedervorlage.
+     */
+    function aufbau() {
+        const gerufen: { pfad: string; rumpf: unknown }[] = [];
+
+        const antworten = (pfad: string) => {
+            if (pfad.includes('/search')) {
+                return {
+                    success: true,
+                    messages: [
+                        {
+                            uid: 77,
+                            subject: 'Rechnung 2024',
+                            from_address: 'buch@example.test',
+                            from_name: 'Buchhaltung',
+                            date: '2026-01-02T08:00:00+01:00',
+                            is_read: false,
+                            is_flagged: false,
+                            has_attachments: false,
+                            attachment_count: 0,
+                            preview: '',
+                            message_id: '<r@example.test>',
+                            folder: 'Archive/2024',
+                        },
+                    ],
+                    total: 1,
+                    folders_searched: 9,
+                };
+            }
+
+            if (pfad.includes('/folders')) {
+                return { success: true, folders: [{ name: 'INBOX', path: 'INBOX', flags: [] }] };
+            }
+
+            if (pfad.includes('/message/')) {
+                // Die Antwort des Oeffnens nennt den ECHTEN Ordner des Treffers.
+                return { success: true, message: { uid: 77, subject: 'Rechnung 2024', to: [], cc: [], attachments: [] }, folder: 'Archive/2024' };
+            }
+
+            if (pfad.includes('/messages')) {
+                return { success: true, messages: [], total: 0, page: 1, per_page: 25 };
+            }
+
+            return { success: true, assignments: [], reachable: true, users: [], snoozes: [], tools: [], unreachable: [], failed: [] };
+        };
+
+        const fetchStub = vi.fn(async (url: string | URL | Request, optionen?: RequestInit) => {
+            const pfad = String(url);
+            gerufen.push({ pfad, rumpf: optionen?.body ? JSON.parse(String(optionen.body)) : null });
+
+            return { ok: true, status: 200, json: async () => antworten(pfad) } as unknown as Response;
+        });
+
+        return { fetchStub, gerufen };
+    }
+
+    async function treffer() {
+        await vi.waitFor(() => expect(zuletzt.konto).not.toBeNull());
+        await suchen('rechnung');
+        await vi.waitFor(() => expect((zuletzt.suche as { isSearchMode: boolean }).isSearchMode).toBe(true));
+        await vi.waitFor(() => expect((zuletzt.zeilen as unknown[]).length).toBe(1));
+
+        await act(async () => {
+            await (zuletzt.offene as { open: (m: unknown, f: string) => Promise<unknown> }).open(
+                { uid: 77, message_id: '<r@example.test>', folder: 'Archive/2024' },
+                'INBOX',
+            );
+        });
+
+        await vi.waitFor(() => expect((zuletzt.offene as { folder: string | null }).folder).toBe('Archive/2024'));
+    }
+
+    it('archiviert aus dem Ordner der NACHRICHT, nicht aus dem links gewaehlten', async () => {
+        const { fetchStub, gerufen } = aufbau();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} />);
+        await treffer();
+
+        await act(async () => {
+            await (zuletzt.offeneArchivieren as () => Promise<void>)();
+        });
+
+        const bulk = gerufen.filter((a) => a.pfad.includes('/bulk')).at(-1);
+
+        expect(bulk, 'das Archivieren hat gar nicht gerufen').not.toBeUndefined();
+        expect((bulk?.rumpf as { folder: string }).folder).toBe('Archive/2024');
+        expect((bulk?.rumpf as { uids: unknown[] }).uids).toEqual([77]);
+
+        unmount();
+    });
+
+    it('nimmt die Zeile weg, statt die Treffer durch einen Ordner zu ersetzen', async () => {
+        const { fetchStub, gerufen } = aufbau();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} />);
+        await treffer();
+
+        const vorher = gerufen.filter((a) => a.pfad.includes('/messages')).length;
+
+        await act(async () => {
+            await (zuletzt.offeneArchivieren as () => Promise<void>)();
+        });
+
+        // Die Treffer-Zeile ist weg …
+        await vi.waitFor(() => expect((zuletzt.zeilen as unknown[]).length).toBe(0));
+
+        // … und zwar OHNE dass die Ordnerliste geholt wurde. Genau dieser
+        // Abruf hat vorher die Treffer ersetzt.
+        expect(gerufen.filter((a) => a.pfad.includes('/messages')).length).toBe(vorher);
+
+        // Und das Banner luegt nicht: Wir sind noch in der Suche.
+        expect((zuletzt.suche as { isSearchMode: boolean }).isSearchMode).toBe(true);
+
+        unmount();
+    });
+
+    it('aendert die Zeile, wenn nur eine Markierung umgeht', async () => {
+        const { fetchStub, gerufen } = aufbau();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} />);
+        await treffer();
+
+        const vorher = gerufen.filter((a) => a.pfad.includes('/messages')).length;
+
+        await act(async () => {
+            await (zuletzt.gelesenUmschalten as () => Promise<void>)();
+        });
+
+        /*
+         * Die Zeile bleibt und zeigt den neuen Stand. Ohne diese Berichtigung
+         * waere ein Umschalten in der Suche entweder wirkungslos (kein
+         * Nachladen) oder haette die Treffer ersetzt (Nachladen) — beides
+         * liest sich als „der Knopf tut nichts".
+         */
+        await vi.waitFor(() => expect(((zuletzt.zeilen as { msg: { is_read: boolean } }[])[0]).msg.is_read).toBe(true));
+        expect(gerufen.filter((a) => a.pfad.includes('/messages')).length).toBe(vorher);
+
+        const seen = gerufen.filter((a) => a.pfad.includes('/seen')).at(-1);
+        expect((seen?.rumpf as { folder: string }).folder).toBe('Archive/2024');
+
+        unmount();
+    });
+});
