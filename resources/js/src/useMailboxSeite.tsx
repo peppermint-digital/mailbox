@@ -1389,15 +1389,22 @@ export function useMailboxSeite({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [konto?.id]);
 
+    /** Aus einem Fehlschlag des Pakets ein deutscher Satz. */
+    const satzZu = (problem: { kind: string; message?: string }) =>
+        problem.kind === 'network' ? 'Das Postfach ist gerade nicht erreichbar.' : (problem.message ?? 'Das Postfach hat die Anfrage abgelehnt.');
+
     /*
      * Der Haken meldet WAS schiefging, die Worte kommen von hier.
      *
      * Und die Meldung geht wieder WEG, sobald etwas klappt. Eine stehengebliebene
      * Fehlerzeile ueber einer Liste voller Nachrichten behauptet etwas, das
      * sichtbar nicht stimmt — und ist damit schlimmer als keine.
+     *
+     * Hier stand `offene.failure` mit in der Reihe. Es gehoert nicht dazu,
+     * siehe den Effekt darunter (A20, #9116).
      */
     useEffect(() => {
-        const problem = ordner.failure ?? liste.failure ?? offene.failure;
+        const problem = ordner.failure ?? liste.failure;
 
         if (!problem) {
             /* eslint-disable-next-line react-hooks/set-state-in-effect -- Abgeleiteter Zustand, der beim Wechsel zurueckgesetzt werden MUSS — sonst zeigt die Ansicht fuer einen Augenblick die Daten des vorigen Postfachs. */
@@ -1406,10 +1413,71 @@ export function useMailboxSeite({
             return;
         }
 
-        setFehler(
-            problem.kind === 'network' ? 'Das Postfach ist gerade nicht erreichbar.' : (problem.message ?? 'Das Postfach hat die Anfrage abgelehnt.'),
-        );
-    }, [ordner.failure, liste.failure, offene.failure]);
+        setFehler(satzZu(problem));
+    }, [ordner.failure, liste.failure]);
+
+    /*
+     * Ein abgelehntes OEFFNEN geht ueber `melden`, nicht in die Kopfzeile
+     * (A20, #9116).
+     *
+     * ## Der Unterschied, um den es geht
+     *
+     * Ordner- und Listen-Fehlschlaege sind ZUSTAENDE: „dieses Postfach
+     * antwortet nicht". Sie gehoeren an eine Stelle, die stehenbleibt, solange
+     * der Zustand gilt — die Kopfzeile.
+     *
+     * Ein Klick auf eine Nachricht, die der Server nicht hergibt, ist ein
+     * EREIGNIS. Es gilt einmal, es gehoert zu dieser Handlung, und danach ist
+     * es vorbei. In der Kopfzeile stand es trotzdem — in einem `truncate`-Feld
+     * neben dem Postfach-Waehler. Der Satz des Projekt-Managers dazu ist 93
+     * Zeichen lang („Diese Nachricht liegt nicht mehr dort, wo sie verzeichnet
+     * ist — sie wurde verschoben oder geloescht."); davon war ein Viertel zu
+     * lesen, auf dem Telefon weniger.
+     *
+     * ## Woran das aufgefallen ist
+     *
+     * Befund 4 von #9116: Im Projekt-Manager erschien dieselbe Zeile DOPPELT —
+     * als Einblendung des Produkts und in der Kopfzeile. Die naheliegende
+     * Behebung war, die Einblendung zu streichen. Dann haette der Manager
+     * seinen lesbaren Satz gegen ein abgeschnittenes Viertel getauscht, und
+     * CRM, Verwaltung und AI Brain haetten ihr Viertel behalten.
+     *
+     * `melden` ist der Weg, den dieses Paket fuer eine Rueckmeldung ohnehin
+     * fuehrt — und es ist der des PRODUKTS: Welche Form sie hat (bei allen vier
+     * `toast`), entscheidet nicht das Paket.
+     *
+     * ## Zu `clearFailure`: was es tut und was nicht
+     *
+     * Nachgemessen mit einer Mutationsprobe am 30.10.2026 — sie lief **gruen**
+     * durch. Gegen eine Doppelmeldung schuetzt der Aufruf naemlich nicht: Der
+     * Effekt haengt an der IDENTITAET von `offene.failure`, und die wechselt
+     * nur, wenn `setFailure` laeuft. Ohne `clearFailure` bliebe sie stehen und
+     * der Effekt lief trotzdem nicht erneut.
+     *
+     * Er bleibt aus einem anderen Grund, und das ist der nachweisbare: Ein
+     * EREIGNIS, das gemeldet wurde, ist erledigt. Es im Zustand liegen zu
+     * lassen heisst, dass der naechste Leser von `offene.failure` einen
+     * Fehlschlag findet, den die Person schon gesehen und abgehakt hat — und
+     * `offene.failure` liest nach A20 niemand mehr, also faellt es nicht auf.
+     *
+     * ## Warum eine Probe hier nicht weiterhilft
+     *
+     * Dieselbe Probe am Kopfzeilen-Zweig (`offene.failure` wieder in die Reihe
+     * oben) lief ebenfalls gruen — und auch das ist richtig so: Mit
+     * `clearFailure` im selben Durchlauf steht der Satz dort hoechstens einen
+     * Bilddurchlauf. Was A20 begruendet, ist nicht ein messbarer Unterschied
+     * im Zustand, sondern WO der Satz erscheint und wie viel davon lesbar ist.
+     * Das sieht man am Geraet, nicht in einer Zusicherung.
+     */
+    useEffect(() => {
+        if (!offene.failure) {
+            return;
+        }
+
+        melden(satzZu(offene.failure), false);
+        offene.clearFailure();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- `melden` und `offene` wechseln bei jedem Zeichnen die Identitaet; gemeint ist genau der Wechsel von `failure`.
+    }, [offene.failure]);
 
 
     return {

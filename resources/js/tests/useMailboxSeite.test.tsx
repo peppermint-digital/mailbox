@@ -804,41 +804,59 @@ describe('der Haken füllt, was er verspricht', () => {
         unmount();
     });
 
-    it('traegt ein abgelehntes Oeffnen in `fehler` — damit es kein Produkt selbst melden muss', async () => {
+    it('meldet ein abgelehntes Oeffnen ueber `melden` — und NICHT in der Kopfzeile', async () => {
         /*
          * Bug #1142 im Projekt-Manager: „ueber die Suche kann ich die Nachricht
          * nicht anklicken, sie oeffnet nicht." Der Klick kam an, der Server
          * lehnte ab, und niemand sagte es — `offene.failure` las keiner.
          *
-         * Dass dieser Haken den Fehlschlag in `fehler` traegt (und die Flaeche
-         * ihn in die Kopfzeile zeichnet), ist die Stelle, die das verhindert.
-         * Sie war ungeprueft: Der Test darueber deckt die LISTE ab, nicht das
-         * Oeffnen — zwei verschiedene Quellen, dieselbe Bruecke.
+         * Dieser Haken trug den Fehlschlag danach in `fehler`, also in die
+         * Kopfzeile. Das war besser als nichts und trotzdem falsch (A20,
+         * #9116): Die Kopfzeile ist fuer ZUSTAENDE („dieses Postfach antwortet
+         * nicht"), und sie zeichnet mit `truncate`. Der Satz des Managers ist
+         * 93 Zeichen lang; davon war ein Viertel zu lesen.
          *
-         * Geprueft wird sie, weil der Manager daraufhin seinen eigenen Toast
-         * ablegt (Befund 4 von #9116: dieselbe Zeile stand doppelt da, als
-         * Einblendung UND in der Kopfzeile). Ohne diesen Test waere die
-         * Ablegung ein Vertrauensvorschuss.
+         * Ein abgelehnter Klick ist ein EREIGNIS. Es geht deshalb ueber
+         * `melden` — den Weg, den das Produkt ohnehin fuehrt und dessen Form
+         * es selbst waehlt.
          */
         const { fetchStub } = gegenstelle();
         vi.stubGlobal('fetch', fetchStub);
 
+        const gemeldet = vi.fn();
         const abweisende = {
             open: async () => ({ failure: 'Diese Nachricht liegt nicht mehr im Postfach.' }),
         };
 
-        const { unmount } = render(<Probe melden={() => {}} oeffnenQuelle={abweisende as never} />);
+        const { unmount } = render(<Probe melden={gemeldet} oeffnenQuelle={abweisende as never} />);
 
         await vi.waitFor(() => expect(zuletzt.offene).toBeDefined());
-        expect(zuletzt.fehler).toBeNull();
+        gemeldet.mockClear();
 
         await act(async () => {
             await (zuletzt.offene as { open: (m: unknown, f: string) => Promise<unknown> }).open({ uid: 9, message_id: '<a@x>' }, 'INBOX');
         });
 
         // Der Satz des SERVERS, nicht ein allgemeiner: Eine Ablehnung, die
-        // ihren Grund verliert, ist so wenig brauchbar wie keine.
-        await vi.waitFor(() => expect(String(zuletzt.fehler)).toContain('nicht mehr im Postfach'));
+        // ihren Grund verliert, ist so wenig brauchbar wie keine. Und
+        // `false` — sonst erscheint ein Fehlschlag als Erfolgsmeldung.
+        await vi.waitFor(() => expect(gemeldet).toHaveBeenCalledWith('Diese Nachricht liegt nicht mehr im Postfach.', false));
+
+        // Nicht zusaetzlich in der Kopfzeile: Das war die Dopplung, die
+        // Befund 4 von #9116 gemeldet hat.
+        expect(zuletzt.fehler).toBeNull();
+
+        /*
+         * Und nur EINMAL — gegen einen Effekt ohne Abhaengigkeit auf den
+         * Fehlschlag, der bei jedem Zeichnen neu meldete.
+         *
+         * Was diese Zeile NICHT prueft: `clearFailure`. Eine Mutationsprobe
+         * ohne diesen Aufruf lief gruen durch, und zu Recht — der Effekt haengt
+         * an der Identitaet von `offene.failure`, die ohne `setFailure` nicht
+         * wechselt. Der Aufruf steht aus einem anderen Grund da; er ist am
+         * Haken begruendet.
+         */
+        expect(gemeldet).toHaveBeenCalledTimes(1);
 
         unmount();
     });
