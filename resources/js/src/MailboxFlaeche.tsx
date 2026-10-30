@@ -15,7 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { MailConversationPane } from './MailConversationPane';
 import { MailFolderList } from './MailFolderList';
 import { MailFolderManager } from './MailFolderManager';
-import { MailListToolbar } from './MailListToolbar';
+import { MailListToolbar, type SuchVerzeichnis } from './MailListToolbar';
 import { MailMessageList, type MailMessageListProps } from './MailMessageList';
 import { MailMessageView } from './MailMessageView';
 import { MailWerkzeugleiste } from './MailWerkzeugleiste';
@@ -60,7 +60,7 @@ import type { MailWerkzeug } from './useMailWerkzeuge';
  * | Einschnitt | CRM | Verwaltung | Brain |
  * |---|---|---|---|
  * | `vorDerAnsicht` | Kontaktleiste | Ticket- und Anhangleiste | — |
- * | `zusatzAktionen` | Schlummer-Menü | Schlummer-Menü | dazu „Aus der Ablage entfernen" |
+ * | `zusatzAktionen` | — (das Schlummer-Menü zeichnet seit A13 diese Fläche) | — | „Aus der Ablage entfernen" |
  * | `nachDerSeite` | — | — | der Entfernen-Dialog |
  * | `werkzeugeVerbergen` | eigene Verben aus | eigene Verben aus | nichts aus |
  * | `chatZusatz` | — | — | — |
@@ -69,13 +69,25 @@ import type { MailWerkzeug } from './useMailWerkzeuge';
  * wurde (#9116): Dort haengt eine Spracheingabe am Assistenten, und ohne
  * diesen Durchgang haette der Umstieg auf diese Flaeche sie gekostet.
  *
- * ## Warum das Schlummer-Menü ein Einschnitt bleibt
+ * ## Korrektur vom 30.10.2026: das Schlummer-Menü ist KEIN Einschnitt mehr
  *
- * Es braucht ein Ausklapp-Menü, und das kommt in allen drei Produkten aus
- * deren eigenem UI-Kit. Es hierher zu holen hieße, eine weitere Abhängigkeit
- * aufzunehmen, um rund zwanzig Zeilen je Produkt zu sparen — und die drei
- * Zeitpunkte („heute Abend", „morgen früh", „nächste Woche") sind ohnehin eine
- * Entscheidung und keine Darstellung.
+ * Hier stand: *„Es braucht ein Ausklapp-Menü, und das kommt in allen drei
+ * Produkten aus deren eigenem UI-Kit. Es hierher zu holen hieße, eine weitere
+ * Abhängigkeit aufzunehmen, um rund zwanzig Zeilen je Produkt zu sparen."*
+ *
+ * Die Begründung war am 22.10.2026 richtig und ist es seit A1/A7 nicht mehr:
+ * Diese Fläche zeichnet den Verschieben-Knopf und das Zeilenmenü der
+ * Wiedervorlage längst mit `./ui/dropdown-menu`. Die Abhängigkeit, die
+ * damals der Preis gewesen wäre, ist zweimal schon bezahlt.
+ *
+ * Und der zweite Halbsatz — die drei Zeitpunkte seien „eine Entscheidung und
+ * keine Darstellung" — hat genau den Schaden angerichtet, gegen den er
+ * argumentierte: „Heute Abend" hieß in AI Brain +1 Stunde und im Projekt-
+ * Manager den nächsten Tag. Eine Entscheidung, die jedes Produkt für sich
+ * trifft, ist in vier Produkten vier Entscheidungen.
+ *
+ * Seit A13 steht der Knopf hier, mit den Zeitpunkten aus
+ * {@link WIEDERVORLAGE_ZEITEN}.
  */
 export interface MailboxFlaecheProps {
     /**
@@ -96,7 +108,17 @@ export interface MailboxFlaecheProps {
     leerText?: string;
     /** Die Leisten des Produkts über der geöffneten Mail. */
     vorDerAnsicht?: ReactNode;
-    /** Was neben die Knöpfe der Leseansicht gehört — etwa das Schlummer-Menü. */
+    /**
+     * Was neben die Knoepfe der Leseansicht gehoert.
+     *
+     * Das Schlummer-Menue stand bis zum 30.10.2026 hier — in CRM, Verwaltung
+     * und AI Brain wortgleich, je rund zwanzig Zeilen. Es zeichnet die Flaeche
+     * jetzt selbst (A13, #9116); dieser Platz bleibt fuer das, was wirklich
+     * nur ein Produkt hat, etwa „Aus der Ablage entfernen" in AI Brain.
+     *
+     * ⚠️ Wer auf diese Version zieht, loescht im selben Zug seinen eigenen
+     * Uhr-Knopf — sonst stehen zwei da.
+     */
     zusatzAktionen?: ReactNode;
     /** Dialoge und Ähnliches, die nach der Seite gezeichnet werden. */
     nachDerSeite?: ReactNode;
@@ -133,23 +155,6 @@ export interface MailboxFlaecheProps {
      */
     chatZusatz?: MailboxChatProps['controls'];
     /**
-     * Rechtsklick auf eine Zeile der Liste.
-     *
-     * `MailMessageList` nimmt `onRowContextMenu` seit jeher; diese Flaeche hat
-     * es nicht weitergegeben. Der Projekt-Manager haengt dort seine
-     * Wiedervorlage an, und beim Umstieg waere sie verschwunden — ohne Ersatz,
-     * denn seit #7690 ist das Menue der EINZIGE Weg dorthin (das Zuweisen ist
-     * an das Abzeichen in der Zeile gewandert, #9116).
-     *
-     * Das Menue selbst zeichnet das Produkt, ueber `nachDerSeite`. Hierher
-     * kommt nur, WANN es aufgeht.
-     */
-    /**
-     * Eigene Knoepfe am rechten Rand der Listenleiste — ein Filter, eine
-     * Hilfe, was das Produkt dort braucht. Der Manager haengt dort „nur mir
-     * zugewiesene" und die Tastenkuerzel hin (#9116).
-     */
-    /**
      * Ob dieses Produkt Ketten laden KANN (#1171).
      *
      * Vorgabe `false`, und das ist Absicht: Bis zum 30.10.2026 zeigte die
@@ -172,14 +177,24 @@ export interface MailboxFlaecheProps {
      * zurueck — der Manager, sobald er seine Adressen ueber `routen` setzt.
      */
     kettenMoeglich?: boolean;
-    leisteZusatz?: ReactNode;
     /**
-     * Eine Zeile UNTER der Listenleiste, fuer eine Aussage ueber die Liste
-     * selbst — nicht fuer eine Meldung. Der Manager sagt dort, wie alt sein
-     * Suchverzeichnis ist: Wer aus einem Verzeichnis sucht, haelt eine
-     * unvollstaendige Liste sonst fuer vollstaendig.
+     * Der Zustand des Suchverzeichnisses, aus dem die Treffer kommen (#9116).
+     *
+     * Hier standen bis zum 30.10.2026 zwei Steckplaetze — `leisteZusatz` fuer
+     * eigene Knoepfe in der Listenleiste und `leisteHinweis` fuer eine Zeile
+     * darunter. Beide hatte genau EIN Produkt gefuellt, und genau darin lag
+     * der Fehler: Was in einem Steckplatz liegt, sieht in jedem Produkt
+     * anders aus oder fehlt.
+     *
+     * Was dort lag, liegt jetzt im Paket: „nur mir zugewiesene" an
+     * `eigeneAdresse` (A3), die Tastenkuerzel-Hilfe an der Taste, die dieses
+     * Paket ohnehin bindet (A4) — und dieser Hinweis, gezeichnet aus Zahlen.
+     *
+     * Das Produkt liefert die Zahlen, weil nur es das Verzeichnis fuehrt. Wie
+     * sie aussehen, entscheidet das Paket, weil es in allen vier Produkten
+     * gleich aussehen soll.
      */
-    leisteHinweis?: ReactNode;
+    suchVerzeichnis?: SuchVerzeichnis | null;
     /**
      * Einen Entwurf weiterbearbeiten.
      *
@@ -211,8 +226,7 @@ export function MailboxFlaeche({
     weiterleitenFeld: WeiterleitenFeld,
     chatZusatz,
     kettenMoeglich = false,
-    leisteHinweis,
-    leisteZusatz,
+    suchVerzeichnis = null,
     entwurfBearbeiten,
     werkzeugeVerbergen,
     werkzeugeEigene,
@@ -315,6 +329,49 @@ export function MailboxFlaeche({
     const verschiebeZiele = (ordner.targets.length > 0 ? ordner.targets : ordner.folders) as MailFolder[];
 
     const zieleLaden = () => void ordner.loadTargetsOnce(konto?.id ?? '');
+
+    /*
+     * Der Uhr-Knopf an der offenen Mail (A13, #9116).
+     *
+     * Er stand in CRM, Verwaltung und AI Brain in `zusatzAktionen` — dreimal
+     * dasselbe Ausklapp-Menue mit denselben drei Zeitpunkten, je rund zwanzig
+     * Zeilen. Der Projekt-Manager hatte ihn gar nicht; dort lag die
+     * Wiedervorlage nur im Zeilenmenue.
+     *
+     * Die Begruendung, warum er bis heute DRAUSSEN blieb, stand oben in
+     * diesem Kopf: Er braucht ein Ausklapp-Menue, und das kam aus dem UI-Kit
+     * des Produkts. Das stimmt nicht mehr — seit A1 zeichnet diese Flaeche den
+     * Verschieben-Knopf mit `./ui/dropdown-menu`, und seit A7 das Zeilenmenue
+     * der Wiedervorlage. Die Zutat ist also schon da, und zwar zweimal.
+     *
+     * Dieselben Zeitpunkte wie im Zeilenmenue, aus derselben Konstante: Bis
+     * zum 30.10.2026 hiess „heute Abend" in AI Brain +1 Stunde und im Manager
+     * den naechsten Tag. Zwei Wege zu einer Sache, die verschieden rechnen,
+     * sind schlimmer als ein fehlender Weg.
+     */
+    const schlummerKnopf = (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button
+                    size="sm"
+                    variant="outline"
+                    title={germanLabels.wiedervorlage.knopf}
+                    aria-label={germanLabels.wiedervorlage.knopf}
+                    data-slot="mailbox-schlummern"
+                >
+                    <Clock className="h-4 w-4" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+                {WIEDERVORLAGE_ZEITEN.map(({ schluessel, wann }) => (
+                    <DropdownMenuItem key={schluessel} onSelect={() => void schlummern(wann())}>
+                        {germanLabels.wiedervorlage[schluessel as keyof typeof germanLabels.wiedervorlage] as string}
+                    </DropdownMenuItem>
+                ))}
+                <DropdownMenuItem onSelect={() => void aufwecken()}>{germanLabels.wiedervorlage.aufheben}</DropdownMenuItem>
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
 
     /*
      * EIN Lesezugriff auf die geoeffnete Nachricht, mit erklaerter Form.
@@ -425,8 +482,8 @@ export function MailboxFlaeche({
                                      */
                                     mineOnly={nurEigene}
                                     onToggleMine={nurEigeneMoeglich ? nurEigeneUmschalten : undefined}
-                                    extras={leisteZusatz}
-                                    notice={leisteHinweis}
+                                    onHilfe={() => setHilfeOffen(true)}
+                                    verzeichnis={suchVerzeichnis}
                                     labels={germanLabels.toolbar}
                                     hint={zuweisungen.erreichbar ? null : 'Zuständigkeiten nicht erreichbar'}
                                     showFolders={ordnerSichtbar}
@@ -645,7 +702,12 @@ export function MailboxFlaeche({
                                                 setAntwortOffen(true);
                                             }}
                                             onForward={() => setWeiterleitenOffen(true)}
-                                            extraActions={zusatzAktionen}
+                                            extraActions={
+                                                <>
+                                                    {schlummerKnopf}
+                                                    {zusatzAktionen}
+                                                </>
+                                            }
                                             /*
                                              * A1 (#9116): Die Flaeche zeichnet ihn selbst.
                                              * Vorher baute ihn jedes Produkt — im Manager

@@ -54,6 +54,11 @@ const texte: MailListToolbarLabels = {
     moveTitle: 'In Ordner verschieben',
     delete: 'Löschen',
     clearSelection: 'Auswahl aufheben',
+    hilfe: 'Tastatur-Kürzel (?)',
+    verzeichnis: (kopfzeilen, ordner, minutenHer) =>
+        `Aus dem Verzeichnis: ${kopfzeilen} Kopfzeilen aus ${ordner} Ordnern` +
+        (minutenHer === null ? '' : `, zuletzt vor ${minutenHer} Minuten erneuert`),
+    verzeichnisVeraltet: 'veraltet',
 };
 
 function suche(ueberschrieben: Partial<MailListToolbarSearch> = {}): MailListToolbarSearch {
@@ -216,10 +221,63 @@ describe('MailListToolbar', () => {
         unmount();
     });
 
-    it('nimmt die Zusatz-Knoepfe des Produkts auf', () => {
-        const { container, unmount } = render(<MailListToolbar {...grund} search={suche()} extras={<button>NUR MEINE</button>} />);
+    /*
+     * Hier stand bis zum 30.10.2026 ein Test fuer `extras` — ein Steckplatz
+     * fuer eigene Knoepfe des Produkts. Was darin lag, liegt seit A3/A12
+     * (#9116) in dieser Leiste: der Zustaendigkeits-Filter und dieser Knopf.
+     */
+    it('zeigt den Knopf zur Tastatur-Hilfe nur, wenn er auch etwas aufmacht', () => {
+        const { container, rerender, unmount } = render(<MailListToolbar {...grund} search={suche()} />);
+        expect(container.querySelector('[data-slot="mail-list-hilfe"]')).toBeNull();
 
-        expect(textOf(container)).toContain('NUR MEINE');
+        const oeffnen = vi.fn();
+        rerender(<MailListToolbar {...grund} search={suche()} onHilfe={oeffnen} />);
+
+        const knopf = container.querySelector<HTMLElement>('[data-slot="mail-list-hilfe"]');
+        expect(knopf).not.toBeNull();
+
+        // Die Taste gehoert in die Aufschrift: Eine Hilfe, die man nur mit `?`
+        // erreicht, findet niemand — und das war der Grund fuer diesen Knopf.
+        expect(knopf?.getAttribute('title')).toBe('Tastatur-Kürzel (?)');
+
+        knopf?.click();
+        expect(oeffnen).toHaveBeenCalledTimes(1);
+        unmount();
+    });
+
+    it('sagt, wie alt das Suchverzeichnis ist — aber nur im Suchmodus', () => {
+        const verzeichnis = { entries: 412, folders: 7, minutes_ago: 3, stale: false };
+
+        // Ausserhalb der Suche kommt die Liste aus dem Postfach; das
+        // Verzeichnis hat dazu nichts zu melden.
+        const { container, rerender, unmount } = render(<MailListToolbar {...grund} search={suche()} verzeichnis={verzeichnis} />);
+        expect(container.querySelector('[data-slot="mail-list-verzeichnis"]')).toBeNull();
+
+        rerender(<MailListToolbar {...grund} search={suche({ isSearchMode: true })} verzeichnis={verzeichnis} />);
+
+        // Die ZAHLEN, nicht nur die Zeile: Ein Hinweis mit den falschen Zahlen
+        // waere genauso kaputt wie keiner.
+        expect(textOf(container)).toContain('412 Kopfzeilen aus 7 Ordnern');
+        expect(textOf(container)).toContain('zuletzt vor 3 Minuten erneuert');
+        expect(textOf(container)).not.toContain('veraltet');
+
+        // Ohne Durchlauf keine Zeitangabe — „vor null Minuten" waere eine
+        // Frische, die es nicht gibt.
+        rerender(
+            <MailListToolbar
+                {...grund}
+                search={suche({ isSearchMode: true })}
+                verzeichnis={{ ...verzeichnis, minutes_ago: null, stale: true }}
+            />,
+        );
+        expect(textOf(container)).toContain('412 Kopfzeilen aus 7 Ordnern');
+        expect(textOf(container)).not.toContain('erneuert');
+        expect(textOf(container)).toContain('veraltet');
+
+        // Ohne Angabe sagt die Leiste gar nichts — drei der vier Produkte
+        // fuehren kein Verzeichnis.
+        rerender(<MailListToolbar {...grund} search={suche({ isSearchMode: true })} />);
+        expect(container.querySelector('[data-slot="mail-list-verzeichnis"]')).toBeNull();
         unmount();
     });
 

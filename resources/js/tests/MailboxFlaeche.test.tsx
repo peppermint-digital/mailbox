@@ -95,6 +95,24 @@ function seite(teil: Partial<MailboxSeiteErgebnis> = {}): MailboxSeiteErgebnis {
         },
         sammelAktion: vi.fn(),
         schlummern: vi.fn(),
+        /*
+         * Diese elf fuehrt der Haken seit A1/A3/A4/A7 (#9116), und die
+         * Attrappe trug sie bis zum 30.10.2026 nicht. Ohne Folge, solange kein
+         * Test den dazugehoerigen Knopf DRUECKT — dann aber faellt die
+         * Attrappe mit „is not a function", und der Befund sieht wie ein
+         * Fehler im Code aus. Deshalb vollstaendig, nicht nach Bedarf.
+         */
+        aufwecken: vi.fn(),
+        gelesenUmschalten: vi.fn(),
+        hilfeOffen: false,
+        markierungUmschalten: vi.fn(),
+        nurEigene: false,
+        nurEigeneMoeglich: false,
+        nurEigeneUmschalten: vi.fn(),
+        offeneArchivieren: vi.fn(),
+        offeneLoeschen: vi.fn(),
+        offeneVerschieben: vi.fn(),
+        setHilfeOffen: vi.fn(),
         sendetAntwort: false,
         setAntwortAnAlle: vi.fn(),
         setAntwortOffen: vi.fn(),
@@ -721,17 +739,90 @@ describe('die Durchreichen fuer den Manager (#9116)', () => {
      * Jeder Test prueft den INHALT, nicht nur die Anwesenheit — ein Durchgang,
      * der etwas Falsches weitergibt, waere genauso kaputt wie keiner.
      */
-    it('setzt eigene Knoepfe in die Listenleiste', () => {
-        const { container, unmount } = flaeche({ leisteZusatz: <button type="button">Nur meine</button> });
+    /*
+     * Hier standen bis zum 30.10.2026 zwei Tests fuer `leisteZusatz` und
+     * `leisteHinweis` — zwei Steckplaetze, die genau EIN Produkt gefuellt hat.
+     * Was darin lag, zeichnet die Flaeche seit A3/A12/A11 selbst; die beiden
+     * Tests darunter pruefen das an ihrer Stelle.
+     */
+    it('macht die Tastatur-Hilfe auch mit der Maus auf', () => {
+        const setHilfeOffen = vi.fn();
+        const { container, unmount } = flaeche({ seite: seite({ setHilfeOffen } as never) });
 
-        expect(container.textContent).toContain('Nur meine');
+        // Die Taste `?` bindet das Paket laengst — der Knopf ist der Weg
+        // dorthin fuer jemanden, der die Taste nicht kennt.
+        const knopf = container.querySelector<HTMLElement>('[data-slot="mail-list-hilfe"]');
+        expect(knopf, 'Ohne Knopf findet die Hilfe nur, wer sie schon kennt').not.toBeNull();
+        expect(container.querySelector('[data-slot="mailbox-kuerzel-hilfe"]')).toBeNull();
+
+        click(knopf as HTMLElement);
+
+        /*
+         * `true`, nicht nur „wurde gerufen": Die Flaeche haelt diesen Zustand
+         * nicht selbst, er liegt im Haken. Ein Umschalter an dieser Stelle
+         * haette die Hilfe wieder zugemacht, wenn sie schon offen war — und
+         * der Knopf soll sie aufmachen, nicht umschalten.
+         */
+        expect(setHilfeOffen).toHaveBeenCalledWith(true);
         unmount();
     });
 
-    it('zeigt den Hinweis unter der Leiste', () => {
-        const { container, unmount } = flaeche({ leisteHinweis: <span>Verzeichnis von gestern</span> });
+    it('zeigt die Hilfe, sobald der Haken sie offen fuehrt', () => {
+        const { unmount } = flaeche({ seite: seite({ hilfeOffen: true } as never) });
 
-        expect(container.textContent).toContain('Verzeichnis von gestern');
+        /*
+         * In `document.body`, nicht im Kasten des Tests: Ein Dialog dieses
+         * UI-Kits haengt sich in ein Portal. Wer ihn im `container` sucht,
+         * bekommt `null` und haelt das fuer „zeichnet nicht".
+         */
+        expect(document.body.querySelector('[data-slot="mailbox-kuerzel-hilfe"]')).not.toBeNull();
+        unmount();
+    });
+
+    it('zeichnet den Verzeichnis-Hinweis aus den Zahlen des Produkts', () => {
+        /*
+         * Die ganze Suche, nicht nur das eine Feld: `seite()` legt flach
+         * uebereinander, und ein `suche` mit nur `isSearchMode` nimmt der
+         * Leiste `criteria` weg — sie faellt dann an der Attrappe, nicht am
+         * Code.
+         */
+        const suchend = (anAn: boolean) =>
+            seite({
+                suche: {
+                    criteria: { query: 'Angebot', from: '', subject: '', since: '', unseen: false, allFolders: false },
+                    canSearch: true,
+                    searching: false,
+                    isSearchMode: anAn,
+                    foldersSearched: 7,
+                    totalFound: 12,
+                    set: vi.fn(),
+                    search: vi.fn(),
+                    clear: vi.fn(),
+                } as never,
+            });
+
+        const verzeichnis = { entries: 412, folders: 7, minutes_ago: 3, stale: false };
+        const { container, rerender, unmount } = flaeche({ seite: suchend(true), suchVerzeichnis: verzeichnis });
+
+        // Das Produkt gibt ZAHLEN, nicht Markup — geprueft wird deshalb der
+        // Satz, den das Paket daraus baut, nicht ein eigener Text.
+        expect(container.textContent).toContain('412 Kopfzeilen aus 7 Ordnern');
+
+        // Ohne Angabe sagt die Flaeche dazu nichts: Drei der vier Produkte
+        // fuehren kein Verzeichnis und suchen live im Postfach.
+        rerender(<MailboxFlaeche seite={suchend(true)} konten={[KONTO]} navigieren={vi.fn()} />);
+        expect(container.querySelector('[data-slot="mail-list-verzeichnis"]')).toBeNull();
+        unmount();
+    });
+
+    it('zeichnet den Uhr-Knopf an der offenen Mail selbst', () => {
+        const { container, unmount } = flaeche({
+            seite: seite({ offene: { message: nachricht(), loading: false, open: vi.fn(), close: vi.fn() } as never }),
+        });
+
+        // Er stand in CRM, Verwaltung und AI Brain wortgleich in
+        // `zusatzAktionen` und im Manager gar nicht (A13).
+        expect(container.querySelector('[data-slot="mailbox-schlummern"]')).not.toBeNull();
         unmount();
     });
 

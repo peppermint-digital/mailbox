@@ -194,6 +194,11 @@ const toolbar: MailListToolbarLabels = {
     moveTitle: 'In Ordner verschieben',
     delete: 'Löschen',
     clearSelection: 'Auswahl aufheben',
+    hilfe: 'Tastatur-Kürzel (?)',
+    verzeichnis: (kopfzeilen, ordner, minutenHer) =>
+        `Aus dem Verzeichnis: ${kopfzeilen} Kopfzeilen aus ${ordner} Ordnern` +
+        (minutenHer === null ? '' : `, zuletzt vor ${minutenHer} Minuten erneuert`),
+    verzeichnisVeraltet: 'veraltet',
 };
 
 /**
@@ -269,6 +274,7 @@ export const germanLabels = {
         morgenFrueh: 'Morgen früh (08:00)',
         naechsteWoche: 'Nächste Woche',
         aufheben: 'Wiedervorlage aufheben',
+        knopf: 'Später erinnern',
     },
     kuerzel: {
         titel: 'Tastatur-Kürzel',

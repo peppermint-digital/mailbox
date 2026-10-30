@@ -11,15 +11,16 @@ import {
     MessagesSquare,
     PanelLeft,
     PanelLeftClose,
+    Keyboard,
     Search,
     Trash2,
     TriangleAlert,
     X,
     UserCheck,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
 import type { MailFolder } from './MailFolderList';
 import type { MessageHandle } from './rows';
+import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
@@ -49,18 +50,28 @@ import { Label } from './ui/label';
  * no assumption about language. Every action arrives as a callback — the
  * package does not know what archiving means in your system.
  *
- * Two slots carry what genuinely differs:
+ * ## Die beiden Steckplaetze sind am 30.10.2026 weggefallen (#9116)
  *
- * - `extras` goes between the filter button and the search button. The project
- *   manager puts "only mine" and its keyboard-shortcut help there; nobody else
- *   has either.
- * - `notice` goes under the search banner. The project manager reports how old
- *   its header index is there — it is the only product that keeps one.
+ * Hier standen `extras` (zwischen Filter- und Suchknopf) und `notice` (unter
+ * dem Suchbanner), und die Begruendung dafuer war: „nur der Projekt-Manager
+ * hat das". Beides stimmte — und beides war der Grund, warum es in den
+ * anderen drei Produkten fehlte.
  *
- * A slot is the honest way to say "this one is different". Adding a
- * `showAssignedFilter` flag would put a feature two of three products can
- * never use into the shared contract, and the next reader would have to find
- * out why it is always false.
+ * Was in den Steckplaetzen lag, liegt jetzt hier:
+ *
+ * | lag in | ist jetzt |
+ * |---|---|
+ * | `extras`: „nur mir zugewiesene" | `onToggleMine` (A3) |
+ * | `extras`: Tastenkuerzel-Hilfe | `onHilfe` — die Tasten bindet dieses Paket seit A4 ohnehin |
+ * | `notice`: Alter des Suchverzeichnisses | `verzeichnis` — das Produkt gibt die ZAHLEN, gezeichnet wird hier |
+ *
+ * Der Unterschied ist nicht Geschmack. Ein Steckplatz nimmt einen fertigen
+ * Knoten, also entscheidet jedes Produkt selbst, wie der Hinweis aussieht und
+ * ob es ihn ueberhaupt zeigt — und drei zeigten ihn nicht. Eine Angabe nimmt
+ * Zahlen, und die Darstellung ist danach in allen vier dieselbe. Bastian am
+ * 30.10.2026: *„Es sollen von den einzelnen Systemen ja nur ihre
+ * Funktionalitaeten kommen."* Das Verzeichnis ist eine Funktionalitaet des
+ * Managers; wie alt es ist, zu ZEICHNEN ist keine.
  */
 export interface MailListToolbarLabels {
     /** Title of the folder-column toggle, which flips with its state. */
@@ -106,6 +117,34 @@ export interface MailListToolbarLabels {
     moveTitle: string;
     delete: string;
     clearSelection: string;
+    /** Der Knopf, der die Tastatur-Hilfe aufmacht — dieselbe Taste steht dabei. */
+    hilfe: string;
+    /** „Aus dem Verzeichnis: 412 Kopfzeilen aus 7 Ordnern, zuletzt vor 3 Minuten erneuert". */
+    verzeichnis: (kopfzeilen: number, ordner: number, minutenHer: number | null) => string;
+    verzeichnisVeraltet: string;
+}
+
+/**
+ * Der Zustand eines Suchverzeichnisses — die Zahlen, nicht ihre Darstellung.
+ *
+ * Nur der Projekt-Manager fuehrt so ein Verzeichnis (eine Tabelle mit
+ * Kopfzeilen, die alle 15 Minuten nachlaeuft). Wer daraus sucht, muss wissen,
+ * wie alt es ist: Sonst haelt er eine unvollstaendige Trefferliste fuer
+ * vollstaendig, und das ist eine Unwahrheit, die wie ein leeres Postfach
+ * aussieht.
+ *
+ * Die Feldnamen sind die der Serverantwort (`index_status`), damit das Produkt
+ * sie nicht umbenennen muss, bevor es sie weitergibt.
+ */
+export interface SuchVerzeichnis {
+    /** Wie viele Kopfzeilen das Verzeichnis fuehrt. */
+    entries: number;
+    /** Aus wie vielen Ordnern sie stammen. */
+    folders: number;
+    /** Wie lange der letzte Durchlauf her ist. `null`, wenn es keinen gab. */
+    minutes_ago: number | null;
+    /** Zu alt, um sich darauf zu verlassen. Entscheidet der Server. */
+    stale: boolean;
 }
 
 export interface MailListToolbarSearch {
@@ -188,10 +227,23 @@ export interface MailListToolbarProps {
     /** Called when the move menu opens — products load their folders lazily. */
     onMoveMenuOpen?: () => void;
 
-    /** Between the filter button and the search button. */
-    extras?: ReactNode;
-    /** Under the search banner. */
-    notice?: ReactNode;
+    /**
+     * Die Tastatur-Hilfe aufmachen — der Knopf neben dem Filter.
+     *
+     * Die Taste `?` bindet dieses Paket seit A4 (#9116) in allen vier
+     * Produkten, und die Uebersicht zeichnet es auch. Nur hinsehen konnte
+     * niemand: Eine Taste, die nirgends steht, findet man nicht. Deshalb der
+     * Knopf — und deshalb steht die Taste in seiner Aufschrift.
+     */
+    onHilfe?: () => void;
+    /**
+     * Der Zustand des Suchverzeichnisses, aus dem die Treffer stammen.
+     *
+     * Erscheint nur im Suchmodus und nur, wenn das Produkt ein Verzeichnis
+     * fuehrt. Ohne Angabe sagt die Leiste dazu nichts — fuer drei der vier
+     * Produkte ist das richtig, sie suchen live im Postfach.
+     */
+    verzeichnis?: SuchVerzeichnis | null;
 
     /** Open state of the filter panel, held by the product so it survives. */
     filtersOpen?: boolean;
@@ -225,8 +277,8 @@ export function MailListToolbar({
     currentFolder,
     onMove,
     onMoveMenuOpen,
-    extras,
-    notice,
+    onHilfe,
+    verzeichnis = null,
     filtersOpen = false,
     onToggleFilters,
 }: MailListToolbarProps) {
@@ -293,7 +345,19 @@ export function MailListToolbar({
                     </Button>
                 )}
 
-                {extras}
+                {onHilfe && (
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        title={labels.hilfe}
+                        aria-label={labels.hilfe}
+                        onClick={onHilfe}
+                        data-slot="mail-list-hilfe"
+                    >
+                        <Keyboard className="h-4 w-4" />
+                    </Button>
+                )}
 
                 <Button
                     variant="ghost"
@@ -382,7 +446,22 @@ export function MailListToolbar({
                 </div>
             )}
 
-            {notice}
+            {/* Der Hinweis gehoert UNTER das Suchbanner und nicht daneben: Er sagt
+                etwas ueber die Liste darunter, nicht ueber die Suche darueber. Und
+                nur im Suchmodus — ausserhalb davon kommt die Liste aus dem
+                Postfach, da hat das Verzeichnis nichts zu melden. */}
+            {search.isSearchMode && verzeichnis && (
+                <div
+                    className={`flex items-center gap-2 px-3 py-1 text-xs ${
+                        verzeichnis.stale ? 'bg-warning-subtle text-warning-foreground' : 'text-muted-foreground'
+                    }`}
+                    data-slot="mail-list-verzeichnis"
+                >
+                    <Search className="h-3 w-3 shrink-0" />
+                    <span>{labels.verzeichnis(verzeichnis.entries, verzeichnis.folders, verzeichnis.minutes_ago)}</span>
+                    {verzeichnis.stale && <Badge variant="outline">{labels.verzeichnisVeraltet}</Badge>}
+                </div>
+            )}
 
             <div className="flex items-center justify-between border-b p-2 text-sm text-muted-foreground">
                 <div className="flex items-center gap-1">

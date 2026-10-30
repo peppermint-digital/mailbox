@@ -151,3 +151,29 @@ describe('germanLabels', () => {
         expect(germanLabels.view.archiveConversation(3)).toContain('Nachrichten');
     });
 });
+
+/**
+ * Der eine Satz, bei dem die REIHENFOLGE der Zahlen zaehlt (A11, #9116).
+ *
+ * Der Test oben prueft absichtlich nur, dass ein Satz herauskommt — was darin
+ * steht, ist sonst eine Entscheidung und keine Zusage. Hier ist es eine:
+ * „412 Kopfzeilen aus 7 Ordnern" und „7 Kopfzeilen aus 412 Ordnern" sehen
+ * beide richtig aus, und nur eines davon ist es. Wer die Zahlen vertauscht
+ * liest, haelt ein frisches Verzeichnis fuer ein duerftiges oder umgekehrt.
+ *
+ * Nachgemessen am 30.10.2026: Eine Mutationsprobe, die genau diese zwei
+ * Zahlen tauscht, lief ohne diesen Test gruen durch — die Leisten-Tests geben
+ * ihre eigenen Woerter mit und sehen die mitgelieferten gar nicht.
+ */
+describe('der Verzeichnis-Hinweis', () => {
+    it('nennt die Kopfzeilen vor den Ordnern', () => {
+        expect(germanLabels.toolbar.verzeichnis(412, 7, 3)).toBe(
+            'Aus dem Verzeichnis: 412 Kopfzeilen aus 7 Ordnern, zuletzt vor 3 Minuten erneuert',
+        );
+    });
+
+    it('laesst die Zeitangabe weg, wenn es keinen Durchlauf gab', () => {
+        // „vor null Minuten erneuert" waere eine Frische, die es nicht gibt.
+        expect(germanLabels.toolbar.verzeichnis(0, 0, null)).toBe('Aus dem Verzeichnis: 0 Kopfzeilen aus 0 Ordnern');
+    });
+});
