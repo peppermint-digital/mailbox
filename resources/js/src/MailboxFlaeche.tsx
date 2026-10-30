@@ -16,6 +16,7 @@ import { MailMessageList, type MailMessageListProps } from './MailMessageList';
 import { MailMessageView } from './MailMessageView';
 import { MailWerkzeugleiste } from './MailWerkzeugleiste';
 import { postJson } from './transport';
+import { Skeleton } from './ui/skeleton';
 import type { MailFolder } from './MailFolderList';
 import type { RowMessage } from './rows';
 import type { MailboxSeiteErgebnis, MailboxSeiteKonto } from './useMailboxSeite';
@@ -150,6 +151,67 @@ export interface MailboxFlaecheProps {
      * hat es nur nicht weitergereicht.
      */
     kontoZusatz?: MailboxHeaderAccessory;
+    /**
+     * Eigene Knoepfe am rechten Rand der Listenleiste — ein Filter, eine
+     * Hilfe, was das Produkt dort braucht. Der Manager haengt dort „nur mir
+     * zugewiesene" und die Tastenkuerzel hin (#9116).
+     */
+    /**
+     * Ob dieses Produkt Ketten laden KANN (#1171).
+     *
+     * Vorgabe `false`, und das ist Absicht: Bis zum 30.10.2026 zeigte die
+     * Leiste den Schalter „nach Konversationen gruppieren" ueberall. Nur holt
+     * die Vorgabe-Adresse in jedem Fall die flache Liste, und CRM, Verwaltung
+     * und AI Brain haben gar keinen Endpunkt fuer Ketten.
+     *
+     * Gemessen an jenem Tag auf AI Brain, frisch geladen:
+     *
+     *     ungruppiert   25 Zeilen
+     *     gruppiert      0 Zeilen, dazu „Keine E-Mails"
+     *     wieder aus    25 Zeilen
+     *
+     * Das sah nicht nach einem wirkungslosen Schalter aus, sondern nach einem
+     * leeren Postfach. Ein Schalter, der nichts kann, gehoert deshalb weg und
+     * nicht ausgegraut: Ausgegraut sagt „gerade nicht", und das waere eine
+     * zweite Unwahrheit.
+     *
+     * Ein Produkt mit Ketten-Endpunkt setzt `true` und bekommt den Schalter
+     * zurueck — der Manager, sobald er seine Adressen ueber `routen` setzt.
+     */
+    kettenMoeglich?: boolean;
+    leisteZusatz?: ReactNode;
+    /**
+     * Eine Zeile UNTER der Listenleiste, fuer eine Aussage ueber die Liste
+     * selbst — nicht fuer eine Meldung. Der Manager sagt dort, wie alt sein
+     * Suchverzeichnis ist: Wer aus einem Verzeichnis sucht, haelt eine
+     * unvollstaendige Liste sonst fuer vollstaendig.
+     */
+    leisteHinweis?: ReactNode;
+    /**
+     * Wird gerufen, bevor das Verschieben-Menue aufgeht. Produkte, die ihre
+     * Ordner erst bei Bedarf holen, laden sie hier nach — ohne das steht im
+     * Menue nur, was zufaellig schon geladen war.
+     *
+     * DIE EINZIGE DURCHREICHE OHNE TEST, und das steht hier, damit es nicht
+     * wie ein Versehen aussieht: Der Rueckruf haengt an `onOpenChange` eines
+     * Radix-Menues, und das oeffnet in jsdom auf einen schlichten Klick nicht
+     * (es wartet auf Zeigerereignisse). Ein Test haette also nur bestaetigt,
+     * dass nichts passiert.
+     *
+     * Geprueft wird sie stattdessen im Browser, beim Nachweis zu #9116.
+     */
+    onVerschiebenMenue?: () => void;
+    /**
+     * Was neben dem Betreff der geoeffneten Nachricht steht. Im Manager das
+     * Abzeichen „Zugewiesen an …" — eine Anzeige, kein Bedienelement;
+     * geaendert wird die Zuweisung am Abzeichen in der Zeile.
+     */
+    ansichtZusatz?: ReactNode;
+    /**
+     * Der Knopf „In Ordner verschieben" an der geoeffneten Nachricht. Steckt
+     * im Produkt, weil die Ordnerliste und ihr Nachladen dort liegen.
+     */
+    verschiebenKnopf?: ReactNode;
     zeilenMenue?: MailMessageListProps<RowMessage>['onRowContextMenu'];
     /**
      * Einen Entwurf weiterbearbeiten.
@@ -181,7 +243,13 @@ export function MailboxFlaeche({
     antwortFeld: AntwortFeld,
     weiterleitenFeld: WeiterleitenFeld,
     chatZusatz,
+    ansichtZusatz,
+    kettenMoeglich = false,
     kontoZusatz,
+    leisteHinweis,
+    leisteZusatz,
+    onVerschiebenMenue,
+    verschiebenKnopf,
     zeilenMenue,
     entwurfBearbeiten,
     werkzeugeVerbergen,
@@ -257,6 +325,10 @@ export function MailboxFlaeche({
      */
     const nachricht = offene.message as
         | {
+              /* Seit #1177: Die Liste markiert damit die geoeffnete Zeile.
+                 Gehoert hierher und nicht an zehn Einzelstellen — dieselbe
+                 Begruendung wie fuer die Felder darunter. */
+              uid?: number | string;
               subject?: string;
               from_name?: string | null;
               from_address?: string;
@@ -330,6 +402,9 @@ export function MailboxFlaeche({
                         list={
                             <>
                                 <MailListToolbar
+                                    extras={leisteZusatz}
+                                    notice={leisteHinweis}
+                                    onMoveMenuOpen={onVerschiebenMenue}
                                     labels={germanLabels.toolbar}
                                     hint={zuweisungen.erreichbar ? null : 'Zuständigkeiten nicht erreichbar'}
                                     showFolders={ordnerSichtbar}
@@ -340,7 +415,11 @@ export function MailboxFlaeche({
                                     loading={liste.loading}
                                     onPage={(seite_) => void liste.load({ accountId: konto?.id ?? '', folder: ordnerPfad, page: seite_ })}
                                     grouped={liste.grouped}
-                                    onToggleGrouped={() => void liste.setGrouped(!liste.grouped, konto?.id ?? '', ordnerPfad)}
+                                    onToggleGrouped={
+                                        kettenMoeglich
+                                            ? () => void liste.setGrouped(!liste.grouped, konto?.id ?? '', ordnerPfad)
+                                            : undefined
+                                    }
                                     filtersOpen={filterOffen}
                                     onToggleFilters={() => setFilterOffen((v) => !v)}
                                     selected={auswahl.ticked}
@@ -388,6 +467,34 @@ export function MailboxFlaeche({
                                         formatSender={(m) => m.from_name || m.from_address || 'Unbekannt'}
                                         onOpen={(msg) => void offene.open(msg, ordnerPfad)}
                                         onToggleSelect={auswahl.toggle}
+                                        /*
+                                         * #1177. Alle drei fuehrt `useMailboxSeite`
+                                         * laengst — die Flaeche hat sie nur nicht
+                                         * weitergereicht, und die Liste faellt ohne sie
+                                         * still auf Vorgaben zurueck:
+                                         *
+                                         *   openedUid       null, also stimmt der
+                                         *                   Vergleich nie und die offene
+                                         *                   Zeile bleibt unmarkiert
+                                         *   expandedThreads bei jedem Zeichnen ein neues
+                                         *                   leeres Set
+                                         *   onToggleThread  undefined — der Pfeil wird
+                                         *                   gezeichnet und ruft ins Leere
+                                         *
+                                         * Gemessen am 30.10.2026 auf AI Brain: Zeile
+                                         * angeklickt, Nachricht offen, 0 von 25 Zeilen
+                                         * hervorgehoben.
+                                         */
+                                        openedUid={nachricht?.uid ?? null}
+                                        expandedThreads={auswahl.expanded}
+                                        onToggleThread={auswahl.toggleThread}
+                                        loadingPlaceholder={
+                                            <div className="space-y-2 p-2">
+                                                {[0, 1, 2, 3, 4].map((i) => (
+                                                    <Skeleton key={i} className="h-12 w-full" />
+                                                ))}
+                                            </div>
+                                        }
                                         rowAccessory={(z) => (
                                             <MailAssignmentPicker
                                                 labels={germanLabels.zuweisung}
@@ -508,6 +615,8 @@ export function MailboxFlaeche({
                                             }}
                                             onForward={() => setWeiterleitenOffen(true)}
                                             extraActions={zusatzAktionen}
+                                            headerAccessory={ansichtZusatz}
+                                            moveControl={verschiebenKnopf}
                                             onToggleRead={() => void gelesenUmschalten()}
                                             onToggleFlag={() => void markierungUmschalten()}
                                             archiveCount={archivKennungen.length}

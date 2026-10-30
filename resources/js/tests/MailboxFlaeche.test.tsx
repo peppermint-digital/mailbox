@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MailboxFlaeche } from '../src/MailboxFlaeche';
 import type { MailboxSeiteErgebnis } from '../src/useMailboxSeite';
-import { render } from './support/render';
+import { click, render } from './support/render';
 
 /**
  * Die eine Fläche der Mailseite (#8377).
@@ -551,6 +551,217 @@ describe('der Zusatz am Postfach-Namen', () => {
         const { container, unmount } = flaeche({});
 
         expect(container.querySelector('[data-testid="zusatz"]')).toBeNull();
+        unmount();
+    });
+});
+
+describe('was die Flaeche an die Liste durchreicht (#1177)', () => {
+    /**
+     * `useMailboxSeite` fuehrt `openedUid`, `expandedThreads` und
+     * `toggleThread` laengst. Die Flaeche hat sie bis zum 30.10.2026 nicht
+     * weitergereicht, und `MailMessageList` faellt ohne sie still auf
+     * Vorgaben zurueck — nichts bricht, es fehlt nur.
+     *
+     * Gemessen vor der Behebung auf brain.proxy.peppermint-digital.com:
+     * Zeile angeklickt, Nachricht offen, 0 von 25 Zeilen hervorgehoben.
+     */
+    function zeile(uid: number, teil: Record<string, unknown> = {}) {
+        return {
+            msg: {
+                uid,
+                message_id: `<${uid}@b>`,
+                subject: `Betreff ${uid}`,
+                from_address: 'a@b.test',
+                from_name: 'A',
+                date: '',
+                has_attachments: false,
+                attachment_count: 0,
+                is_read: true,
+                is_flagged: false,
+                preview: '',
+            },
+            key: `k${uid}`,
+            count: 1,
+            isMember: false,
+            isOutbound: false,
+            ...teil,
+        };
+    }
+
+    function mitZeilen(teil: Record<string, unknown> = {}, auswahlTeil: Record<string, unknown> = {}) {
+        return render(
+            <MailboxFlaeche
+                seite={seite({
+                    zeilen: [zeile(5), zeile(7)] as never,
+                    sichtbareZeilen: ((z: unknown) => z) as never,
+                    auswahl: {
+                        ticked: new Set(),
+                        targets: [],
+                        toggle: vi.fn(),
+                        clear: vi.fn(),
+                        expanded: new Set(),
+                        toggleThread: vi.fn(),
+                        ...auswahlTeil,
+                    } as never,
+                    ...teil,
+                })}
+                konten={[{ id: 1, email: 'a@b.test', name: 'A' }]}
+                navigieren={() => {}}
+            />,
+        );
+    }
+
+    it('markiert die Zeile der geoeffneten Nachricht', () => {
+        const { container, unmount } = mitZeilen({
+            offene: { message: { uid: 7, attachments: [], to: [], cc: [] }, loading: false } as never,
+        });
+
+        const zeilen = [...container.querySelectorAll('[data-slot="mail-message-row"]')];
+        const markiert = zeilen.filter((e) => e.className.includes('bg-primary/10'));
+
+        // Genau eine — nicht keine (der Fehler) und nicht alle (ein Vergleich,
+        // der immer stimmt, waere genauso falsch).
+        expect(markiert).toHaveLength(1);
+        expect(markiert[0]!.textContent).toContain('Betreff 7');
+        unmount();
+    });
+
+    it('markiert nichts, solange keine Nachricht offen ist', () => {
+        const { container, unmount } = mitZeilen();
+
+        expect([...container.querySelectorAll('[data-slot="mail-message-row"]')].filter((e) => e.className.includes('bg-primary/10'))).toHaveLength(
+            0,
+        );
+        unmount();
+    });
+
+    it('gibt den Griff zum Aufklappen einer Kette weiter', () => {
+        const umschalten = vi.fn();
+        const { container, unmount } = render(
+            <MailboxFlaeche
+                seite={seite({
+                    zeilen: [zeile(5, { count: 3 })] as never,
+                    sichtbareZeilen: ((z: unknown) => z) as never,
+                    auswahl: {
+                        ticked: new Set(),
+                        targets: [],
+                        toggle: vi.fn(),
+                        clear: vi.fn(),
+                        expanded: new Set(),
+                        toggleThread: umschalten,
+                    } as never,
+                })}
+                konten={[{ id: 1, email: 'a@b.test', name: 'A' }]}
+                navigieren={() => {}}
+            />,
+        );
+
+        const pfeil = [...container.querySelectorAll('[data-slot="mail-message-row"] button[title]')].find((b) =>
+            /aufklappen|zuklappen/i.test(b.getAttribute('title') ?? ''),
+        );
+
+        expect(pfeil, 'Der Aufklapp-Pfeil fehlt — ohne ihn sagt der Test nichts').not.toBeUndefined();
+        click(pfeil as HTMLElement);
+
+        // Nicht nur „wurde gerufen": Mit dem falschen Schluessel klappte eine
+        // andere Kette auf.
+        expect(umschalten).toHaveBeenCalledWith('k5');
+        unmount();
+    });
+});
+
+describe('die fuenf Durchreichen fuer den Manager (#9116)', () => {
+    /**
+     * Der Manager baut seine Mailseite bisher selbst zusammen und gibt dabei
+     * Dinge mit, die `MailboxFlaeche` nicht kannte. Beim Umstieg waeren sie
+     * still verschwunden — kein Absturz, nur ein Weniger, das erst auffaellt,
+     * wenn jemand den Knopf sucht.
+     *
+     * Ausgezaehlt am 30.10.2026: Von den Eigenschaften, die die inneren
+     * Komponenten annehmen, fehlten genau diese fuenf.
+     *
+     * Jeder Test prueft den INHALT, nicht nur die Anwesenheit — ein Durchgang,
+     * der etwas Falsches weitergibt, waere genauso kaputt wie keiner.
+     */
+    it('setzt eigene Knoepfe in die Listenleiste', () => {
+        const { container, unmount } = flaeche({ leisteZusatz: <button type="button">Nur meine</button> });
+
+        expect(container.textContent).toContain('Nur meine');
+        unmount();
+    });
+
+    it('zeigt den Hinweis unter der Leiste', () => {
+        const { container, unmount } = flaeche({ leisteHinweis: <span>Verzeichnis von gestern</span> });
+
+        expect(container.textContent).toContain('Verzeichnis von gestern');
+        unmount();
+    });
+
+    it('setzt den Zusatz neben den Betreff der geoeffneten Nachricht', () => {
+        const { container, unmount } = flaeche({
+            seite: seite({ offene: { message: entwurf(), loading: false } as never }),
+            ansichtZusatz: <span>Zugewiesen an Chris</span>,
+        });
+
+        expect(container.textContent).toContain('Zugewiesen an Chris');
+        unmount();
+    });
+
+    it('setzt den Verschieben-Knopf an die geoeffnete Nachricht', () => {
+        const { container, unmount } = flaeche({
+            seite: seite({ offene: { message: entwurf(), loading: false } as never }),
+            verschiebenKnopf: <button type="button">In Ordner verschieben</button>,
+        });
+
+        expect(container.textContent).toContain('In Ordner verschieben');
+        unmount();
+    });
+
+    it('laesst die Flaeche ohne jede der fuenf unveraendert', () => {
+        // Die drei anderen Produkte geben keine mit. Waere eine davon Pflicht
+        // oder haette einen Rueckfall, stuende dort etwas, das niemand bestellt hat.
+        const { container, unmount } = flaeche({});
+
+        expect(container.textContent).not.toContain('Nur meine');
+        expect(container.textContent).not.toContain('Verzeichnis von gestern');
+        unmount();
+    });
+});
+
+describe('der Gruppieren-Schalter (#1171)', () => {
+    /**
+     * Gemessen am 30.10.2026 live auf AI Brain, frisch geladen:
+     *
+     *     ungruppiert   25 Zeilen
+     *     gruppiert      0 Zeilen, dazu „Keine E-Mails"
+     *     wieder aus    25 Zeilen
+     *
+     * Dreimal in Folge im gruppierten Zustand nachgemessen, stabil 0, keine
+     * Ladeplatzhalter. Es sah nicht nach einem wirkungslosen Schalter aus,
+     * sondern nach einem leeren Postfach.
+     *
+     * Ursache: Die Vorgabe-Adresse holt in jedem Fall die flache Liste, und
+     * CRM, Verwaltung und AI Brain haben gar keinen Endpunkt fuer Ketten.
+     */
+    function schalter(container: HTMLElement) {
+        return [...container.querySelectorAll('button[aria-label]')].find((b) =>
+            /gruppier/i.test(b.getAttribute('aria-label') ?? ''),
+        );
+    }
+
+    it('fehlt, solange das Produkt keine Ketten laden kann', () => {
+        const { container, unmount } = flaeche({});
+
+        expect(schalter(container)).toBeUndefined();
+        unmount();
+    });
+
+    it('ist da, sobald das Produkt Ketten kann', () => {
+        // Die Gegenprobe gehoert dazu: Ein Test, der nur das Fehlen prueft,
+        // bliebe auch dann gruen, wenn der Schalter NIE mehr erschiene.
+        const { container, unmount } = flaeche({ kettenMoeglich: true });
+
+        expect(schalter(container)).not.toBeUndefined();
         unmount();
     });
 });
