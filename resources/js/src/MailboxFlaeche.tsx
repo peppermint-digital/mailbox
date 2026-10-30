@@ -6,7 +6,7 @@ import type { WeiterleitenFeldProps } from './inertia/WeiterleitenFeld';
 import { MailAssignmentPicker } from './MailAssignmentPicker';
 import { MailboxBrowser } from './MailboxBrowser';
 import { MailboxChat, type MailboxChatProps } from './MailboxChat';
-import { MailboxHeader } from './MailboxHeader';
+import { MailboxHeader, type MailboxHeaderAccessory } from './MailboxHeader';
 import { MailboxSidePanel, MailboxSidePanelHandle } from './MailboxSidePanel';
 import { MailConversationPane } from './MailConversationPane';
 import { MailFolderList } from './MailFolderList';
@@ -139,6 +139,17 @@ export interface MailboxFlaecheProps {
      * Das Menue selbst zeichnet das Produkt, ueber `nachDerSeite`. Hierher
      * kommt nur, WANN es aufgeht.
      */
+    /**
+     * Was neben einem Postfach-Namen im Waehler steht — ein Schloss, ein
+     * Globus, nichts. Welche Postfaecher geteilt sind, weiss nur das Produkt:
+     * `MailboxSeiteKonto` kennt id, email und name, sonst nichts. Ohne diesen
+     * Durchgang verlaere der Manager beim Umstieg auf die Flaeche den Globus,
+     * der ein Gruppenpostfach von einem eigenen unterscheidet (#9116).
+     *
+     * `MailboxHeader` kann das seit jeher (`accountAccessory`) — die Flaeche
+     * hat es nur nicht weitergereicht.
+     */
+    kontoZusatz?: MailboxHeaderAccessory;
     zeilenMenue?: MailMessageListProps<RowMessage>['onRowContextMenu'];
     /**
      * Einen Entwurf weiterbearbeiten.
@@ -170,6 +181,7 @@ export function MailboxFlaeche({
     antwortFeld: AntwortFeld,
     weiterleitenFeld: WeiterleitenFeld,
     chatZusatz,
+    kontoZusatz,
     zeilenMenue,
     entwurfBearbeiten,
     werkzeugeVerbergen,
@@ -283,6 +295,7 @@ export function MailboxFlaeche({
                     accounts={konten.map((k) => ({ id: k.id, name: k.name }))}
                     accountId={konto?.id ?? null}
                     onAccountChange={(wert) => setKonto(konten.find((k) => k.id === Number(wert)) ?? null)}
+                    accountAccessory={kontoZusatz}
                     onAddressBook={() => navigieren(`${basis}/address-book`)}
                     onCompose={() => navigieren(`${basis}/compose`)}
                     onRefresh={

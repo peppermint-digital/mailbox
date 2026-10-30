@@ -523,3 +523,34 @@ describe('der Postfach-Assistent', () => {
         unmount();
     });
 });
+
+describe('der Zusatz am Postfach-Namen', () => {
+    /**
+     * Der Manager unterscheidet ein Gruppenpostfach von einem eigenen durch
+     * einen Globus neben dem Namen. Welches Postfach geteilt ist, weiss nur
+     * das Produkt — `MailboxSeiteKonto` kennt id, email und name, sonst
+     * nichts. `MailboxHeader` konnte das seit jeher (`accountAccessory`), die
+     * Flaeche hat es nur nicht weitergereicht.
+     *
+     * Ohne diesen Durchgang verloere der Manager den Globus beim Umstieg auf
+     * die Flaeche (#9116) — eine Unterscheidung, die beim Antworten darueber
+     * entscheidet, ob man einer Person oder einem Team schreibt.
+     */
+    it('reicht den Zusatz an die Kopfzeile durch', () => {
+        const { container, unmount } = flaeche({
+            kontoZusatz: (konto) => <span data-testid="zusatz">geteilt:{konto.id}</span>,
+        });
+
+        expect(container.querySelector('[data-testid="zusatz"]')).not.toBeNull();
+        unmount();
+    });
+
+    it('kommt ohne ihn aus', () => {
+        // Die drei anderen Produkte geben keinen mit. Ein Pflichtfeld waere
+        // dort ein Zusatz, der nichts zu sagen hat.
+        const { container, unmount } = flaeche({});
+
+        expect(container.querySelector('[data-testid="zusatz"]')).toBeNull();
+        unmount();
+    });
+});
