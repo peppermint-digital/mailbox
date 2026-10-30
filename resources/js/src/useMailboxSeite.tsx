@@ -70,6 +70,29 @@ export const MAILBOX_SEITE_TEXTE: MailboxSeiteTexte = {
     antwortGescheitert: 'Die Antwort konnte nicht versendet werden.',
 };
 
+/**
+ * Eine Quelle — oder eine Fabrik, die sie fuer ein bestimmtes Postfach baut.
+ *
+ * Warum es die Fabrik gibt: Eine eigene Quelle muss wissen, aus WELCHEM
+ * Postfach sie holt. Das Postfach fuehrt aber dieser Haken, und die Quelle
+ * geht als Option in ihn hinein — Henne und Ei.
+ *
+ * Der Ausweg, der sich anbietet, ist der falsche: Das Produkt haelt die
+ * Kennung in einer Referenz und zieht sie in einem Effekt nach. Dann liegt
+ * zwischen dem Postfachwechsel und der richtigen Kennung ein Bilddurchlauf,
+ * und was in diesem Fenster passiert, geht an das ALTE Postfach. Genau das
+ * war Bug #1142 und der Fehler vom 23.09.2026: Postfach wechseln, Mail
+ * anklicken, nichts passiert — keine Meldung, keine Fehlerseite.
+ *
+ * Die Fabrik bekommt die Kennung deshalb im SELBEN Durchlauf, in dem sich das
+ * Postfach aendert. Kein Effekt, kein Fenster.
+ *
+ * Die Fabrik selbst gehoert stabil gehalten (`useCallback`) — sonst baut sie
+ * bei jedem Zeichnen eine neue Quelle, und die haengt in den Abhaengigkeiten
+ * der Liste.
+ */
+export type QuelleOderFabrik<T> = T | ((kontoId: number | string | null) => T);
+
 export interface MailboxSeiteOptionen {
     /** Die Postfaecher, die dieses Produkt diesem Menschen zeigt. */
     konten: MailboxSeiteKonto[];
@@ -121,7 +144,7 @@ export interface MailboxSeiteOptionen {
      * `httpSources` hatte den Platz (`search?: MailboxSearchSource`) schon;
      * er kam hier nur nicht an.
      */
-    suchQuelle?: MailboxSearchSource<RowMessage>;
+    suchQuelle?: QuelleOderFabrik<MailboxSearchSource<RowMessage>>;
     /**
      * Eine eigene Oeffnen-Quelle, falls das Produkt mehr oeffnen kann als ein
      * Postfach hergibt.
@@ -141,7 +164,7 @@ export interface MailboxSeiteOptionen {
      * Randfunktion: Dort liegen die Mails an Aufgaben und die eigenen
      * gesendeten Nachrichten (#9116).
      */
-    oeffnenQuelle?: OpenMessageSource<RowMessage, Record<string, never>>;
+    oeffnenQuelle?: QuelleOderFabrik<OpenMessageSource<RowMessage, Record<string, never>>>;
     /**
      * Ob die Liste beim ersten Zeichnen nach Konversationen gruppiert ist.
      *
@@ -364,13 +387,31 @@ export function useMailboxSeite({
 
     const assistent = useMailboxSidePanel(namensraum);
 
+    /*
+     * Die eigenen Quellen aufloesen — mit der Kennung, die in DIESEM Durchlauf
+     * gilt. `konto` ist der Zustand oben in diesem Haken; wer hier liest,
+     * liest nicht den Stand von vorhin.
+     *
+     * Die Objektform bleibt gueltig und unveraendert: CRM, Verwaltung und AI
+     * Brain reichen gar keine eigene Quelle herein, der Manager eine Fabrik.
+     */
+    const eigeneOeffnenQuelle = useMemo(
+        () => (typeof oeffnenQuelle === 'function' ? oeffnenQuelle(konto?.id ?? null) : oeffnenQuelle),
+        [oeffnenQuelle, konto?.id],
+    );
+
+    const eigeneSuchQuelle = useMemo(
+        () => (typeof suchQuelle === 'function' ? suchQuelle(konto?.id ?? null) : suchQuelle),
+        [suchQuelle, konto?.id],
+    );
+
     const ordner = useMailboxFolders({ source: quellen.folders });
     const liste = useMailboxList<RowMessage>({ source: quellen.messages, initialGrouped });
     // Die eigene des Produkts, sonst die des Hakens.
-    const offene = useOpenMessage<RowMessage, Record<string, never>>({ source: oeffnenQuelle ?? quellen.message });
+    const offene = useOpenMessage<RowMessage, Record<string, never>>({ source: eigeneOeffnenQuelle ?? quellen.message });
     const suche = useMailboxSearch<RowMessage>({
         // Die eigene des Produkts, sonst die des Hakens.
-        source: suchQuelle ?? quellen.search!,
+        source: eigeneSuchQuelle ?? quellen.search!,
         folder: ordnerPfad,
         onResults: (zeilen, gesamt) => liste.showRows(zeilen, gesamt),
         // Zurück zur normalen Liste — der Ordner, der offen war.

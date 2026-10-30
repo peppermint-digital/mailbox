@@ -700,3 +700,81 @@ describe('der Haken füllt, was er verspricht', () => {
         unmount();
     });
 });
+
+describe('eigene Quellen als Fabrik (#9116)', () => {
+    /**
+     * Eine eigene Quelle muss wissen, aus WELCHEM Postfach sie holt. Das
+     * Postfach fuehrt aber dieser Haken, und die Quelle geht als Option in
+     * ihn hinein.
+     *
+     * Der naheliegende Ausweg ist der falsche: Das Produkt haelt die Kennung
+     * in einer Referenz und zieht sie in einem Effekt nach. Dann liegt
+     * zwischen Postfachwechsel und richtiger Kennung ein Bilddurchlauf — und
+     * was in diesem Fenster passiert, geht an das ALTE Postfach. Genau das
+     * war Bug #1142: Postfach wechseln, Mail anklicken, nichts passiert.
+     *
+     * Deshalb prueft dieser Test nicht, OB die Fabrik gerufen wurde, sondern
+     * mit welcher Kennung die naechste Suche wirklich hinausging.
+     */
+    it('sucht nach einem Postfachwechsel mit der neuen Kennung', async () => {
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const gesuchtMit: (number | string | null)[] = [];
+
+        // Stabil halten: Eine bei jedem Zeichnen neue Fabrik baute eine bei
+        // jedem Zeichnen neue Quelle — und die haengt in den Abhaengigkeiten
+        // der Liste.
+        const fabrik = (kontoId: number | string | null) => ({
+            async search() {
+                gesuchtMit.push(kontoId);
+
+                return { messages: [], total: 0, foldersSearched: 1 };
+            },
+        });
+
+        const { unmount } = render(<Probe melden={() => {}} suchQuelle={fabrik as never} />);
+
+        await vi.waitFor(() => expect(zuletzt.konto).not.toBeNull());
+        await suchen('rechnung');
+
+        expect(gesuchtMit, 'die erste Suche ging nicht mit dem ersten Postfach hinaus').toEqual([42]);
+
+        await act(async () => {
+            (zuletzt.setKonto as (k: unknown) => void)({ id: 43, email: 'zweites@example.test', name: 'Zweites' });
+        });
+
+        await suchen('miete');
+
+        // Der ganze Punkt: KEIN zweites 42 dazwischen. Stuende hier
+        // [42, 42], ginge die Suche nach dem Wechsel noch ans alte Postfach.
+        expect(gesuchtMit, 'nach dem Wechsel ging die Suche ans alte Postfach').toEqual([42, 43]);
+
+        unmount();
+    });
+
+    it('nimmt eine Quelle weiterhin als blankes Objekt', async () => {
+        // Die bisherige Form bleibt gueltig — CRM, Verwaltung und AI Brain
+        // aendern nichts, und ein Produkt ohne Postfachbezug soll keine
+        // Fabrik schreiben muessen.
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        let gerufen = 0;
+        const quelle = {
+            async search() {
+                gerufen += 1;
+
+                return { messages: [], total: 0, foldersSearched: 1 };
+            },
+        };
+
+        const { unmount } = render(<Probe melden={() => {}} suchQuelle={quelle as never} />);
+
+        await vi.waitFor(() => expect(zuletzt.konto).not.toBeNull());
+        await suchen('rechnung');
+
+        expect(gerufen).toBe(1);
+        unmount();
+    });
+});
