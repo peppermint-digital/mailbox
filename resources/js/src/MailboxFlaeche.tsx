@@ -1,5 +1,5 @@
 import { type ComponentType, type ReactNode } from 'react';
-import { FolderInput, FolderOpen } from 'lucide-react';
+import { FolderInput, FolderOpen, UserCheck } from 'lucide-react';
 import { looksLikeFolder } from './folders';
 import { germanLabels } from './germanLabels';
 import type { InlineAntwortProps } from './InlineAntwort';
@@ -190,12 +190,6 @@ export interface MailboxFlaecheProps {
      * unvollstaendige Liste sonst fuer vollstaendig.
      */
     leisteHinweis?: ReactNode;
-    /**
-     * Was neben dem Betreff der geoeffneten Nachricht steht. Im Manager das
-     * Abzeichen „Zugewiesen an …" — eine Anzeige, kein Bedienelement;
-     * geaendert wird die Zuweisung am Abzeichen in der Zeile.
-     */
-    ansichtZusatz?: ReactNode;
     zeilenMenue?: MailMessageListProps<RowMessage>['onRowContextMenu'];
     /**
      * Einen Entwurf weiterbearbeiten.
@@ -227,7 +221,6 @@ export function MailboxFlaeche({
     antwortFeld: AntwortFeld,
     weiterleitenFeld: WeiterleitenFeld,
     chatZusatz,
-    ansichtZusatz,
     kettenMoeglich = false,
     kontoZusatz,
     leisteHinweis,
@@ -656,7 +649,37 @@ export function MailboxFlaeche({
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>
                                             }
-                                            headerAccessory={ansichtZusatz}
+                                            /*
+                                             * A2 (#9116): Wer fuer diese Mail zustaendig
+                                             * ist, steht neben dem Betreff.
+                                             *
+                                             * Die Daten fuehrt der Haken laengst — nur die
+                                             * Anzeige fehlte. Der Manager hatte sie, die
+                                             * anderen drei nicht, obwohl alle vier
+                                             * Zustaendigkeiten fuehren. Geaendert wird sie
+                                             * weiterhin am Abzeichen in der Zeile; hier
+                                             * steht sie nur.
+                                             *
+                                             * `name` traegt auch dann, wenn `user_id` null
+                                             * ist: Die Zustaendigkeit kann fuer jemanden
+                                             * stehen, den DIESES System nicht kennt. Sie
+                                             * dann wegzulassen hiesse, die Mail saehe frei
+                                             * aus, obwohl jemand an ihr arbeitet.
+                                             */
+                                            headerAccessory={(() => {
+                                                const zustaendig = nachricht ? zuweisungen.fuer(nachricht as never) : null;
+
+                                                return zustaendig ? (
+                                                    <span
+                                                        className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary"
+                                                        title={germanLabels.zuweisung.assignedTo(zustaendig.name)}
+                                                        data-slot="mailbox-zustaendig"
+                                                    >
+                                                        <UserCheck className="h-3.5 w-3.5 shrink-0" />
+                                                        {germanLabels.zuweisung.assignedTo(zustaendig.name)}
+                                                    </span>
+                                                ) : null;
+                                            })()}
                                             onToggleRead={() => void gelesenUmschalten()}
                                             onToggleFlag={() => void markierungUmschalten()}
                                             archiveCount={archivKennungen.length}

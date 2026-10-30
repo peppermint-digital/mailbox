@@ -703,13 +703,37 @@ describe('die Durchreichen fuer den Manager (#9116)', () => {
         unmount();
     });
 
-    it('setzt den Zusatz neben den Betreff der geoeffneten Nachricht', () => {
+    /*
+     * Hier stand bis zum 30.10.2026 ein Test fuer `ansichtZusatz` — ein
+     * Durchgang fuer das Zustaendigkeits-Abzeichen. Mit A2 (#9116) zeichnet
+     * die Flaeche es selbst aus `zuweisungen`, die sie ohnehin fuehrt.
+     */
+    it('zeigt die Zustaendigkeit neben dem Betreff, ohne Zutun des Produkts', () => {
         const { container, unmount } = flaeche({
-            seite: seite({ offene: { message: entwurf(), loading: false } as never }),
-            ansichtZusatz: <span>Zugewiesen an Chris</span>,
+            seite: seite({
+                offene: { message: entwurf(), loading: false } as never,
+                zuweisungen: {
+                    users: [],
+                    erreichbar: true,
+                    busy: null,
+                    fuer: () => ({ message_id: '<entwurf@x>', thread_id: null, user_id: 3, name: 'Chris', initials: 'C' }),
+                    zuweisen: vi.fn(),
+                    aufheben: vi.fn(),
+                } as never,
+            }),
         });
 
-        expect(container.textContent).toContain('Zugewiesen an Chris');
+        expect(container.querySelector('[data-slot="mailbox-zustaendig"]')?.textContent).toContain('Chris');
+        unmount();
+    });
+
+    it('zeigt nichts, wenn niemand zustaendig ist', () => {
+        // Die Gegenprobe: Ein Abzeichen, das immer da ist, sagt nichts.
+        const { container, unmount } = flaeche({
+            seite: seite({ offene: { message: entwurf(), loading: false } as never }),
+        });
+
+        expect(container.querySelector('[data-slot="mailbox-zustaendig"]')).toBeNull();
         unmount();
     });
 
