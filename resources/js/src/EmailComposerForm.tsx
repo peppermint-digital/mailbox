@@ -362,7 +362,7 @@ export function EmailComposerForm({
     accounts = [],
     signatureAccountId = null,
     allowBcc = false,
-    allowAttachments = false,
+    allowAttachments,
     sending = false,
     submitLabel,
     errors = {},
@@ -381,6 +381,25 @@ export function EmailComposerForm({
     const [newBcc, setNewBcc] = useState('');
     const [showCc, setShowCc] = useState(false);
     const [showBcc, setShowBcc] = useState(false);
+    /*
+     * Dateien anhaengen zeigt, wer Dateien auch ANNEHMEN kann (31.10.2026).
+     *
+     * `allowAttachments` war ein Schalter mit Vorgabe `false`, und genau daran
+     * ist es dreimal haengengeblieben: CRM, Verwaltung und AI Brain gaben ihn
+     * nicht mit, also fehlte der Weg — und als der Entwurfs-Block darin stand,
+     * fehlte auch die Anzeige dessen, was der Entwurf mitbringt.
+     *
+     * Der Schalter beantwortete ausserdem die falsche Frage. Ob ein Knopf
+     * „Datei hinzufuegen" erscheinen DARF, haengt nicht an einer Erlaubnis,
+     * sondern daran, ob die gewaehlte Datei irgendwo ankommt — und das ist
+     * genau dann der Fall, wenn das Produkt `onAttachmentsChange` mitgibt.
+     * Ohne den Rueckruf faellt sie still auf den Boden.
+     *
+     * Also ist die Faehigkeit die Vorgabe. Der Schalter bleibt, um sie
+     * ausdruecklich abzuschalten — nicht, um sie einzuschalten.
+     */
+    const zeigtAnhaenge = allowAttachments ?? onAttachmentsChange !== undefined;
+
     const [isDragging, setIsDragging] = useState(false);
     const fileInput = useRef<HTMLInputElement | null>(null);
 
@@ -629,7 +648,7 @@ export function EmailComposerForm({
 
     const onDragOver = (event: DragEvent<HTMLDivElement>) => {
         event.preventDefault();
-        if (allowAttachments) {
+        if (zeigtAnhaenge) {
             setIsDragging(true);
         }
     };
@@ -645,7 +664,7 @@ export function EmailComposerForm({
     const onDrop = (event: DragEvent<HTMLDivElement>) => {
         event.preventDefault();
         setIsDragging(false);
-        if (!allowAttachments) {
+        if (!zeigtAnhaenge) {
             return;
         }
         // What is dropped on the editor is the editor's business (inline
@@ -661,7 +680,7 @@ export function EmailComposerForm({
 
     return (
         <div className="relative space-y-4" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
-            {isDragging && allowAttachments && (
+            {isDragging && zeigtAnhaenge && (
                 <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-primary/10 text-sm font-medium text-primary">
                     {labels.dropFiles}
                 </div>
@@ -875,7 +894,7 @@ export function EmailComposerForm({
                 </div>
             )}
 
-            {allowAttachments && (
+            {zeigtAnhaenge && (
                 <div>
                     <div className="flex items-center justify-between">
                         <Label className="text-xs text-muted-foreground">{labels.attachments}</Label>

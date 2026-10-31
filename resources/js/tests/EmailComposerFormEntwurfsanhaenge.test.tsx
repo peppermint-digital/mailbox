@@ -70,3 +70,37 @@ describe('die Anhänge eines Entwurfs', () => {
         unmount();
     });
 });
+
+describe('wann der Weg zum Anhängen erscheint', () => {
+    /**
+     * `allowAttachments` war ein Schalter mit Vorgabe `false`, und genau daran
+     * ist es dreimal hängengeblieben. Er beantwortete auch die falsche Frage:
+     * Ob „Datei hinzufügen" erscheinen darf, hängt nicht an einer Erlaubnis,
+     * sondern daran, ob die gewählte Datei irgendwo ankommt.
+     */
+    it('zeigt ihn, sobald das Produkt Dateien annehmen KANN', () => {
+        const { container, unmount } = render(<EmailComposerForm {...GRUNDWERTE} onAttachmentsChange={() => {}} />);
+
+        expect(container.textContent).toContain(germanLabels.verfassen.addFile);
+        unmount();
+    });
+
+    it('zeigt ihn NICHT, wenn die Datei nirgends ankäme', () => {
+        // Ohne Rückruf fiele sie still auf den Boden — ein Knopf, der nichts
+        // tut, ist schlimmer als keiner.
+        const { container, unmount } = render(<EmailComposerForm {...GRUNDWERTE} />);
+
+        expect(container.textContent).not.toContain(germanLabels.verfassen.addFile);
+        unmount();
+    });
+
+    it('laesst sich trotz Faehigkeit ausdruecklich abschalten', () => {
+        // Der Schalter bleibt — um abzuschalten, nicht um einzuschalten.
+        const { container, unmount } = render(
+            <EmailComposerForm {...GRUNDWERTE} onAttachmentsChange={() => {}} allowAttachments={false} />,
+        );
+
+        expect(container.textContent).not.toContain(germanLabels.verfassen.addFile);
+        unmount();
+    });
+});
