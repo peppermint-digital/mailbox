@@ -26,7 +26,7 @@ flowchart TB
 
     subgraph product["A product — e.g. a new system"]
         store["AccountStore (brain)<br/>reads centrally, caches the last good state"]
-        traits["Controller traits<br/>HandlesSending · SpeichertEntwuerfe · HandlesConversations<br/>HandlesMailboxActions · HandlesAssignments · HandlesSnoozes · HandlesWerkzeuge"]
+        traits["Controller traits<br/>HandlesSending · SpeichertEntwuerfe · LiefertSignaturen<br/>HandlesConversations · HandlesMailboxActions · HandlesAssignments<br/>HandlesSnoozes · HandlesWerkzeuge"]
         settings[("own table: product settings<br/>notification mode · send health<br/>— same id as the centre")]
         verbs["Vorgangswerkzeug<br/>the product's own verbs, registered"]
         traits --> verbs
@@ -122,6 +122,7 @@ class MailboxController extends Controller
 {
     use HandlesSending;          // POST {account}/send + {account}/forward
     use SpeichertEntwuerfe;      // POST {account}/draft — save a draft, replace the old one
+    use LiefertSignaturen;       // GET  {account}/signatures — the product's supply
     use HandlesConversations;    // the thread behind a message
     use HandlesMailboxActions;   // seen · flagged · move · delete · bulk
     use HandlesAssignments;      // who is working on this message
@@ -154,6 +155,29 @@ Two things the product must carry back and forth:
   The reason is in the trait: the mailbox contract exposes no `bcc` for a
   message, so writing one would mean storing something the writer can never
   read back — and some of these drafts folders are shared mailboxes.
+
+**Signatures** are `LiefertSignaturen` plus one binding. The route belongs to
+the package, the supply to the product:
+
+```php
+app()->bind(Signaturvorrat::class, fn () => new MeineSignaturen);
+```
+
+The contract gets the **mailbox** and nothing else. Who the person is, the
+product reads itself — the package has no user model, and deciding *who* is
+meant is the mistake that has opened someone else's inbox twice in this
+project. The mailbox travels because it co-decides the answer: whoever writes
+from `info@` should not sign with their personal signature.
+
+Binding nothing is a valid answer, not a misconfiguration — three of the four
+products have no signatures. The route then answers `{signatures: [],
+available: false}`, and the row stays off the form. The two fields are
+deliberate: an empty list alone means either "this product keeps none" or "none
+for this mailbox" or, next time, "somebody forgot the binding".
+
+On the browser side `signaturQuelleFuer(basis)` is the default source, next to
+`empfaengerQuelleFuer`. Pass it instead of `leereSignaturQuelle`, and keep the
+latter for a product that deliberately has none.
 
 **Forwarding** comes with `HandlesSending` as a second route, and it is the one
 place where a product may need to say something. The payload carries

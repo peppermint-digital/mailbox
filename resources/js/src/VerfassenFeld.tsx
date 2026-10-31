@@ -2,8 +2,10 @@ import {
     EmailComposerForm,
     type EmailComposerFormLabels,
     type EmailComposerFormProps,
+    type EmailSignatureOption,
     type RecipientSource,
     type RecipientSuggestion,
+    type SignatureSource,
 } from './EmailComposerForm';
 import { useMemo } from 'react';
 import { germanLabels } from './germanLabels';
@@ -91,16 +93,111 @@ export function empfaengerQuelleFuer(basis: string): RecipientSource {
 export const empfaengerQuelle = empfaengerQuelleFuer('/mailbox');
 
 /**
- * Keines der drei Systeme führt Signaturen im Postfach.
+ * Eine Quelle, die nichts hat.
  *
- * Die Quelle antwortet leer, statt dass das Formular auf etwas wartet, das nie
- * kommt. Wer Signaturen hat, gibt eine eigene Quelle mit.
+ * Sie antwortet leer, statt dass das Formular auf etwas wartet, das nie kommt.
+ * Sie ist der Rueckfall fuer ein Produkt, das ausdruecklich keine Signaturen
+ * fuehrt — und bis zum 31.10.2026 war sie der Zustand von dreien, weil es
+ * keine andere gab.
+ *
+ * Wer eine Route hat, nimmt {@link signaturQuelleFuer}.
  */
-export const leereSignaturQuelle = {
+export const leereSignaturQuelle: SignatureSource = {
     signatures: [],
     load: async () => undefined,
     defaultSignature: () => null,
 };
+
+/**
+ * Die Signaturen vom Server — die Vorgabe seit v0.199.0.
+ *
+ * Gegenstueck zu {@link empfaengerQuelleFuer}, und aus demselben Grund mit
+ * einem Routen-Vorsatz: Der Projekt-Manager liegt unter `/emails`, die anderen
+ * unter `/mailbox`. Sie fragt
+ *
+ *     GET {basis}/{kontoId}/signatures   -> { signatures: [...], available: bool }
+ *
+ * was {@see \Peppermint\Mailbox\Http\LiefertSignaturen} beantwortet.
+ *
+ * ## Warum das Objekt seinen Inhalt AENDERT und nicht neu entsteht
+ *
+ * `SignatureSource` ist eine Eigenschaft (`signatures`) plus zwei Methoden,
+ * und das Formular liest die Eigenschaft bei jedem Zeichnen neu. Also fuellt
+ * `load()` sie — ein frisches Objekt zurueckzugeben haette keine Wirkung, denn
+ * das Formular haelt das alte.
+ *
+ * Dass danach gezeichnet wird, besorgt das Formular selbst: Es setzt nach
+ * `load()` einen Zustand (`geladenFuer`), und der naechste Durchlauf liest die
+ * gefuellte Liste. Hier einen eigenen Melder einzubauen waere ein zweiter Weg
+ * fuer dasselbe.
+ *
+ * ## Warum gemerkt
+ *
+ * Dieselbe Falle wie beim Adressbuch, nur schlimmer: `load` steht in der
+ * Abhaengigkeitsliste eines Effekts im Formular. Ein bei jedem Zeichnen neu
+ * gebautes Objekt hiesse eine neue Funktion, hiesse der Effekt laeuft erneut,
+ * hiesse `load()` bei jedem Tastendruck — und beim Beantworten setzt es den
+ * Zustand, der das naechste Zeichnen ausloest. Das ist keine Verzoegerung, das
+ * ist eine Schleife.
+ */
+const gemerkteSignaturQuellen = new Map<string, SignatureSource>();
+
+export function signaturQuelleFuer(basis: string): SignatureSource {
+    const vorhanden = gemerkteSignaturQuellen.get(basis);
+
+    if (vorhanden) {
+        return vorhanden;
+    }
+
+    const quelle: SignatureSource = {
+        signatures: [],
+
+        async load(kontoId?: number) {
+            /*
+             * Ohne Postfach gibt es nichts zu fragen. Das Formular ruft
+             * `load(undefined)`, solange keines gewaehlt ist — eine Anfrage an
+             * `…/undefined/signatures` waere eine 404, die wie „keine
+             * Signaturen" aussieht.
+             */
+            if (kontoId === undefined || kontoId === null) {
+                quelle.signatures = [];
+
+                return;
+            }
+
+            try {
+                const antwort = await fetch(`${basis}/${kontoId}/signatures`, {
+                    headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin',
+                });
+
+                /*
+                 * Ein Fehlschlag laesst die Liste LEER und nimmt die
+                 * Verfassen-Seite nicht mit: Ohne Signatur kann man eine Mail
+                 * schreiben, ohne Formular nicht.
+                 */
+                quelle.signatures = antwort.ok ? ((await antwort.json()).signatures ?? []) : [];
+            } catch {
+                quelle.signatures = [];
+            }
+        },
+
+        /*
+         * Die Vorgabe des Produkts, und die ERSTE davon. Mehr als eine ist
+         * kein Fehler des Produkts, aber eine Wahl, die hier niemand treffen
+         * kann — sich auf die Reihenfolge zu verlassen ist ehrlicher als zu
+         * raten.
+         */
+        defaultSignature: () => quelle.signatures.find((eintrag: EmailSignatureOption) => eintrag.is_default) ?? null,
+    };
+
+    gemerkteSignaturQuellen.set(basis, quelle);
+
+    return quelle;
+}
+
+/** Die Signaturen unter dem Vorsatz, den die meisten Produkte benutzen. */
+export const signaturQuelle = signaturQuelleFuer('/mailbox');
 
 /**
  * Der Vorgabe-Editor — gebaut mit den Diensten, die die Hülle bekommen hat.
