@@ -5,7 +5,10 @@ import {
     type RecipientSource,
     type RecipientSuggestion,
 } from './EmailComposerForm';
+import { useMemo } from 'react';
 import { germanLabels } from './germanLabels';
+import type { DiktatQuelle } from './useDiktat';
+import type { SchreibhilfeQuelle } from './useSchreibhilfe';
 import { RichTextEditor } from './RichTextEditor';
 
 /**
@@ -99,8 +102,27 @@ export const leereSignaturQuelle = {
     defaultSignature: () => null,
 };
 
-function Editor(eigenschaften: { value: string; onChange: (wert: string) => void }) {
-    return <RichTextEditor {...eigenschaften} labels={germanLabels.editor} />;
+/**
+ * Der Vorgabe-Editor — gebaut mit den Diensten, die die Hülle bekommen hat.
+ *
+ * `EmailComposerForm` reicht seinem Editor nur `value` und `onChange` durch;
+ * alles andere muss hier hinein. Bis zum 31.10.2026 war das nichts weiter —
+ * seit `schreibhilfe` und `diktat` ist es der Unterschied zwischen „eine Zeile
+ * je Produkt" und „jedes Produkt baut sich seinen Editor selbst zusammen".
+ *
+ * Gemeldet von `mail-rollout3` beim Nachziehen: Die Eigenschaften kamen an
+ * `VerfassenFeld` an und endeten dort, weil sie an `EmailComposerForm`
+ * weitergereicht wurden — und der kennt sie nicht, es sind Eigenschaften des
+ * EDITORS. Still: kein Fehler, kein Übersetzerfehler, nur kein Knopf.
+ */
+function editorMit(dienste: {
+    schreibhilfe?: SchreibhilfeQuelle | null;
+    schreibhilfeTabu?: string[];
+    diktat?: DiktatQuelle | null;
+}) {
+    return function Editor(eigenschaften: { value: string; onChange: (wert: string) => void }) {
+        return <RichTextEditor {...eigenschaften} {...dienste} labels={germanLabels.editor} />;
+    };
 }
 
 export type VerfassenFeldProps = Omit<EmailComposerFormProps, 'labels' | 'editor' | 'recipients' | 'signatureSource'> &
@@ -125,9 +147,42 @@ export type VerfassenFeldProps = Omit<EmailComposerFormProps, 'labels' | 'editor
          * ein Produkt ändern können, ohne die Hülle zu umgehen.
          */
         labels?: Partial<EmailComposerFormLabels>;
+        /**
+         * Der Schreibassistent. Fehlt er, gibt es den Knopf nicht.
+         *
+         * Steht hier und nicht nur am Editor, damit ein Produkt EINE Zeile
+         * schreibt statt sich den Editor selbst zusammenzubauen. Wer einen
+         * eigenen Editor mitgibt, bekommt die Dienste nicht untergeschoben —
+         * dann gehören sie zu seinem Editor, nicht zu dieser Hülle.
+         */
+        schreibhilfe?: SchreibhilfeQuelle | null;
+        /** Knotennamen, die der Assistent nicht anfassen darf. */
+        schreibhilfeTabu?: string[];
+        /** Die Spracheingabe. Fehlt sie, gibt es den Knopf nicht. */
+        diktat?: DiktatQuelle | null;
     };
 
-export function VerfassenFeld({ labels, recipients, signatureSource, editor, ...eigenschaften }: VerfassenFeldProps) {
+export function VerfassenFeld({
+    labels,
+    recipients,
+    signatureSource,
+    editor,
+    schreibhilfe,
+    schreibhilfeTabu,
+    diktat,
+    ...eigenschaften
+}: VerfassenFeldProps) {
+    /*
+     * Gemerkt, nicht bei jedem Zeichnen neu gebaut: Eine neue
+     * Editor-Komponente bei jedem Durchlauf wäre für React ein ANDERER Typ —
+     * der Editor würde ab- und neu aufgebaut, und mit ihm wäre nach jedem
+     * Tastendruck die Schreibmarke weg.
+     */
+    const vorgabeEditor = useMemo(
+        () => editorMit({ schreibhilfe, schreibhilfeTabu, diktat }),
+        [schreibhilfe, schreibhilfeTabu, diktat],
+    );
+
     return (
         <EmailComposerForm
             {...eigenschaften}
@@ -145,7 +200,7 @@ export function VerfassenFeld({ labels, recipients, signatureSource, editor, ...
              * daraus ist seine, und ohne diesen Platz muesste er an
              * `VerfassenFeld` vorbei direkt auf `EmailComposerForm` gehen.
              */
-            editor={editor ?? Editor}
+            editor={editor ?? vorgabeEditor}
             recipients={recipients ?? empfaengerQuelle}
             signatureSource={signatureSource ?? leereSignaturQuelle}
         />
