@@ -1,3 +1,4 @@
+export * from './editorKnoten';
 export * from './quote';
 export * from './signature';
 export * from './EmailBodyViewer';

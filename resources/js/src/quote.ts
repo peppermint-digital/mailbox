@@ -90,7 +90,7 @@ export function buildReplyQuote(source: ReplyQuoteSource, options: QuoteOptions)
     const sender = formatAddress(source.fromAddress, source.fromName);
     const style = options.style ?? DEFAULT_QUOTE_STYLE;
 
-    return `<br><br><div style="${style}">
+    return `<br><br><div data-quote="1" style="${style}">
         <p>${options.labels.repliedOn(options.formatDate(source.date), sender)}</p>
         ${originalBody(source)}
     </div>`;
@@ -102,7 +102,7 @@ export function buildForwardQuote(source: ForwardQuoteSource, options: QuoteOpti
     const style = options.style ?? DEFAULT_QUOTE_STYLE;
     const l = options.labels;
 
-    return `<br><br><div style="${style}">
+    return `<br><br><div data-quote="1" style="${style}">
         <p>${l.forwardHeadline}<br>
         ${l.from} ${sender}<br>
         ${l.date} ${options.formatDate(source.date)}<br>

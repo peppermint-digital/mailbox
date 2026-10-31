@@ -47,6 +47,7 @@ import {
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Separator } from './ui/separator';
 import { Toggle } from './ui/toggle';
+import { SignaturKnoten, ZitatKnoten } from './editorKnoten';
 import { cn } from './ui/utils';
 
 /**
@@ -527,6 +528,18 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
                         style: 'max-width: 100%; height: auto; border-radius: 6px;',
                     },
                 }),
+                /*
+                 * Signatur und Zitat als eigene Knoten — IMMER, nicht hinter
+                 * einem Schalter.
+                 *
+                 * Ohne sie loest ProseMirror die beiden `div`s beim Einlesen
+                 * auf (StarterKit hat keinen `div`-Knoten), und dann schreibt
+                 * der Assistent die Signatur um, „Signatur wechseln" legt eine
+                 * zweite an und das Zitat verliert seinen Rahmen. Die
+                 * Begruendung samt Messung steht in `editorKnoten.ts`.
+                 */
+                SignaturKnoten,
+                ZitatKnoten,
             ],
             content: value,
             editable: !disabled,

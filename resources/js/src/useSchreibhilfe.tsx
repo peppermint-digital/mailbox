@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { GESCHUETZTE_KNOTEN } from './editorKnoten';
 import type { Editor } from '@tiptap/react';
 
 /**
@@ -100,8 +101,13 @@ export function useSchreibhilfe(
     quelle: SchreibhilfeQuelle | null | undefined,
     optionen?: {
         /**
-         * Knotennamen, die der Assistent nicht anfassen darf — im
-         * Projekt-Manager `['signatureBlock']`.
+         * ZUSAETZLICHE Knotennamen, die der Assistent nicht anfassen darf.
+         *
+         * Signatur und Zitat des Pakets sind von sich aus tabu (siehe
+         * {@see GESCHUETZTE_KNOTEN}) — hier gehoert nur hinein, was das
+         * Produkt in seinem eigenen Editor dazu angemeldet hat. Es kommt
+         * hinzu und ersetzt nichts: Ein Produkt kann den Schutz ergaenzen,
+         * aber nicht versehentlich abschalten.
          */
         tabuKnoten?: string[];
     },
@@ -118,7 +124,21 @@ export function useSchreibhilfe(
                 return;
             }
 
-            const tabu = optionen?.tabuKnoten ?? [];
+            /*
+             * Die eigenen Knoten IMMER, die des Produkts dazu.
+             *
+             * Bis zum 31.10.2026 stand hier nur, was das Produkt genannt hat —
+             * und in allen vier Produkten war das nichts, weil es nichts zu
+             * nennen GAB: Signatur und Zitat waren `div`s im HTML, die der
+             * Editor beim Einlesen aufloeste. Der Schutz war also vorhanden
+             * und wirkungslos.
+             *
+             * Jetzt gibt es die Knoten (siehe `editorKnoten.ts`), und sie sind
+             * von sich aus tabu. Ein Produkt kann ergaenzen und nichts
+             * wegnehmen: Ein Schutz, den jedes Produkt erst einschalten muss,
+             * ist in drei von vier Produkten vergessen.
+             */
+            const tabu = [...GESCHUETZTE_KNOTEN, ...(optionen?.tabuKnoten ?? [])];
             const auswahl = textAusAuswahl(editor);
 
             /*
@@ -126,6 +146,12 @@ export function useSchreibhilfe(
              * einer Auswahl weiss der Mensch, was er meint — dann wird nur sie
              * ersetzt. Ohne Auswahl ist der ganze Rumpf gemeint, und dann
              * muessen die Tabu-Knoten vorher heraus und hinterher wieder dran.
+             *
+             * EINE AUSWAHL SCHLAEGT DAS TABU, und das ist eine Entscheidung
+             * und kein Versehen: Wer den Text in seiner Signatur markiert und
+             * um eine Korrektur bittet, hat genau das gesagt. Das Tabu wendet
+             * ab, dass die Signatur MITGENOMMEN wird, wenn jemand den Rumpf
+             * meint — es sperrt sie nicht gegen ihren Besitzer.
              */
             let grenze = editor.state.doc.content.size;
 
