@@ -26,7 +26,7 @@ flowchart TB
 
     subgraph product["A product — e.g. a new system"]
         store["AccountStore (brain)<br/>reads centrally, caches the last good state"]
-        traits["Controller traits<br/>HandlesSending · HandlesConversations · HandlesMailboxActions<br/>HandlesAssignments · HandlesSnoozes · HandlesWerkzeuge"]
+        traits["Controller traits<br/>HandlesSending · SpeichertEntwuerfe · HandlesConversations<br/>HandlesMailboxActions · HandlesAssignments · HandlesSnoozes · HandlesWerkzeuge"]
         settings[("own table: product settings<br/>notification mode · send health<br/>— same id as the centre")]
         verbs["Vorgangswerkzeug<br/>the product's own verbs, registered"]
         traits --> verbs
@@ -121,6 +121,7 @@ list; no list means everyone.
 class MailboxController extends Controller
 {
     use HandlesSending;          // POST {account}/send + {account}/forward
+    use SpeichertEntwuerfe;      // POST {account}/draft — save a draft, replace the old one
     use HandlesConversations;    // the thread behind a message
     use HandlesMailboxActions;   // seen · flagged · move · delete · bulk
     use HandlesAssignments;      // who is working on this message
@@ -133,6 +134,26 @@ class MailboxController extends Controller
 
 Route them under `mailbox/{account}/…`. The three existing products use the same
 names; copying them means a reader recognises the system.
+
+**Saving a draft** is `SpeichertEntwuerfe`, and it is a separate trait rather
+than a third route on `HandlesSending` for one reason: a draft has no required
+fields. No recipient, no subject, no body — a draft is the state "not finished
+yet", and measuring it against the rules for sending would mean you may only
+save once you no longer need to.
+
+Mount it next to sending; both traits ask the product for the same
+`accountFor()`, and they compose on one controller. On the browser side,
+`speichereEntwurf()` is the counterpart to `sendeNachricht()` — same payload
+shape, same field errors, different answer.
+
+Two things the product must carry back and forth:
+
+- `uid` from the answer becomes `replace_uid` on the **next** save. Without it
+  the second click files a second version instead of replacing the first.
+- `bcc_verworfen` says a blind copy was sent along and **not** stored. Show it.
+  The reason is in the trait: the mailbox contract exposes no `bcc` for a
+  message, so writing one would mean storing something the writer can never
+  read back — and some of these drafts folders are shared mailboxes.
 
 **Forwarding** comes with `HandlesSending` as a second route, and it is the one
 place where a product may need to say something. The payload carries

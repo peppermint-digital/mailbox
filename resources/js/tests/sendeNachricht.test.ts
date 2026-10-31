@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { sendeNachricht } from '../src/transport';
+import { sendeNachricht, speichereEntwurf } from '../src/transport';
 
 /**
  * Senden mit Dateien (31.10.2026).
@@ -242,5 +242,130 @@ describe('die Fehler AM FELD aus einer 422', () => {
         const ergebnis = await sendeNachricht('/mailbox/1/send', DATEN, [], { csrfToken: 'x', fetch: holen as never });
 
         expect(ergebnis.felder).toEqual({ subject: 'Der Betreff fehlt.' });
+    });
+});
+
+describe('speichereEntwurf', () => {
+    /*
+     * Das Gegenstueck zum Senden (31.10.2026). Vorher hatte den Serverweg nur
+     * der Projekt-Manager, in eigenem Code — die anderen drei konnten einen
+     * Entwurf oeffnen und keinen anlegen.
+     */
+    it('schickt FormData an den Entwurfsweg, mit den Dateien', async () => {
+        const holen = vi.fn(async () => antwort({ success: true, folder: 'Drafts', uid: 9 }));
+
+        const datei = new File(['Inhalt'], 'Angebot.pdf', { type: 'application/pdf' });
+        const ergebnis = await speichereEntwurf(
+            '/mailbox/1/draft',
+            { subject: 'Angebot', body_html: '<p>Guten Tag</p>' },
+            [datei],
+            { csrfToken: 'x', fetch: holen as never },
+        );
+
+        const koffer = holen.mock.calls[0]![1]!.body as FormData;
+
+        expect(koffer).toBeInstanceOf(FormData);
+        expect(koffer.getAll('attachments[]')).toHaveLength(1);
+        expect(ergebnis.ok).toBe(true);
+        expect(ergebnis.folder).toBe('Drafts');
+        /*
+         * Die Kennung muss durchkommen: Ohne sie legt der ZWEITE Klick eine
+         * zweite Fassung an statt zu ersetzen.
+         */
+        expect(ergebnis.uid).toBe(9);
+    });
+
+    it('speichert auch ohne Empfaenger, Betreff und Text', async () => {
+        // Ein Entwurf ist der Zustand „noch nicht fertig".
+        const holen = vi.fn(async () => antwort({ success: true }));
+
+        const ergebnis = await speichereEntwurf('/mailbox/1/draft', {}, [], { csrfToken: 'x', fetch: holen as never });
+
+        const koffer = holen.mock.calls[0]![1]!.body as FormData;
+
+        expect(ergebnis.ok).toBe(true);
+        expect(koffer.get('subject')).toBe('');
+        expect(koffer.get('body_html')).toBe('');
+    });
+
+    it('reicht die Vorfassung durch, aber nur wenn es eine gibt', async () => {
+        const holen = vi.fn(async () => antwort({ success: true }));
+
+        await speichereEntwurf(
+            '/mailbox/1/draft',
+            { body_html: '<p>x</p>', replace_folder: 'Drafts', replace_uid: 7 },
+            [],
+            { csrfToken: 'x', fetch: holen as never },
+        );
+
+        const mit = holen.mock.calls[0]![1]!.body as FormData;
+
+        // Eine Zahl geht als Zeichenkette hinaus — FormData kennt nur solche.
+        expect(mit.get('replace_folder')).toBe('Drafts');
+        expect(mit.get('replace_uid')).toBe('7');
+
+        await speichereEntwurf('/mailbox/1/draft', { body_html: '<p>x</p>' }, [], {
+            csrfToken: 'x',
+            fetch: holen as never,
+        });
+
+        const ohne = holen.mock.calls[1]![1]!.body as FormData;
+
+        expect(ohne.has('replace_folder')).toBe(false);
+        expect(ohne.has('replace_uid')).toBe(false);
+    });
+
+    it('gibt weiter, dass das BCC nicht abgelegt wurde', async () => {
+        /*
+         * Damit das Produkt es dem Menschen sagen kann, statt ihn im Glauben
+         * zu lassen. Warum es nicht abgelegt wird, steht in
+         * `Http\SpeichertEntwuerfe`.
+         */
+        const holen = vi.fn(async () => antwort({ success: true, bcc_verworfen: true }));
+
+        const ergebnis = await speichereEntwurf(
+            '/mailbox/1/draft',
+            { body_html: '<p>x</p>', bcc: [{ email: 'still@example.test' }] },
+            [],
+            { csrfToken: 'x', fetch: holen as never },
+        );
+
+        expect(ergebnis.bcc_verworfen).toBe(true);
+        // Mitgeschickt wird es trotzdem — der Server entscheidet, nicht der Browser.
+        expect((holen.mock.calls[0]![1]!.body as FormData).get('bcc[0][email]')).toBe('still@example.test');
+    });
+
+    it('gibt die Feldfehler einer 422 genauso heraus wie das Senden', async () => {
+        const holen = vi.fn(async () =>
+            antwort({ message: 'Die Angaben sind unvollständig.', errors: { 'to.0.email': ['Keine gültige Adresse.'] } }, false, 422),
+        );
+
+        const ergebnis = await speichereEntwurf('/mailbox/1/draft', { body_html: '<p>x</p>' }, [], {
+            csrfToken: 'x',
+            fetch: holen as never,
+        });
+
+        expect(ergebnis.ok).toBe(false);
+        expect(ergebnis.felder).toEqual({ to: 'Keine gültige Adresse.' });
+    });
+
+    it('sagt bei einem Netzfehler, dass NICHT gespeichert wurde', async () => {
+        /*
+         * Der Satz muss vom Speichern sprechen und nicht vom Senden: „Die
+         * Nachricht konnte nicht versendet werden" an einem Entwurfsknopf
+         * laesst jemanden glauben, er haette versehentlich gesendet.
+         */
+        const holen = vi.fn(async () => {
+            throw new TypeError('offline');
+        });
+
+        const ergebnis = await speichereEntwurf('/mailbox/1/draft', { body_html: '<p>x</p>' }, [], {
+            csrfToken: 'x',
+            fetch: holen as never,
+        });
+
+        expect(ergebnis.ok).toBe(false);
+        expect(ergebnis.message).toContain('Entwurf');
+        expect(ergebnis.message).not.toContain('versendet');
     });
 });

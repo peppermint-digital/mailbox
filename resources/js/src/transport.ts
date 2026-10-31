@@ -270,6 +270,154 @@ export async function sendeNachricht(
     options: MailRequestOptions,
 ): Promise<SendeErgebnis> {
     const doFetch = options.fetch ?? globalThis.fetch;
+    const koffer = baueKoffer(daten, dateien, ['quoted_html', 'in_reply_to', 'references', 'draft_folder', 'draft_uid']);
+
+    let antwort: Response;
+
+    try {
+        antwort = await doFetch(url, anfrage(koffer, options));
+    } catch {
+        return { ok: false, message: 'Die Nachricht konnte nicht versendet werden: keine Verbindung zum Server.' };
+    }
+
+    const inhalt = await inhaltVon(antwort);
+    const satz = typeof inhalt.message === 'string' ? inhalt.message : null;
+
+    if (!antwort.ok || inhalt.success !== true) {
+        return {
+            ok: false,
+            message: satz ?? `Die Nachricht konnte nicht versendet werden (HTTP ${antwort.status}).`,
+            felder: feldfehler(inhalt.errors),
+        };
+    }
+
+    return {
+        ok: true,
+        message: satz ?? 'Nachricht gesendet.',
+        message_id: typeof inhalt.message_id === 'string' ? inhalt.message_id : undefined,
+        copied_to_sent: (inhalt.copied_to_sent ?? null) as boolean | null,
+    };
+}
+
+/**
+ * Was ein Entwurf mitbringt — und was er NICHT mitbringen muss.
+ *
+ * Empfaenger, Betreff und Text sind optional, anders als beim Senden. Ein
+ * Entwurf ist der Zustand „noch nicht fertig"; ihn an denselben Pflichtfeldern
+ * zu messen hiesse, dass man erst speichern darf, wenn man nicht mehr muss.
+ */
+export interface EntwurfsDaten {
+    to?: SendeAdresse[];
+    cc?: SendeAdresse[];
+    /**
+     * Die Blindkopie. Sie wird MITGESCHICKT und NICHT abgelegt — der Server
+     * meldet das mit `bcc_verworfen`, damit das Produkt es sagen kann.
+     *
+     * Warum sie nicht abgelegt wird, steht in `Http\SpeichertEntwuerfe`: Der
+     * Postfach-Vertrag gibt zu einer Nachricht kein `bcc` heraus, und was man
+     * schreibt und nicht wiederlesen kann, ist verloren statt gespeichert.
+     */
+    bcc?: SendeAdresse[];
+    subject?: string;
+    body_html?: string;
+    body_text?: string;
+    quoted_html?: string;
+    in_reply_to?: string;
+    references?: string;
+    /** Die Fassung, die ersetzt werden soll. Beide oder keines. */
+    replace_folder?: string;
+    replace_uid?: string | number;
+}
+
+export interface EntwurfsErgebnis {
+    ok: boolean;
+    message: string;
+    /** Wo er liegt — der Entwurfsordner, den der Server gefunden hat. */
+    folder?: string;
+    /**
+     * Die Kennung der neuen Fassung. Das Produkt braucht sie fuer das NAECHSTE
+     * Speichern: Ohne sie legt der zweite Klick eine zweite Fassung an statt zu
+     * ersetzen. `null` heisst: Der Server nennt keine (IMAP darf das).
+     */
+    uid?: number | string | null;
+    /** Es war ein BCC dabei, und es steht NICHT im abgelegten Entwurf. */
+    bcc_verworfen?: boolean;
+    /** Die Fehler am Feld, wie bei {@see SendeErgebnis}. */
+    felder?: Record<string, string>;
+}
+
+/**
+ * Einen Entwurf ablegen — und die Vorfassung ersetzen.
+ *
+ * ## Warum das hier liegt und nicht viermal im Produkt
+ *
+ * Dasselbe Argument wie bei {@see sendeNachricht}, und derselbe Befund: Vor
+ * dem 31.10.2026 hatte den Serverweg nur der Projekt-Manager, in eigenem Code.
+ * Die anderen drei konnten einen Entwurf oeffnen und keinen anlegen.
+ *
+ * Die Nutzlast ist `FormData`, aus demselben Grund wie beim Senden: Ein
+ * Browser bekommt eine Datei nicht in JSON unter — und ein Entwurf mit
+ * Anhaengen ist der Normalfall, nicht die Ausnahme.
+ */
+export async function speichereEntwurf(
+    url: string,
+    daten: EntwurfsDaten,
+    dateien: File[],
+    options: MailRequestOptions,
+): Promise<EntwurfsErgebnis> {
+    const doFetch = options.fetch ?? globalThis.fetch;
+    const koffer = baueKoffer(daten, dateien, [
+        'quoted_html',
+        'in_reply_to',
+        'references',
+        'replace_folder',
+        'replace_uid',
+    ]);
+
+    let antwort: Response;
+
+    try {
+        antwort = await doFetch(url, anfrage(koffer, options));
+    } catch {
+        return { ok: false, message: 'Der Entwurf konnte nicht gespeichert werden: keine Verbindung zum Server.' };
+    }
+
+    const inhalt = await inhaltVon(antwort);
+    const satz = typeof inhalt.message === 'string' ? inhalt.message : null;
+
+    if (!antwort.ok || inhalt.success !== true) {
+        return {
+            ok: false,
+            message: satz ?? `Der Entwurf konnte nicht gespeichert werden (HTTP ${antwort.status}).`,
+            felder: feldfehler(inhalt.errors),
+        };
+    }
+
+    return {
+        ok: true,
+        message: satz ?? 'Entwurf gespeichert.',
+        folder: typeof inhalt.folder === 'string' ? inhalt.folder : undefined,
+        uid: (inhalt.uid ?? null) as number | string | null,
+        bcc_verworfen: inhalt.bcc_verworfen === true,
+    };
+}
+
+/**
+ * Die Nutzlast, die `HandlesSending` und `SpeichertEntwuerfe` beide lesen.
+ *
+ * EINE Stelle, und das ist der Punkt: Senden und Speichern unterscheiden sich
+ * nur darin, welche Zusatzfelder mitgehen und was in der Antwort steht. Zwei
+ * Abschriften dieses Blocks waeren zwei Gelegenheiten, die Adressform zu
+ * vergessen — und ein Entwurf, der seine Anhaenge anders anhaengt als eine
+ * gesendete Mail, ist genau die Sorte Unterschied, die niemand sucht.
+ *
+ * @param  felder  Welche Zeichenketten-Felder durchgereicht werden.
+ */
+function baueKoffer(
+    daten: SendeDaten | EntwurfsDaten,
+    dateien: File[],
+    felder: readonly string[],
+): FormData {
     const koffer = new FormData();
 
     const adressen = (feld: string, liste: SendeAdresse[] | undefined) => {
@@ -287,28 +435,33 @@ export async function sendeNachricht(
     adressen('cc', daten.cc);
     adressen('bcc', daten.bcc);
 
-    koffer.append('subject', daten.subject);
-    koffer.append('body_html', daten.body_html);
+    const rumpf = daten.body_html ?? '';
+
+    koffer.append('subject', daten.subject ?? '');
+    koffer.append('body_html', rumpf);
     /*
      * Der Klartext-Zweig, und er ist kein Beiwerk: Eine Mail ohne ihn ist bei
      * Spamfiltern ein schwaches Signal. Hier gebaut, weil ihn sonst jedes
      * Produkt selbst baut — und zwar jedes mit einem leicht anderen Regex.
      */
-    koffer.append('body_text', daten.body_text ?? ausHtml(daten.body_html));
+    koffer.append('body_text', daten.body_text ?? ausHtml(rumpf));
 
-    for (const feld of ['quoted_html', 'in_reply_to', 'references', 'draft_folder', 'draft_uid'] as const) {
-        const wert = daten[feld];
-        if (wert !== undefined && wert !== '') {
-            koffer.append(feld, wert);
+    for (const feld of felder) {
+        const wert = (daten as Record<string, unknown>)[feld];
+
+        if (wert !== undefined && wert !== null && wert !== '') {
+            koffer.append(feld, String(wert));
         }
     }
 
     dateien.forEach((datei) => koffer.append('attachments[]', datei));
 
-    let antwort: Response;
+    return koffer;
+}
 
-    try {
-        antwort = await doFetch(url, {
+/** Die Anfrage selbst — Kopfzeilen und Beiwerk, fuer beide Wege dieselben. */
+function anfrage(koffer: FormData, options: MailRequestOptions): RequestInit {
+    return {
             method: 'POST',
             /*
              * KEIN `Content-Type`. Den setzt der Browser bei `FormData` selbst
@@ -321,39 +474,25 @@ export async function sendeNachricht(
                 'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRF-TOKEN': options.csrfToken,
             },
-            credentials: 'same-origin',
-            body: koffer,
-            signal: options.signal,
-        });
-    } catch {
-        return { ok: false, message: 'Die Nachricht konnte nicht versendet werden: keine Verbindung zum Server.' };
-    }
-
-    let inhalt: Record<string, unknown> = {};
-
-    try {
-        inhalt = (await antwort.json()) as Record<string, unknown>;
-    } catch {
-        // Eine Antwort, die kein JSON ist (die 413-Seite eines Webservers bei
-        // zu grossen Anhaengen) — die Lage ist trotzdem klar.
-    }
-
-    const satz = typeof inhalt.message === 'string' ? inhalt.message : null;
-
-    if (!antwort.ok || inhalt.success !== true) {
-        return {
-            ok: false,
-            message: satz ?? `Die Nachricht konnte nicht versendet werden (HTTP ${antwort.status}).`,
-            felder: feldfehler(inhalt.errors),
-        };
-    }
-
-    return {
-        ok: true,
-        message: satz ?? 'Nachricht gesendet.',
-        message_id: typeof inhalt.message_id === 'string' ? inhalt.message_id : undefined,
-        copied_to_sent: (inhalt.copied_to_sent ?? null) as boolean | null,
+        credentials: 'same-origin',
+        body: koffer,
+        signal: options.signal,
     };
+}
+
+/**
+ * Die Antwort als Objekt — auch wenn sie keines ist.
+ *
+ * Eine Antwort, die kein JSON ist (die 413-Seite eines Webservers bei zu
+ * grossen Anhaengen), ist kein Grund abzustuerzen: Die Lage ist aus dem
+ * Statuscode klar.
+ */
+async function inhaltVon(antwort: Response): Promise<Record<string, unknown>> {
+    try {
+        return (await antwort.json()) as Record<string, unknown>;
+    } catch {
+        return {};
+    }
 }
 
 /** HTML zu Klartext, einmal statt viermal. */
