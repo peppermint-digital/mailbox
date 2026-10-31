@@ -2,9 +2,6 @@
 
 namespace Peppermint\Mailbox\Schreiben;
 
-use Illuminate\Support\Facades\Log;
-use Peppermint\AiBrainBridge\Facades\AiBrain;
-
 /**
  * Eine Anfrage an einen AI-Brain-Kanal, bis sie fertig ist.
  *
@@ -27,6 +24,18 @@ use Peppermint\AiBrainBridge\Facades\AiBrain;
  * der nicht antwortet, darf den Verfasser nicht ewig haengen lassen. Nach
  * Ablauf gibt es eine Absage mit Grund — der Mensch kann es noch einmal
  * versuchen, und sein Text steht noch da.
+ *
+ * ## Was hier steht und was nicht mehr
+ *
+ * Seit dem 31.10.2026 kennt diese Klasse den WEG nicht mehr, nur noch das
+ * Warten: Frist, Takt, welcher Status ein Ende ist und welcher nicht. Der
+ * Transport steckt hinter {@see Kanalstrecke}, und ohne Angabe ist er
+ * {@see BrueckenStrecke} — fuer die drei Produkte mit Bruecke aendert sich
+ * damit nichts.
+ *
+ * Der Grund steht in {@see Kanalstrecke}: AI Brain ist die Nabe und braucht
+ * keinen Netzaufruf zu sich selbst. Ohne diese Naht haette es Pollen, Frist,
+ * `needs_input` und das Entpacken ein zweites Mal gebaut.
  */
 class Kanalklient
 {
@@ -40,23 +49,44 @@ class Kanalklient
 
     public const FAILED = 'failed';
 
-    /** Der Kanal, den `thread()` nimmt: die Kennung reicht, der Name nicht. */
-    private const EGAL = '_';
-
+    /**
+     * @param  Kanalstrecke  $strecke  Wie die Anfrage hinkommt. Steht ABSICHTLICH
+     *                                 hinten: Ein Produkt, das heute
+     *                                 `new Kanalklient(30, 1)` baut, um seine
+     *                                 Frist zu setzen, soll davon nichts merken.
+     */
     public function __construct(
         private readonly int $fristSekunden = 60,
         private readonly int $taktSekunden = 2,
+        private readonly Kanalstrecke $strecke = new BrueckenStrecke,
     ) {}
 
     /**
-     * Ist die Bruecke ueberhaupt eingerichtet?
+     * Ist die BRUECKE eingerichtet?
      *
-     * Die Klasse zu HABEN heisst nicht, sie benutzen zu koennen: AI Brain
-     * selbst traegt das Paket, ohne es einzurichten — es ist die Nabe.
+     * Bleibt statisch und bleibt die Bruecken-Frage: Ein Produkt ruft sie,
+     * um zu entscheiden, ob es ueberhaupt bindet, und das tut es, bevor es
+     * einen Klienten hat.
+     *
+     * Wer eine eigene Strecke mitbringt, fragt sie NICHT — fuer den ist
+     * {@see nutzbar()} die richtige Frage. Diese hier wuerde `false` sagen und
+     * damit einen Assistenten verstecken, den es gibt.
      */
     public static function eingerichtet(): bool
     {
-        return class_exists(AiBrain::class) && ! empty(config('ai-brain-bridge.oauth.client_id'));
+        return (new BrueckenStrecke)->eingerichtet();
+    }
+
+    /**
+     * Ist DIESER Klient benutzbar — ueber seine eigene Strecke?
+     *
+     * Die Fassung von {@see eingerichtet()}, die nach dem Weg fragt, den
+     * dieser Klient wirklich nimmt. Fuer die Vorgabe antworten beide gleich;
+     * fuer eine eigene Strecke antwortet nur diese richtig.
+     */
+    public function nutzbar(): bool
+    {
+        return $this->strecke->eingerichtet();
     }
 
     /** Noch nicht fertig — weiter warten. `needs_input` ist dabei kein Ende. */
@@ -74,11 +104,11 @@ class Kanalklient
      */
     public function fragen(string $kanal, array $nutzlast): mixed
     {
-        $chatId = $this->hineinschicken($kanal, $nutzlast);
+        $chatId = $this->strecke->hineinschicken($kanal, $nutzlast);
         $frist = time() + max(5, $this->fristSekunden);
 
         do {
-            $stand = $this->nachsehen($chatId);
+            $stand = $this->strecke->nachsehen($chatId);
 
             if ($stand['status'] === self::DONE) {
                 return $stand['result'];
@@ -127,43 +157,5 @@ class Kanalklient
         $entpackt = json_decode($sauber, true);
 
         return is_array($entpackt) ? $entpackt : null;
-    }
-
-    /** @param array<string, mixed> $nutzlast */
-    private function hineinschicken(string $kanal, array $nutzlast): int
-    {
-        try {
-            $antwort = AiBrain::channel($kanal)->message($nutzlast, ref: $kanal.':'.time());
-        } catch (\Throwable $e) {
-            Log::error('AI-Brain-Kanal nicht erreichbar', ['kanal' => $kanal, 'fehler' => $e->getMessage()]);
-
-            throw new \RuntimeException('Verbindung zur KI fehlgeschlagen.');
-        }
-
-        if (($antwort['ok'] ?? false) !== true || ! is_numeric($antwort['chat_id'] ?? null)) {
-            Log::warning('AI-Brain-Kanal hat die Anfrage nicht angenommen', ['kanal' => $kanal, 'antwort' => $antwort]);
-
-            throw new \RuntimeException('Verbindung zur KI fehlgeschlagen.');
-        }
-
-        return (int) $antwort['chat_id'];
-    }
-
-    /** @return array{status: string, result: mixed, error: ?string} */
-    private function nachsehen(int $chatId): array
-    {
-        try {
-            $strang = AiBrain::channel(self::EGAL)->thread($chatId);
-        } catch (\Throwable $e) {
-            Log::error('AI-Brain-Kanal: Nachsehen fehlgeschlagen', ['fehler' => $e->getMessage()]);
-
-            throw new \RuntimeException('Der Stand der Anfrage konnte nicht abgerufen werden.');
-        }
-
-        return [
-            'status' => (string) ($strang['status'] ?? self::RUNNING),
-            'result' => $strang['result'] ?? null,
-            'error' => is_string($strang['error'] ?? null) ? $strang['error'] : null,
-        ];
     }
 }
