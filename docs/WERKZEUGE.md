@@ -215,6 +215,23 @@ Four rules, and they are the ones that go wrong quietly:
 - **A verb that only leads there is not asked.** Same rule as for executing,
   and for the same reason: an older deployment elsewhere might still try.
 
+### What the bar draws for it
+
+Since v0.203.0 the toolbar renders `suche` itself: a search box, a result list,
+and keyboard operation — arrow keys, Enter, Escape. The hits come from
+`useMailWerkzeuge`'s `auswahl()`, which the surface passes in as
+`auswahlQuelle`.
+
+Two details that are not decoration:
+
+- **No source, no button.** A `suche` field without `auswahlQuelle` makes the
+  verb *not drawable* — the bar says so instead of offering a search box that
+  never finds anything, which would send the person looking for the fault in
+  their own spelling.
+- **The highlight is readable twice**, in `aria-activedescendant` and in
+  `data-highlighted`. A screen reader needs the first; a measurement needs
+  something it can see without comparing colours.
+
 Across a system border the search goes through the same gateway as the list,
 and a deployment that does not know the field search yet answers with its
 **verb list** — a success for the gateway and nonsense for the picker. So only

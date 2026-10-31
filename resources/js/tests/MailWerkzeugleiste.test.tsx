@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MailWerkzeugleiste } from '../src/MailWerkzeugleiste';
+import { MailWerkzeugleiste, type MailWerkzeugleisteProps } from '../src/MailWerkzeugleiste';
 import type { MailWerkzeug } from '../src/useMailWerkzeuge';
 import { click, render } from './support/render';
 
@@ -54,9 +54,17 @@ function maskeAuf(container: HTMLElement, text: string): HTMLElement {
     return maske as HTMLElement;
 }
 
-/** Der ausloesende Knopf IN der Maske — er traegt den Namen des Verbs. */
+/**
+ * Der ausloesende Knopf IN der Maske.
+ *
+ * Ueber seine Marke und nicht als „erster Knopf": Seit der Auswaehler mit
+ * Suche dazugekommen ist, traegt die Maske mehr als einen — sein „Aendern"
+ * steht VOR dem Ausloeser. Der erste Entwurf dieses Helfers nahm den ersten
+ * Knopf, und der Test klickte dann „Aendern" und wartete auf ein Verb, das
+ * niemand ausgeloest hatte.
+ */
 function maskenknopf(maske: HTMLElement): HTMLButtonElement {
-    return maske.querySelector('button') as HTMLButtonElement;
+    return maske.querySelector('[data-slot="mail-werkzeugleiste-ausloesen"]') as HTMLButtonElement;
 }
 
 /**
@@ -124,6 +132,7 @@ interface LeisteOptionen {
     eigene?: Record<string, () => void>;
     verbergen?: (w: MailWerkzeug) => boolean;
     anhaenge?: { filename: string; size?: number | null }[];
+    auswahlQuelle?: MailWerkzeugleisteProps['auswahlQuelle'];
 }
 
 function leiste(optionen: LeisteOptionen = {}) {
@@ -154,6 +163,7 @@ function leiste(optionen: LeisteOptionen = {}) {
             eigene={optionen.eigene}
             verbergen={optionen.verbergen}
             anhaenge={optionen.anhaenge}
+            auswahlQuelle={optionen.auswahlQuelle}
         />,
     );
 }
@@ -1086,6 +1096,253 @@ describe('die Feldarten, die die Leiste zeichnen kann (#9145)', () => {
         expect(maske.querySelector('input[type="text"]')).not.toBeNull();
         // Kein Pflichtfeld dabei: Dann darf der Knopf von Anfang an zu.
         expect(maskenknopf(maske).disabled).toBe(false);
+
+        unmount();
+    });
+});
+
+describe('der Auswaehler mit Suche (#9145)', () => {
+    /*
+     * Ein Kontakt wird aus zwoelftausend gewaehlt. Bis v0.203.0 gab es dafuer
+     * nur `verweis()`: Das Verb wurde zum Link und fuehrte ins andere System.
+     *
+     * Die Tastaturbedienung ist hier eigens geprueft, und zwar mit einem
+     * selbst ausgeloesten `keydown`: `mail-2b` hat am 1.11.2026 nachgemessen,
+     * dass ein solches Ereignis die HANDLER der Seite durchlaeuft, aber keine
+     * Vorgabewirkung des Browsers ausloest. Also ist genau das pruefbar, was
+     * an Handlern haengt — und darum haengt die Bedienung an Handlern.
+     */
+    const TREFFER = [
+        { value: '4471', label: 'Angebot Meier überarbeiten', hint: 'Bauvorhaben Meier' },
+        { value: '4502', label: 'Meier: Rückfrage Liefertermin' },
+    ];
+
+    function mitSuche(quelle?: MailWerkzeugleisteProps['auswahlQuelle']) {
+        return leiste({
+            werkzeuge: [
+                werkzeug({
+                    key: 'aufgabe',
+                    label: 'Aufgabe anhängen',
+                    fields: [{ name: 'aufgabe', label: 'Aufgabe', type: 'suche', required: true } as never],
+                }),
+            ],
+            auswahlQuelle: quelle ?? (async () => TREFFER),
+        });
+    }
+
+    /**
+     * Eine Taste, wie ein Mensch sie drueckt — und wie sie in jsdom ankommt.
+     *
+     * `await`, und das ist nicht Vorsicht: Zwei Tastendruecke ohne Pause
+     * dazwischen hat React als einen Durchlauf verrechnet, und der Test war
+     * damit blind fuer den Unterschied zwischen „laeuft um" und „bleibt am
+     * Ende stehen". Aufgefallen an einer Mutationsprobe, die GRUEN blieb,
+     * obwohl der Umlauf ausgebaut war.
+     *
+     * `mail-2b` hat nachgemessen (1.11.2026), dass ein selbst ausgeloestes
+     * `keydown` die Handler durchlaeuft, aber keine Vorgabewirkung des
+     * Browsers ausloest. Genau darum ist die Bedienung pruefbar — und genau
+     * darum muss man die Wirkung abwarten, statt sie zu unterstellen.
+     */
+    async function taste(element: Element, key: string): Promise<void> {
+        (element as HTMLElement).focus();
+        element.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, bubbles: true, cancelable: true }));
+
+        await new Promise((r) => setTimeout(r, 10));
+    }
+
+    it('fragt beim Aufklappen OHNE Text — die Liste darf nicht leer dastehen', async () => {
+        const gefragt: { feld: string; frage: string }[] = [];
+
+        const { container, unmount } = mitSuche(async (w, feld, frage) => {
+            gefragt.push({ feld, frage });
+
+            return TREFFER;
+        });
+
+        maskeAuf(container, 'Aufgabe anhängen');
+
+        await vi.waitFor(() => expect(container.querySelectorAll('[role="option"]')).toHaveLength(2));
+
+        expect(gefragt).toEqual([{ feld: 'aufgabe', frage: '' }]);
+        // Der Hinweis steht dabei: Er unterscheidet zwei aehnliche Namen.
+        expect(container.textContent).toContain('Bauvorhaben Meier');
+
+        unmount();
+    });
+
+    it('waehlt mit Pfeil runter und Enter — ohne Maus', async () => {
+        const gesehen: unknown[] = [];
+
+        const { container, unmount } = leiste({
+            werkzeuge: [
+                werkzeug({
+                    key: 'aufgabe',
+                    label: 'Aufgabe anhängen',
+                    fields: [{ name: 'aufgabe', label: 'Aufgabe', type: 'suche', required: true } as never],
+                }),
+            ],
+            auswahlQuelle: async () => TREFFER,
+            ausloesen: async (w, eingabe) => {
+                gesehen.push(eingabe);
+
+                return { ok: true, message: 'Angehängt.' };
+            },
+        });
+
+        const maske = maskeAuf(container, 'Aufgabe anhängen');
+
+        await vi.waitFor(() => expect(maske.querySelectorAll('[role="option"]')).toHaveLength(2));
+
+        const feld = maske.querySelector('[role="combobox"]')!;
+
+        // Der erste Treffer ist von sich aus hervorgehoben.
+        expect(maske.querySelector('[data-highlighted]')?.textContent).toContain('Angebot Meier');
+
+        await taste(feld, 'ArrowDown');
+
+        await vi.waitFor(() => expect(maske.querySelector('[data-highlighted]')?.textContent).toContain('Rückfrage'));
+
+        /*
+         * Und die Vorlesehilfe weiss es auch: zweimal dasselbe, weil es zwei
+         * Leser sind — `aria-activedescendant` fuer sie, `data-highlighted`
+         * fuer eine Messung ohne Farbvergleich.
+         */
+        expect(feld.getAttribute('aria-activedescendant')).toBe(maske.querySelector('[data-highlighted]')!.id);
+
+        await taste(feld, 'Enter');
+
+        await vi.waitFor(() => expect(maske.textContent).toContain('Rückfrage Liefertermin'));
+
+        // Zugeklappt, mit dem WORT statt der Kennung — die Kennung kennt nur
+        // die Trefferliste, und die ist dann weg.
+        expect(maske.querySelector('[role="listbox"]')).toBeNull();
+
+        click(maskenknopf(maske));
+
+        await vi.waitFor(() => expect(gesehen).toHaveLength(1));
+        expect(gesehen[0]).toEqual({ aufgabe: '4502' });
+
+        unmount();
+    });
+
+    it('laeuft am Ende der Liste wieder nach oben', async () => {
+        // Zwei Treffer, dreimal runter: Wer am Ende haengenbleibt, muss raten,
+        // ob die Taste nicht ankam.
+        const { container, unmount } = mitSuche();
+        const maske = maskeAuf(container, 'Aufgabe anhängen');
+
+        await vi.waitFor(() => expect(maske.querySelectorAll('[role="option"]')).toHaveLength(2));
+
+        const feld = maske.querySelector('[role="combobox"]')!;
+
+        await taste(feld, 'ArrowDown');
+        await taste(feld, 'ArrowDown');
+
+        await vi.waitFor(() => expect(maske.querySelector('[data-highlighted]')?.textContent).toContain('Angebot Meier'));
+
+        await taste(feld, 'ArrowUp');
+
+        await vi.waitFor(() => expect(maske.querySelector('[data-highlighted]')?.textContent).toContain('Rückfrage'));
+
+        unmount();
+    });
+
+    it('haelt den Knopf aus, solange nichts gewaehlt ist', async () => {
+        const { container, unmount } = mitSuche();
+        const maske = maskeAuf(container, 'Aufgabe anhängen');
+
+        await vi.waitFor(() => expect(maske.querySelectorAll('[role="option"]')).toHaveLength(2));
+
+        expect(maskenknopf(maske).disabled).toBe(true);
+
+        await taste(maske.querySelector('[role="combobox"]')!, 'Enter');
+
+        await vi.waitFor(() => expect(maskenknopf(maske).disabled).toBe(false));
+
+        unmount();
+    });
+
+    it('sagt es, wenn die Suche nichts findet', async () => {
+        // Und zwar als Satz, nicht als leeres Kaestchen: Das saehe aus wie
+        // „laedt noch".
+        const { container, unmount } = mitSuche(async () => []);
+        const maske = maskeAuf(container, 'Aufgabe anhängen');
+
+        await vi.waitFor(() => expect(maske.textContent).toContain('keinen Treffer'));
+
+        expect(maske.querySelector('[role="listbox"]')).toBeNull();
+
+        unmount();
+    });
+
+    it('bietet das Verb NICHT an, wenn es gar keine Suchquelle gibt', () => {
+        /*
+         * Ein Suchfeld ohne Quelle waere ein Feld, das aussieht, als suchte
+         * es, und nie etwas findet — und der Mensch sucht den Fehler bei
+         * seiner Schreibweise. Also gar nicht anbieten und es SAGEN.
+         */
+        const { container, unmount } = leiste({
+            werkzeuge: [
+                werkzeug({
+                    key: 'aufgabe',
+                    label: 'Aufgabe anhängen',
+                    fields: [{ name: 'aufgabe', label: 'Aufgabe', type: 'suche', required: true } as never],
+                }),
+            ],
+        });
+
+        expect(container.querySelector(`${INHALT} button`)).toBeNull();
+        expect(container.textContent).toContain('nicht erfassen');
+
+        unmount();
+    });
+
+    it('verwirft die spaete Antwort und behaelt die frische', async () => {
+        /*
+         * Der Fehler, den man nur bei schnellem Tippen sieht: Die Liste
+         * springt auf die Treffer zu „Mei", waehrend im Feld „Meier" steht.
+         *
+         * Der Ablauf ist eigens so gebaut, dass die erste Suche wirklich
+         * LOSGEHT, bevor die zweite kommt — sonst gaebe es nichts
+         * abzubrechen, und der Test waere blind. Die Verzoegerung von 250 ms
+         * im Bauteil muss dafuer abgewartet werden; ein Test, der schneller
+         * tippt als ein Mensch, prueft die Abbruchlogik nie.
+         *
+         * Genau das war der erste Entwurf dieses Tests: Er blieb gruen,
+         * nachdem die Abbruchpruefung ausgebaut war.
+         */
+        const { container, unmount } = mitSuche(async (w, feld, frage) => {
+            if (frage === '') {
+                return [{ value: 'alt', label: 'Erster Aufschlag' }];
+            }
+
+            // „Mei" ist langsam, „Meier" schnell — so kommt die alte Antwort
+            // nach der neuen an.
+            await new Promise((r) => setTimeout(r, frage === 'Mei' ? 400 : 10));
+
+            return [{ value: frage, label: `Treffer zu ${frage}` }];
+        });
+
+        const maske = maskeAuf(container, 'Aufgabe anhängen');
+
+        await vi.waitFor(() => expect(maske.textContent).toContain('Erster Aufschlag'));
+
+        const feld = maske.querySelector('[role="combobox"]') as HTMLInputElement;
+
+        waehle(feld, 'Mei');
+        // Warten, bis die Verzoegerung abgelaufen und die Suche unterwegs ist.
+        await new Promise((r) => setTimeout(r, 300));
+
+        waehle(feld, 'Meier');
+
+        await vi.waitFor(() => expect(maske.textContent).toContain('Treffer zu Meier'), { timeout: 2000 });
+
+        // Und jetzt lange genug warten, dass die ALTE Antwort ankommen koennte.
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(maske.textContent).toContain('Treffer zu Meier');
+        expect(maske.textContent).not.toContain('Treffer zu Mei<');
 
         unmount();
     });

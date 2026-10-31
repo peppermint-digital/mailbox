@@ -118,12 +118,29 @@ export interface WerkzeugNachricht {
 export interface MailWerkzeugeOptionen {
     /** `GET` hierher. Beispiel: `/mailbox/42/tools`. */
     endpoint: string | null;
+    /**
+     * `POST` hierher fuer die Treffer eines suchbaren Feldes.
+     * Beispiel: `/mailbox/42/tools/options`.
+     *
+     * Fehlt die Angabe, hat ein Feld der Art `suche` keine Quelle — dann
+     * findet der Auswaehler nichts, und die Leiste sagt das. Nicht: ein Feld,
+     * das aussieht, als suchte es.
+     */
+    auswahlEndpoint?: string | null;
     /** `POST` hierher. Beispiel: `/mailbox/42/tools/run`. */
     ausloesenEndpoint: string | null;
     nachricht: WerkzeugNachricht | null;
     csrfToken?: string | null;
     /** Für Tests. */
     fetch?: typeof globalThis.fetch;
+}
+
+/** Ein Treffer im Auswaehler — die Drahtform des Servers. */
+export interface MailWerkzeugTreffer {
+    value: string;
+    label: string;
+    /** Steht klein unter dem Wort — fuer das, was zwei gleiche Namen unterscheidet. */
+    hint?: string;
 }
 
 export interface Ausloeseergebnis {
@@ -158,7 +175,7 @@ function kennzeichen(nachricht: WerkzeugNachricht): Record<string, string> {
 }
 
 export function useMailWerkzeuge(optionen: MailWerkzeugeOptionen) {
-    const { endpoint, ausloesenEndpoint, nachricht, csrfToken } = optionen;
+    const { endpoint, ausloesenEndpoint, auswahlEndpoint, nachricht, csrfToken } = optionen;
     const doFetch = optionen.fetch ?? globalThis.fetch;
 
     const [antwort, setAntwort] = useState<MailWerkzeugeAntwort>(LEER);
@@ -313,6 +330,64 @@ export function useMailWerkzeuge(optionen: MailWerkzeugeOptionen) {
         [ausloesenEndpoint, csrfToken, doFetch, laden, nachricht],
     );
 
+    /**
+     * Treffer fuer ein suchbares Feld.
+     *
+     * Mit `AbortSignal`, und das ist nicht Hoeflichkeit: Die Suche laeuft,
+     * waehrend jemand tippt. Eine spaete Antwort auf „Mei" darf die frische
+     * auf „Meier" nicht ueberschreiben — sonst springt die Liste zurueck, und
+     * zwar genau dann, wenn jemand schnell tippt.
+     *
+     * Eine leere Liste bei jedem Fehlschlag. Ein Auswaehler, der eine
+     * Fehlermeldung an die Stelle der Treffer setzt, nimmt dem Menschen die
+     * Liste weg, in der er gerade war; die Leiste sagt an anderer Stelle,
+     * welche Systeme nicht antworten.
+     */
+    const auswahl = useCallback(
+        async (
+            werkzeug: MailWerkzeug,
+            feld: string,
+            frage: string,
+            signal?: AbortSignal,
+        ): Promise<MailWerkzeugTreffer[]> => {
+            if (!auswahlEndpoint || !nachricht?.message_id || werkzeug.url) {
+                return [];
+            }
+
+            try {
+                const response = await doFetch(auswahlEndpoint, {
+                    method: 'POST',
+                    headers: kopfzeilen(csrfToken),
+                    credentials: 'same-origin',
+                    signal,
+                    body: JSON.stringify({
+                        action: werkzeug.key,
+                        system: werkzeug.system,
+                        field: feld,
+                        query: frage,
+                        ...kennzeichen(nachricht),
+                    }),
+                });
+
+                if (!response.ok) {
+                    return [];
+                }
+
+                const daten = (await response.json()) as { options?: MailWerkzeugTreffer[] };
+
+                return Array.isArray(daten.options) ? daten.options : [];
+            } catch {
+                /*
+                 * Auch ein Abbruch landet hier, und das ist richtig: Eine
+                 * abgebrochene Suche hat kein Ergebnis, und die Aufrufstelle
+                 * verwirft es ohnehin.
+                 */
+                return [];
+            }
+        },
+        [auswahlEndpoint, csrfToken, doFetch, nachricht],
+    );
+
     return {
         werkzeuge: antwort.tools,
         unerreichbar: antwort.unreachable,
@@ -329,6 +404,7 @@ export function useMailWerkzeuge(optionen: MailWerkzeugeOptionen) {
             erreicht === true && antwort.tools.length === 0 && antwort.unreachable.length === 0 && antwort.failed.length === 0,
         /** `false` heißt: Die Frage kam nicht durch. `null` heißt: noch nicht gefragt. */
         erreicht,
+        auswahl,
         neuLaden: laden,
         ausloesen,
     };

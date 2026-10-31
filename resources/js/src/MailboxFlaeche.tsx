@@ -807,6 +807,8 @@ export function MailboxFlaeche({
                                      * sie an — siehe MailWerkzeugleiste.
                                      */
                                     anhaenge={nachricht?.attachments ?? undefined}
+                                    /* Die Treffer eines suchbaren Feldes — siehe MailWerkzeugleiste. */
+                                    auswahlQuelle={werkzeuge.auswahl}
                                     labels={germanLabels.werkzeuge}
                                     onMeldung={(meldung, gelungen) => {
                                         // Beides zeigen, auch die Absage: Ein Verb, das nicht

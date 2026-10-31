@@ -13,8 +13,8 @@ import {
     UserCheck,
     Wrench,
 } from 'lucide-react';
-import { useState } from 'react';
-import type { MailWerkzeug, MailWerkzeugFeld } from './useMailWerkzeuge';
+import { useEffect, useRef, useState } from 'react';
+import type { MailWerkzeug, MailWerkzeugFeld, MailWerkzeugTreffer } from './useMailWerkzeuge';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { cn } from './ui/utils';
@@ -121,7 +121,7 @@ export interface WerkzeugAnhang {
  * Stellen müssen dieselbe Antwort geben. Zwei Rechnungen hatten wir schon
  * einmal — siehe `werteFuer`.
  */
-const ZEICHENBARE_ARTEN = ['select', 'text', 'anhang'] as const;
+const ZEICHENBARE_ARTEN = ['select', 'text', 'anhang', 'suche'] as const;
 
 /**
  * Woran die Ansicht ein Verb festmacht: Schlüssel UND System.
@@ -165,6 +165,14 @@ export interface MailWerkzeugleisteLabels {
     rueckfrageJa: string;
     /** `(bytes) => …` — die Größe eines Anhangs, in Worten des Produkts. */
     groesse: (bytes: number) => string;
+    /** Steht im leeren Suchfeld eines Auswählers. */
+    suchen: string;
+    /** Steht, solange die Trefferliste lädt. */
+    suchtNoch: string;
+    /** Steht, wenn die Suche nichts gefunden hat. */
+    keineTreffer: string;
+    /** Der Knopf, der eine getroffene Wahl wieder öffnet. */
+    andereWahl: string;
 }
 
 export const WERKZEUGLEISTE_VORGABEN: MailWerkzeugleisteLabels = {
@@ -190,6 +198,10 @@ export const WERKZEUGLEISTE_VORGABEN: MailWerkzeugleisteLabels = {
     keineAnhaenge: 'Diese Nachricht hat keine Anhänge.',
     rueckfrageJa: 'Ja, ausführen',
     groesse: (bytes) => (bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`),
+    suchen: 'Suchen …',
+    suchtNoch: 'Wird gesucht …',
+    keineTreffer: 'Dazu gibt es keinen Treffer.',
+    andereWahl: 'Ändern',
 };
 
 /**
@@ -276,6 +288,23 @@ export interface MailWerkzeugleisteProps {
      * gäbe es das Verb hier nicht.
      */
     anhaenge?: WerkzeugAnhang[];
+    /**
+     * Woher die Treffer eines suchbaren Feldes kommen.
+     *
+     * Von aussen und nicht hier gebaut: Diese Ansicht kennt keine Adressen.
+     * `useMailWerkzeuge` gibt die Funktion heraus, und sie nimmt ein
+     * `AbortSignal` — die Suche laeuft, waehrend jemand tippt, und eine spaete
+     * Antwort darf die frische nicht ueberschreiben.
+     *
+     * Fehlt sie, ist ein Feld der Art `suche` nicht zeichenbar, und die Leiste
+     * sagt das. Nicht: ein Suchfeld, das nie etwas findet.
+     */
+    auswahlQuelle?: (
+        werkzeug: MailWerkzeug,
+        feld: string,
+        frage: string,
+        signal?: AbortSignal,
+    ) => Promise<MailWerkzeugTreffer[]>;
     labels?: Partial<MailWerkzeugleisteLabels>;
     className?: string;
 }
@@ -293,6 +322,7 @@ export function MailWerkzeugleiste({
     verbergen,
     eigene,
     anhaenge,
+    auswahlQuelle,
     labels,
     className,
 }: MailWerkzeugleisteProps) {
@@ -354,7 +384,16 @@ export function MailWerkzeugleiste({
      * und dann sucht jemand den Fehler bei sich.
      */
     const zeichenbar = (werkzeug: MailWerkzeug): boolean =>
-        (werkzeug.fields ?? []).every((feld) => (ZEICHENBARE_ARTEN as readonly string[]).includes(feld.type));
+        (werkzeug.fields ?? []).every(
+            (feld) =>
+                (ZEICHENBARE_ARTEN as readonly string[]).includes(feld.type) &&
+                /*
+                 * Ein Suchfeld ohne Quelle ist NICHT zeichenbar. Es waere ein
+                 * Feld, das aussieht, als suchte es, und nie etwas findet —
+                 * und der Mensch sucht den Fehler bei seiner Schreibweise.
+                 */
+                (feld.type !== 'suche' || auswahlQuelle !== undefined),
+        );
 
     /**
      * Die WIRKSAMEN Werte eines Verbs: was der Mensch gewählt hat, sonst die
@@ -719,7 +758,16 @@ export function MailWerkzeugleiste({
                                 {feld.required && <span aria-hidden="true"> *</span>}
                             </span>
 
-                            {feld.type === 'anhang' ? (
+                            {feld.type === 'suche' && auswahlQuelle ? (
+                                <AuswahlSuche
+                                    werkzeug={offeneMaske}
+                                    feld={feld}
+                                    gewaehlt={textWert(offeneMaske, feld.name)}
+                                    quelle={auswahlQuelle}
+                                    texte={texte}
+                                    onWahl={(wert: string) => setzeWert(kennungVon(offeneMaske), feld.name, wert)}
+                                />
+                            ) : feld.type === 'anhang' ? (
                                 <Anhangwahl
                                     feld={feld}
                                     anhaenge={anhaenge ?? []}
@@ -763,6 +811,16 @@ export function MailWerkzeugleiste({
                         <Button
                             type="button"
                             size="sm"
+                            /*
+                                Eigene Marke, weil die Maske inzwischen mehr als
+                                einen Knopf traegt: Ein Auswaehler hat seinen
+                                „Aendern", und „der erste Knopf in der Maske"
+                                war damit nicht mehr derselbe wie „der Knopf,
+                                der das Verb ausloest". Genau daran ist ein Test
+                                haengengeblieben — und im Produkt waere es ein
+                                Klick ins Leere.
+                            */
+                            data-slot="mail-werkzeugleiste-ausloesen"
                             disabled={laufend === kennungVon(offeneMaske) || fehltPflichtAn(offeneMaske)}
                             onClick={() => void klick(offeneMaske)}
                             className="h-7 px-2 text-xs"
@@ -947,6 +1005,218 @@ function Anhangwahl({
                     )}
                 </label>
             ))}
+        </span>
+    );
+}
+
+/**
+ * Ein Auswähler mit Suche — für Felder der Art `suche`.
+ *
+ * ## Was er ersetzt
+ *
+ * Ein Kontakt wird aus zwölftausend gewählt, eine Aufgabe aus achthundert.
+ * Dafür gab es bis v0.203.0 nur `verweis()`: Das Verb wurde zum Link und
+ * führte ins andere System. Genau diesen Sprung baut #9145 ab, und das hier
+ * ist das Stück, an dem es sichtbar wird.
+ *
+ * ## Mit der Tastatur bedienbar, und zwar messbar
+ *
+ * Pfeil hoch/runter, Enter, Escape. Das ist nicht Höflichkeit: Wer eine
+ * Aufgabe sucht, tippt — und danach die Hand zur Maus zu nehmen, um den
+ * ersten Treffer zu nehmen, ist der Unterschied zwischen „geht" und „benutzt
+ * jemand".
+ *
+ * Die Hervorhebung steht in `aria-activedescendant` UND in
+ * `data-highlighted`. Zweimal, weil es zwei Leser sind: Eine Vorlesehilfe
+ * braucht das erste, und eine Messung braucht etwas, das sie ohne
+ * Farbvergleich sehen kann. `mail-2b` hat am 1.11.2026 nachgemessen, dass ein
+ * selbst ausgelöstes `keydown` die Handler der Seite durchläuft, aber KEINE
+ * Vorgabewirkung des Browsers auslöst (`isTrusted` ist falsch) — also ist die
+ * Tastaturbedienung prüfbar, solange sie an Handlern hängt und nicht an dem,
+ * was der Browser von sich aus täte.
+ *
+ * ## Die späte Antwort darf die frische nicht überschreiben
+ *
+ * Jede Suche bringt ihren eigenen `AbortController` mit und bricht die
+ * vorige ab. Ohne das springt die Liste zurück, sobald jemand schnell tippt —
+ * und zwar auf die Treffer zu „Mei", während im Feld „Meier" steht.
+ */
+function AuswahlSuche({
+    werkzeug,
+    feld,
+    gewaehlt,
+    quelle,
+    texte,
+    onWahl,
+}: {
+    werkzeug: MailWerkzeug;
+    feld: MailWerkzeugFeld;
+    gewaehlt: string;
+    quelle: (werkzeug: MailWerkzeug, feld: string, frage: string, signal?: AbortSignal) => Promise<MailWerkzeugTreffer[]>;
+    texte: MailWerkzeugleisteLabels;
+    onWahl: (wert: string) => void;
+}) {
+    const [frage, setFrage] = useState('');
+    const [treffer, setTreffer] = useState<MailWerkzeugTreffer[]>([]);
+    const [laeuft, setLaeuft] = useState(false);
+    const [hervor, setHervor] = useState(0);
+    /*
+     * Was gewählt wurde, als WORT. Der Wert steht im Feld, aber das Wort kennt
+     * nur die Trefferliste — und die ist nach dem Zuklappen weg. Ohne das
+     * stünde dort die Kennung „4471" statt „Angebot Meier überarbeiten".
+     */
+    const [gewaehltesWort, setGewaehltesWort] = useState<string | null>(null);
+    const [offen, setOffen] = useState(gewaehlt === '');
+
+    const laufende = useRef<AbortController | null>(null);
+    const listenId = `${kennungVon(werkzeug)}-${feld.name}-treffer`;
+
+    useEffect(() => {
+        if (!offen) {
+            return;
+        }
+
+        const regler = new AbortController();
+
+        laufende.current?.abort();
+        laufende.current = regler;
+        setLaeuft(true);
+
+        /*
+         * Ein Wimpernschlag Pause, aber NICHT beim Aufklappen: Die erste
+         * Abfrage (leere Frage) soll sofort laufen, damit die Liste nicht
+         * leer dasteht, während niemand etwas getippt hat.
+         */
+        const warten = frage === '' ? 0 : 250;
+
+        const uhr = setTimeout(() => {
+            void quelle(werkzeug, feld.name, frage, regler.signal).then((gefunden) => {
+                if (regler.signal.aborted) {
+                    return;
+                }
+
+                setTreffer(gefunden);
+                setHervor(0);
+                setLaeuft(false);
+            });
+        }, warten);
+
+        return () => {
+            clearTimeout(uhr);
+            regler.abort();
+        };
+    }, [offen, frage, quelle, werkzeug, feld.name]);
+
+    function waehle(eintrag: MailWerkzeugTreffer): void {
+        onWahl(eintrag.value);
+        setGewaehltesWort(eintrag.label);
+        setOffen(false);
+    }
+
+    /*
+     * Zugeklappt mit einer Wahl: Was gewählt ist, und ein Weg zurück. Ein
+     * Auswähler, der nach der Wahl offen bleibt, verdeckt die Felder darunter
+     * — in einer Maske, die in der Leiste steht, ist das der halbe Platz.
+     */
+    if (!offen) {
+        return (
+            <span className="flex items-center gap-1.5">
+                <span className="truncate font-medium">{gewaehltesWort ?? gewaehlt}</span>
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                        setOffen(true);
+                        setFrage('');
+                    }}
+                    className="h-6 px-1.5 text-xs"
+                >
+                    {texte.andereWahl}
+                </Button>
+            </span>
+        );
+    }
+
+    return (
+        <span className="flex flex-col gap-1">
+            <input
+                type="text"
+                role="combobox"
+                aria-expanded="true"
+                aria-controls={listenId}
+                aria-activedescendant={treffer[hervor] ? `${listenId}-${hervor}` : undefined}
+                aria-autocomplete="list"
+                autoComplete="off"
+                placeholder={texte.suchen}
+                value={frage}
+                onChange={(e) => setFrage(e.target.value)}
+                onKeyDown={(e) => {
+                    /*
+                     * `preventDefault` an allen vier: Enter in einer Maske mit
+                     * Knopf würde sonst das Verb auslösen, bevor die Wahl
+                     * gesetzt ist, und die Pfeiltasten würden die Maske
+                     * scrollen statt die Liste zu bewegen.
+                     */
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setHervor((i) => (treffer.length === 0 ? 0 : (i + 1) % treffer.length));
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setHervor((i) => (treffer.length === 0 ? 0 : (i - 1 + treffer.length) % treffer.length));
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+
+                        if (treffer[hervor]) {
+                            waehle(treffer[hervor]);
+                        }
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+
+                        // Nur zu, wenn es etwas zu behalten gibt. Sonst stünde
+                        // ein leeres Feld da, das nicht mehr suchen lässt.
+                        if (gewaehlt !== '') {
+                            setOffen(false);
+                        }
+                    }
+                }}
+                className="h-8 rounded-md border bg-background px-2 text-xs"
+            />
+
+            {laeuft && <span className="text-muted-foreground">{texte.suchtNoch}</span>}
+
+            {!laeuft && treffer.length === 0 && <span className="text-muted-foreground">{texte.keineTreffer}</span>}
+
+            {treffer.length > 0 && (
+                <ul id={listenId} role="listbox" className="max-h-40 overflow-y-auto rounded-md border bg-background">
+                    {treffer.map((eintrag, i) => (
+                        <li
+                            key={eintrag.value}
+                            id={`${listenId}-${i}`}
+                            role="option"
+                            aria-selected={eintrag.value === gewaehlt}
+                            data-highlighted={i === hervor ? 'ja' : undefined}
+                            className={cn(
+                                'flex min-h-8 cursor-pointer flex-col justify-center px-2 py-1',
+                                i === hervor && 'bg-accent text-accent-foreground',
+                            )}
+                            /*
+                             * `onMouseDown` und nicht `onClick`: Ein Klick
+                             * nimmt dem Suchfeld zuerst den Fokus, und wer
+                             * daran einen Zuklapper hängt, wählt nie etwas aus.
+                             */
+                            onMouseDown={(e) => {
+                                e.preventDefault();
+                                waehle(eintrag);
+                            }}
+                            onMouseEnter={() => setHervor(i)}
+                        >
+                            <span className="truncate">{eintrag.label}</span>
+                            {eintrag.hint && <span className="truncate text-muted-foreground">{eintrag.hint}</span>}
+                        </li>
+                    ))}
+                </ul>
+            )}
         </span>
     );
 }

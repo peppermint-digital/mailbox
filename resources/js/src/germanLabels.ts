@@ -233,6 +233,10 @@ const werkzeuge: MailWerkzeugleisteLabels = {
     keineAnhaenge: 'Diese Nachricht hat keine Anhänge.',
     rueckfrageJa: 'Ja, ausführen',
     groesse: (bytes) => (bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`),
+    suchen: 'Suchen …',
+    suchtNoch: 'Wird gesucht …',
+    keineTreffer: 'Dazu gibt es keinen Treffer.',
+    andereWahl: 'Ändern',
 };
 
 /**

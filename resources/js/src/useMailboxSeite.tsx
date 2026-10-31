@@ -762,6 +762,8 @@ export function useMailboxSeite({
     const werkzeuge = useMailWerkzeuge({
         endpoint: konto ? `${basis}/${konto.id}/tools` : null,
         ausloesenEndpoint: konto ? `${basis}/${konto.id}/tools/run` : null,
+        // Die Treffer eines suchbaren Feldes (#9145, seit v0.203.0).
+        auswahlEndpoint: konto ? `${basis}/${konto.id}/tools/options` : null,
         nachricht: werkzeugNachricht,
         csrfToken: csrf,
     });
