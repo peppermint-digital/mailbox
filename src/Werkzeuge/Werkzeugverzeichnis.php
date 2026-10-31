@@ -239,6 +239,118 @@ class Werkzeugverzeichnis
         return Ergebnis::gescheitert('Dieses Werkzeug gibt es in diesem System nicht.');
     }
 
+    /**
+     * Treffer fuer ein suchbares Feld — aus dem EIGENEN System.
+     *
+     * Bewusst eng gebaut und mit denselben Schloessern wie
+     * {@see ausfuehren()}: `anwendbar()` zuerst, und ein Verweis-Verb wird
+     * nicht gefragt. Suchen legt nichts an, aber es GIBT etwas heraus, und
+     * Namen sind auch etwas.
+     *
+     * Eine leere Liste ist die Antwort auf alles, was nicht geht — kein
+     * Werkzeug, kein Suchvertrag, nicht anwendbar, Absturz im Produktcode.
+     * Der Grund steht im Protokoll und nicht in der Antwort: Ein Auswaehler,
+     * der erklaert, WARUM er nichts findet, erzaehlt dem Fragenden etwas ueber
+     * ein System, das er vielleicht nicht sehen darf.
+     *
+     * @return array<int, array{wert: string, wort: string, hinweis?: string}>
+     */
+    public function auswahl(string $schluessel, string $feld, string $suche, Vorgang $vorgang, Model $person): array
+    {
+        foreach ($this->alle() as $werkzeug) {
+            try {
+                $form = $werkzeug->werkzeug();
+
+                if ($form->schluessel !== $schluessel) {
+                    continue;
+                }
+
+                if (! $werkzeug instanceof LiefertAuswahl) {
+                    /*
+                     * Das Verb gibt es, aber es sucht nicht. Das ist kein
+                     * Fehler der Oberflaeche: Ein Produkt kann ein Feld
+                     * `suche` angeben und den Vertrag vergessen haben, und
+                     * dann ist die ehrliche Antwort „keine Treffer" statt
+                     * eines Absturzes.
+                     */
+                    Log::warning('Mail-Werkzeug hat ein suchbares Feld, aber keinen Suchvertrag.', [
+                        'tool' => $werkzeug::class,
+                        'key' => $schluessel,
+                        'field' => $feld,
+                    ]);
+
+                    return [];
+                }
+
+                if (! $werkzeug->anwendbar($vorgang, $person)) {
+                    return [];
+                }
+
+                // Ein Verweis-Verb wird nicht gefragt — dieselbe Regel wie
+                // beim Ausloesen, und aus demselben Grund: Ein veralteter
+                // Stand drueben koennte es trotzdem versuchen.
+                if ($form->mitVerweis($werkzeug->verweis($vorgang, $person))->fuehrtHin()) {
+                    return [];
+                }
+
+                return $this->sauber($werkzeug->auswahl($vorgang, $person, $feld, $suche));
+            } catch (\Throwable $fehler) {
+                Log::warning('Mail-Werkzeug ist beim Suchen gescheitert.', [
+                    'tool' => $werkzeug::class,
+                    'key' => $schluessel,
+                    'field' => $feld,
+                    'error' => $fehler->getMessage(),
+                ]);
+
+                return [];
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Die Treffer auf die Form bringen, in der sie hinausgehen.
+     *
+     * Hier und nicht in der Oberflaeche, weil die Liste ueber Systemgrenzen
+     * reist: Was ein Produkt zurueckgibt, ist Produktcode, und ein Eintrag
+     * ohne `wert` waere drueben ein Knopf, der nichts auswaehlt.
+     *
+     * @param  array<int, array<string, mixed>>  $roh
+     * @return array<int, array{wert: string, wort: string, hinweis?: string}>
+     */
+    private function sauber(array $roh): array
+    {
+        $treffer = [];
+
+        foreach ($roh as $eintrag) {
+            if (! is_array($eintrag)) {
+                continue;
+            }
+
+            $wert = (string) ($eintrag['wert'] ?? '');
+
+            if ($wert === '') {
+                continue;
+            }
+
+            $sauber = [
+                'wert' => $wert,
+                // Ohne Wort der Wert: Ein leerer Knopf ist schlimmer als ein
+                // haesslicher.
+                'wort' => (string) ($eintrag['wort'] ?? '') !== '' ? (string) $eintrag['wort'] : $wert,
+            ];
+
+            if ((string) ($eintrag['hinweis'] ?? '') !== '') {
+                $sauber['hinweis'] = (string) $eintrag['hinweis'];
+            }
+
+            $treffer[] = $sauber;
+        }
+
+        return $treffer;
+    }
+
     /** Fuer Tests. */
     public function vergessen(): void
     {

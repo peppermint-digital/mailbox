@@ -4,7 +4,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Validation\ValidationException;
+use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Http\HandlesSending;
+use Peppermint\Mailbox\Mailboxes;
 use Peppermint\Mailbox\Models\MailAccount;
 use Peppermint\Mailbox\Sending\Outgoing;
 
@@ -334,7 +336,7 @@ it('laesst den Rumpf unveraendert, wenn kein Zitat mitkommt', function () {
 });
 
 describe('ein wiederaufgenommener Entwurf (31.10.2026)', function () {
-    afterEach(fn () => Peppermint\Mailbox\Mailboxes::fake(null));
+    afterEach(fn () => Mailboxes::fake(null));
 
     it('sendet GAR NICHT, wenn die Anhaenge des Entwurfs nicht ladbar sind', function () {
         /*
@@ -351,8 +353,8 @@ describe('ein wiederaufgenommener Entwurf (31.10.2026)', function () {
          * SMTP-Port. Ginge der Versand los, stuende in der Antwort die
          * SMTP-Absage. Es steht die Entwurfs-Absage da.
          */
-        Peppermint\Mailbox\Mailboxes::fake(function () {
-            $attrappe = Mockery::mock(Peppermint\Mailbox\Contracts\Mailbox::class);
+        Mailboxes::fake(function () {
+            $attrappe = Mockery::mock(Mailbox::class);
             $attrappe->shouldReceive('attachments')->andThrow(new RuntimeException('IMAP weg'));
 
             return $attrappe;
@@ -377,8 +379,8 @@ describe('ein wiederaufgenommener Entwurf (31.10.2026)', function () {
     it('laesst eine Nachricht OHNE Entwurf unberuehrt', function () {
         // Der Normalfall darf von alldem nichts merken: kein Entwurf, kein
         // Postfachzugriff, und die Absage kommt wie bisher vom Versand.
-        Peppermint\Mailbox\Mailboxes::fake(function () {
-            $attrappe = Mockery::mock(Peppermint\Mailbox\Contracts\Mailbox::class);
+        Mailboxes::fake(function () {
+            $attrappe = Mockery::mock(Mailbox::class);
             $attrappe->shouldNotReceive('attachments');
 
             return $attrappe;

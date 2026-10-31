@@ -195,7 +195,7 @@ describe('die Vorfassung ersetzen', function () {
         entwurfSpeicherPostfach(function ($attrappe) {
             $attrappe->shouldReceive('specialFolder')->with('Drafts')->andReturn('Drafts');
             $attrappe->shouldReceive('message')->andReturn(['subject' => 'Vorfassung']);
-            $attrappe->shouldReceive('attachments')->andThrow(new \RuntimeException('Postfach weg'));
+            $attrappe->shouldReceive('attachments')->andThrow(new RuntimeException('Postfach weg'));
             $attrappe->shouldNotReceive('append');
             $attrappe->shouldNotReceive('purge');
         });
@@ -218,7 +218,7 @@ describe('die Vorfassung ersetzen', function () {
             $attrappe->shouldReceive('specialFolder')->with('Drafts')->andReturn('Drafts');
             $attrappe->shouldReceive('message')->andReturn(['subject' => 'Vorfassung']);
             $attrappe->shouldReceive('attachments')->andReturn([]);
-            $attrappe->shouldReceive('append')->andThrow(new \RuntimeException('APPEND verweigert'));
+            $attrappe->shouldReceive('append')->andThrow(new RuntimeException('APPEND verweigert'));
             $attrappe->shouldNotReceive('purge');
         });
 
@@ -242,7 +242,7 @@ describe('die Vorfassung ersetzen', function () {
             $attrappe->shouldReceive('message')->andReturn(['subject' => 'Vorfassung']);
             $attrappe->shouldReceive('attachments')->andReturn([]);
             $attrappe->shouldReceive('append')->andReturn(5);
-            $attrappe->shouldReceive('purge')->andThrow(new \RuntimeException('UID weg'));
+            $attrappe->shouldReceive('purge')->andThrow(new RuntimeException('UID weg'));
         });
 
         $antwort = (new TestControllerFuerEntwurfSpeichern(entwurfSpeicherKonto()))->entwurfSpeichern(

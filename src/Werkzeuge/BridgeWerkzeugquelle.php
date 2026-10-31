@@ -25,7 +25,7 @@ use Peppermint\AiBrainBridge\Verbund\Bruecke;
  * nachgebildet wird, laeuft auseinander — und dann oeffnet die Nachbildung
  * etwas, das das Original zugehalten haette.
  */
-class BridgeWerkzeugquelle implements Werkzeugquelle
+class BridgeWerkzeugquelle implements SuchendeWerkzeugquelle
 {
     private const HUB_SLUG = 'ai-brain';
 
@@ -85,5 +85,31 @@ class BridgeWerkzeugquelle implements Werkzeugquelle
         );
 
         return Auspacken::ergebnis(is_array($antwort) ? $antwort : []);
+    }
+
+    public function auswaehlen(string $slug, string $schluessel, string $feld, string $suche, Vorgang $vorgang, string $adresse): array
+    {
+        /*
+         * Dieselbe Faehigkeit wie das Auflisten, nur mit `field` und `query`
+         * dabei. Ein Stand drueben, der die beiden noch nicht kennt,
+         * antwortet mit seiner VERB-Liste — darum packt `Auspacken::auswahl()`
+         * nur aus, was wirklich nach Treffern aussieht, und gibt sonst nichts
+         * heraus. Eine Verbliste als Auswahl anzubieten waere die schlimmere
+         * Antwort: zwanzig Knoepfe, die nichts auswaehlen.
+         */
+        $nutzlast = $vorgang->toArray() + ['action' => $schluessel, 'field' => $feld, 'query' => $suche];
+
+        if ($slug === self::HUB_SLUG) {
+            return Auspacken::auswahl((array) AiBrain::call(self::WERKZEUG_LISTE, $nutzlast));
+        }
+
+        $antwort = AiBrain::gateway(
+            FremdeWerkzeuge::CAPABILITY,
+            $nutzlast,
+            $slug,
+            $adresse,
+        );
+
+        return Auspacken::auswahl(is_array($antwort) ? $antwort : []);
     }
 }

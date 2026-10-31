@@ -50,6 +50,8 @@ one merged list). Deliberately the same, down to the naming: one pattern for
 | `Werkzeuge\Werkzeug` | the shape of a verb — key, word, icon, order, group, fields, state |
 | `Werkzeuge\Vorgangswerkzeug` | what **this** system contributes: `werkzeug()` · `anwendbar()` · `zustand()` · `verweis()` · `ausfuehren()` |
 | `Werkzeuge\LiefertFelder` | the extra contract for a verb that asks before it acts |
+| `Werkzeuge\LiefertAuswahl` | the extra contract for a verb whose choices must be searched |
+| `Werkzeuge\SuchendeWerkzeugquelle` | a transport that can carry a field search across systems |
 | `Werkzeuge\Werkzeugverzeichnis` | what this system registered |
 | `Werkzeuge\GesamtWerkzeuge` | own verbs plus the other systems', merged into one toolbar |
 | `Werkzeuge\Vorgang` | **which mail** — by address, thread key and Message-ID |
@@ -108,12 +110,12 @@ class AlsEingangsrechnung implements Vorgangswerkzeug
 }
 ```
 
-## The two routes
+## The routes
 
 ```php
 class MailboxController extends Controller
 {
-    use HandlesWerkzeuge;   // GET {account}/tools + POST {account}/tools/run
+    use HandlesWerkzeuge;   // GET {account}/tools + POST {account}/tools/run + /tools/options
 
     protected function werkzeugPerson(): ?Model
     {
@@ -149,6 +151,7 @@ Three field types, and the third is the interesting one:
 | `select` | a dropdown | **you**, in `auswahl` |
 | `text` | one line | nobody |
 | `anhang` | the attachments of **this** mail | the **package** |
+| `suche` | a picker with a search box | **you**, via `LiefertAuswahl` |
 
 `anhang` carries no `auswahl` — anything put there is ignored. The package
 already knows the attachments; it is showing them. Having every product collect
@@ -166,6 +169,65 @@ A field type the bar cannot draw is **not** an error and **not** a dead button:
 the verb is not offered, and the bar *says* it cannot draw it. Silently leaving
 it out looks like "does not exist", and then someone goes looking for the fault
 in themselves.
+
+### `suche` — the picker, and the third route
+
+A contact out of twelve thousand cannot be a dropdown. Implement
+`Werkzeuge\LiefertAuswahl` — a third interface, asked by `instanceof`, for the
+same reason as `LiefertFelder`:
+
+```php
+public function auswahl(Vorgang $vorgang, Model $person, string $feld, string $suche): array
+{
+    return Aufgabe::query()
+        ->where('titel', 'like', "%{$suche}%")
+        ->limit(20)
+        ->get()
+        ->map(fn ($a) => ['wert' => (string) $a->id, 'wort' => $a->titel, 'hinweis' => $a->projekt?->name])
+        ->all();
+}
+```
+
+Mount the third route next to the other two:
+
+```
+POST mailbox/{account}/tools/options  → { options: [{value, label, hint?}] }
+```
+
+It runs under `mailbox.actions`, **not** a new capability: searching *reads*
+what is possible. A third capability would be a third place for a product to
+forget it, and the silent result would be a picker that never finds anything —
+which looks like "that contact does not exist".
+
+Four rules, and they are the ones that go wrong quietly:
+
+- **Searching is reading, not a free pass.** `anwendbar()` is still not a
+  permission check, and these results travel across system borders. Filter to
+  what *this* person may see, or the toolbar becomes a directory for anyone
+  with a mail open.
+- **The empty query is the normal case.** The picker asks once on open, with no
+  text, to have something to show. Answer with what makes sense without a
+  question — the latest, the nearest, the person's own — or with nothing. Not
+  with everything.
+- **Limit it yourself.** The package does not truncate, because it does not
+  know what a good order is. Twenty hits are a choice; two thousand are a
+  connection that times out.
+- **A verb that only leads there is not asked.** Same rule as for executing,
+  and for the same reason: an older deployment elsewhere might still try.
+
+Across a system border the search goes through the same gateway as the list,
+and a deployment that does not know the field search yet answers with its
+**verb list** — a success for the gateway and nonsense for the picker. So only
+what really looks like options is unpacked (`Auspacken::auswahl`), and anything
+else yields nothing. Offering a verb list as a choice would be the worse
+answer: twenty buttons that select nothing.
+
+The transport contract for it is `SuchendeWerkzeugquelle`, which **extends**
+`Werkzeugquelle` rather than growing it. Adding the method to the mandatory
+contract invalidates every existing implementation at the next `composer
+update` — the package's own test double broke within the minute, which in a
+product would have been a deploy. A source without the search contract means no
+hits from *foreign* verbs; the system's own verbs keep searching.
 
 `rueckfrage` is asked in the same place — a box in the bar with the sentence
 and two buttons. It used to be `window.confirm`, which stops the whole tab,
@@ -253,8 +315,9 @@ then people look in the wrong system. What failed is in the answer
 ## What it looks like on the wire
 
 ```
-GET  mailbox/{account}/tools        → { tools: [...], unreachable: [...], failed: [...] }
-POST mailbox/{account}/tools/run    → { ok, message, state, data }
+GET  mailbox/{account}/tools         → { tools: [...], unreachable: [...], failed: [...] }
+POST mailbox/{account}/tools/run     → { ok, message, state, data }
+POST mailbox/{account}/tools/options → { options: [{value, label, hint?}] }
 ```
 
 A tool carries `system: null` when it is this system's own, and the key it is

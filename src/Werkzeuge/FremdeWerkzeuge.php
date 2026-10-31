@@ -131,6 +131,51 @@ class FremdeWerkzeuge
     }
 
     /**
+     * Treffer fuer ein suchbares Feld aus einem anderen System.
+     *
+     * Eine leere Liste bei jedem Fehlschlag, und das ist hier RICHTIG, waehrend
+     * es beim Ausloesen falsch waere: Ein Auswaehler ohne Treffer ist eine
+     * Lage, mit der der Mensch umgehen kann (er tippt weiter oder sucht
+     * anders). Ein Auftrag, der verschwindet, ist es nicht — darum antwortet
+     * {@see ausloesen()} dort mit einem Satz und nicht mit Stille.
+     *
+     * Gesagt wird es trotzdem, nur eine Ebene hoeher: Die Oberflaeche weiss
+     * aus der Leiste, welche Systeme unerreichbar sind, und zeigt das am Verb.
+     *
+     * @return array<int, array{wert: string, wort: string, hinweis?: string}>
+     */
+    public function auswahl(string $system, string $schluessel, string $feld, string $suche, Vorgang $vorgang, string $adresse): array
+    {
+        if (! $this->quelle instanceof SuchendeWerkzeugquelle) {
+            /*
+             * Eine Quelle ohne Suchvertrag. Keine Treffer aus FREMDEN
+             * Systemen — die eigenen Verben suchen weiter, denn die gehen
+             * nicht ueber eine Quelle. Siehe {@see SuchendeWerkzeugquelle}.
+             */
+            return [];
+        }
+
+        $slug = $this->slugVon($system);
+
+        if ($slug === null) {
+            return [];
+        }
+
+        try {
+            return $this->quelle->auswaehlen($slug, $schluessel, $feld, $suche, $vorgang, $adresse);
+        } catch (\Throwable $fehler) {
+            Log::warning('Fremdes Mail-Werkzeug hat keine Auswahl geliefert.', [
+                'system' => $slug,
+                'key' => $schluessel,
+                'field' => $feld,
+                'error' => $fehler->getMessage(),
+            ]);
+
+            return [];
+        }
+    }
+
+    /**
      * Vom Kuerzel, das die Oberflaeche zurueckschickt, auf das Zielsystem.
      *
      * Ueber das Register, nicht durch Vertrauen: Die Oberflaeche schickt

@@ -115,7 +115,7 @@ it('nimmt die Verfassen-Seite nicht mit, wenn der Vorrat des Produkts stuerzt', 
     {
         public function signaturen(MailAccount $konto): array
         {
-            throw new \RuntimeException('Tabelle weg');
+            throw new RuntimeException('Tabelle weg');
         }
     });
 

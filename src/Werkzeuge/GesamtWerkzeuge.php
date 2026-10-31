@@ -102,6 +102,43 @@ class GesamtWerkzeuge
     }
 
     /**
+     * Treffer fuer ein suchbares Feld — eigenes oder fremdes Verb.
+     *
+     * Die Umschaltung sitzt hier, an derselben Stelle wie bei
+     * {@see ausfuehren()}, und aus demselben Grund: Die Oberflaeche schickt
+     * zurueck, was sie bekommen hat, und soll nicht wissen muessen, wessen
+     * Verb sie gerade bedient.
+     *
+     * @return array<int, array{wert: string, wort: string, hinweis?: string}>
+     */
+    public function auswahl(?string $system, string $schluessel, string $feld, string $suche, Vorgang $vorgang, Model $person): array
+    {
+        if (! $vorgang->vollstaendig()) {
+            return [];
+        }
+
+        if ($system === null || $system === '') {
+            return $this->eigene->auswahl($schluessel, $feld, $suche, $vorgang, $person);
+        }
+
+        $adresse = $this->adresse($person);
+
+        if ($adresse === null) {
+            /*
+             * Ohne Adresse kann das andere System nicht wissen, WER fragt —
+             * und darf deshalb nichts herausgeben. Beim Ausloesen steht hier
+             * ein Satz; eine Suche hat keine Stelle, an der er hingehoerte,
+             * also bleibt es bei nichts. Die Leiste hat die Auskunft schon:
+             * Ein Verb, dessen System nicht erreichbar ist, ist dort
+             * gekennzeichnet.
+             */
+            return [];
+        }
+
+        return $this->fremde->auswahl($system, $schluessel, $feld, $suche, $vorgang, $adresse);
+    }
+
+    /**
      * @return array{werkzeuge: array<int, Werkzeug>, unreachable: array<int, string>, failed: array<int, string>}
      */
     private function fremdeWerkzeuge(Vorgang $vorgang, Model $person): array

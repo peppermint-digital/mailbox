@@ -166,6 +166,72 @@ trait HandlesWerkzeuge
     }
 
     /**
+     * Treffer fuer ein suchbares Feld eines Verbs.
+     *
+     * Die DRITTE Route, und sie liegt unter derselben Faehigkeit wie das
+     * Auflisten: Suchen liest, was moeglich ist. Eine eigene Faehigkeit waere
+     * eine dritte Stelle, an der ein Produkt sie vergessen kann — und das
+     * stille Ergebnis waere ein Auswaehler ohne Treffer, was wie „gibt es
+     * nicht" aussieht.
+     *
+     * `POST` und nicht `GET`, obwohl gelesen wird: Die Nachricht wird ueber
+     * `message_id`, `references` und `subject` benannt, und die gehoeren nicht
+     * in eine Adresszeile — sie landeten in Protokollen, im Verlauf des
+     * Browsers und in der Mitte jeder Zwischenstation. Dieselbe Entscheidung
+     * wie bei {@see tools()}, und dort steht sie auch nicht zur Debatte.
+     */
+    public function toolOptions(Request $request, int $account): JsonResponse
+    {
+        $this->guardWerkzeuge($account);
+
+        $daten = $request->validate([
+            'action' => ['required', 'string', 'max:255'],
+            'system' => ['nullable', 'string', 'max:64'],
+            'field' => ['required', 'string', 'max:255'],
+            /*
+             * Die leere Frage ist erlaubt und der NORMALFALL beim Aufklappen:
+             * Der Auswaehler fragt einmal ohne Text, um etwas zu zeigen zu
+             * haben. `nullable` statt `required`, damit daraus keine 422 wird,
+             * die wie „die Suche ist kaputt" aussieht.
+             */
+            'query' => ['nullable', 'string', 'max:255'],
+            'message_id' => ['required', 'string', 'max:255'],
+            'in_reply_to' => ['nullable', 'string', 'max:998'],
+            'references' => ['nullable', 'string'],
+            'subject' => ['nullable', 'string', 'max:998'],
+            'from' => ['nullable', 'string', 'max:998'],
+        ]);
+
+        $person = $this->werkzeugPerson();
+
+        if ($person === null) {
+            /*
+             * Leer und 200, anders als beim Ausloesen. Dort ist „nicht
+             * angemeldet" ein Riegel vor etwas, das entstehen soll; hier ist
+             * es eine Suche, die niemand gestellt hat. Ein 401 am Auswaehler
+             * waere eine rote Meldung an einem Feld, in das jemand gerade
+             * tippt.
+             */
+            return response()->json(['options' => []]);
+        }
+
+        return response()->json([
+            'options' => array_map(static fn (array $treffer): array => array_filter([
+                'value' => $treffer['wert'],
+                'label' => $treffer['wort'],
+                'hint' => $treffer['hinweis'] ?? null,
+            ], static fn ($wert) => $wert !== null), app(GesamtWerkzeuge::class)->auswahl(
+                $daten['system'] ?? null,
+                $daten['action'],
+                $daten['field'],
+                (string) ($daten['query'] ?? ''),
+                $this->vorgang($account, $daten),
+                $person,
+            )),
+        ]);
+    }
+
+    /**
      * @param  array<string, mixed>  $daten
      */
     private function vorgang(int $account, array $daten): Vorgang

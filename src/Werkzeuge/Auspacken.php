@@ -36,6 +36,60 @@ final class Auspacken
     }
 
     /**
+     * Die Treffer einer Feldsuche aus einem anderen System.
+     *
+     * ## Warum das nicht `liste()` sein kann
+     *
+     * Die Faehigkeit ist dieselbe (`mailbox.actions`), die ANTWORT nicht. Ein
+     * System, dessen Paketfassung die Feldsuche noch nicht kennt, ignoriert
+     * `field` und `query` und antwortet mit seiner VERB-Liste — fuer das
+     * Gateway ein Erfolg, fuer den Auswaehler Unsinn.
+     *
+     * Darum wird hier nur ausgepackt, was wirklich nach Treffern aussieht:
+     * eine Liste unter `options`, deren Einträge einen `value` tragen. Eine
+     * Verbliste als Auswahl anzubieten waere die schlimmere Antwort — zwanzig
+     * Knoepfe, die nichts auswaehlen, und der Mensch sucht den Fehler bei sich.
+     *
+     * Die Drahtnamen sind `value`, `label`, `hint`; die inneren heissen
+     * `wert`, `wort`, `hinweis`. Dieselbe Regel wie bei den Feldern und beim
+     * Zustand: Sonst schickt dieses System `wort` und das naechste liest
+     * `label`, und die Angabe faellt lautlos weg.
+     *
+     * @param  array<string, mixed>  $antwort
+     * @return array<int, array{wert: string, wort: string, hinweis?: string}>
+     */
+    public static function auswahl(array $antwort): array
+    {
+        $huelle = Huelle::schaelen($antwort, 'options');
+        $treffer = [];
+
+        foreach (Huelle::zeilen($huelle, 'options') as $zeile) {
+            if (! is_array($zeile)) {
+                continue;
+            }
+
+            $wert = (string) ($zeile['value'] ?? '');
+
+            if ($wert === '') {
+                continue;
+            }
+
+            $eintrag = [
+                'wert' => $wert,
+                'wort' => (string) ($zeile['label'] ?? '') !== '' ? (string) $zeile['label'] : $wert,
+            ];
+
+            if ((string) ($zeile['hint'] ?? '') !== '') {
+                $eintrag['hinweis'] = (string) $zeile['hint'];
+            }
+
+            $treffer[] = $eintrag;
+        }
+
+        return $treffer;
+    }
+
+    /**
      * Das Ergebnis eines ausgeloesten Werkzeugs.
      *
      * ## Zwei Ebenen, die nicht verwechselt werden duerfen
