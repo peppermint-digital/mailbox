@@ -141,3 +141,104 @@ describe('die Blindkopie (31.10.2026)', () => {
         unmount();
     });
 });
+
+describe('die Fassung fortschreiben (31.10.2026)', () => {
+    /*
+     * Gefunden von `mail-2b` beim Verdrahten von v0.198.0 — gemeldet, bevor
+     * sie es im Produkt geloest hat.
+     *
+     * Der Ablauf, der ohne das bricht, ist der normale: Entwurf oeffnen,
+     * weiterschreiben, „Als Entwurf speichern" (der Server legt eine neue
+     * Fassung ab und raeumt die alte per `purge` weg), dann doch senden. Die
+     * Sendefelder zeigten danach auf die entfernte Fassung — die Anhaenge
+     * wuerden aus einem Entwurf nachgeladen, den es nicht mehr gibt, und
+     * abgeloest wuerde nach dem Senden nichts.
+     */
+    it('gibt die Fassung in BEIDEN Schreibweisen heraus', () => {
+        /*
+         * Zwei Namen fuer eine Sache, und absichtlich beide hier: Liesse man
+         * das Produkt umbenennen, haette es die Fassung in der Hand — und
+         * damit die Gelegenheit, die eine Stelle zu zwei zu machen.
+         */
+        const { gesehen, unmount } = probe(ENTWURF);
+
+        expect(gesehen.aktuell!.sendeFelder).toEqual({ draft_folder: 'Entw&APw-rfe', draft_uid: '42' });
+        expect(gesehen.aktuell!.speicherFelder).toEqual({ replace_folder: 'Entw&APw-rfe', replace_uid: '42' });
+
+        unmount();
+    });
+
+    it('schreibt nach dem Speichern die NEUE Fassung fort', () => {
+        const { gesehen, unmount } = probe(ENTWURF);
+
+        act(() => gesehen.aktuell!.fassungGesetzt('Entw&APw-rfe', 77));
+
+        expect(gesehen.aktuell!.sendeFelder).toEqual({ draft_folder: 'Entw&APw-rfe', draft_uid: '77' });
+        expect(gesehen.aktuell!.speicherFelder).toEqual({ replace_folder: 'Entw&APw-rfe', replace_uid: '77' });
+
+        unmount();
+    });
+
+    it('setzt sie ZURUECK, wenn der Server keine Kennung nennt', () => {
+        /*
+         * IMAPs `APPEND` darf keine nennen. Die Vorfassung ist trotzdem
+         * entfernt — die alte Kennung zeigt dann ins Leere, und sie weiter
+         * mitzuschicken ist genau der Fehler, den dieser Haken behebt.
+         *
+         * Die Folge ist, dass die gespeicherte Fassung nach dem Senden liegen
+         * bleibt. Das ist sichtbar und harmlos, waehrend das andere still und
+         * schaedlich ist.
+         */
+        const { gesehen, unmount } = probe(ENTWURF);
+
+        act(() => gesehen.aktuell!.fassungGesetzt('Entw&APw-rfe', null));
+
+        expect(gesehen.aktuell!.sendeFelder).toEqual({});
+        expect(gesehen.aktuell!.speicherFelder).toEqual({});
+
+        unmount();
+    });
+
+    it('nimmt auch eine Fassung an, wenn gar kein Entwurf geoeffnet war', () => {
+        /*
+         * Der zweite normale Ablauf: neue Mail schreiben, speichern, dann
+         * senden. Ohne das hiesse „einmal gespeichert" immer noch „kein
+         * Entwurf im Spiel", und die gespeicherte Fassung bliebe nach dem
+         * Senden liegen.
+         */
+        const { gesehen, unmount } = probe(null);
+
+        expect(gesehen.aktuell!.sendeFelder).toEqual({});
+
+        act(() => gesehen.aktuell!.fassungGesetzt('Drafts', 5));
+
+        expect(gesehen.aktuell!.sendeFelder).toEqual({ draft_folder: 'Drafts', draft_uid: '5' });
+
+        unmount();
+    });
+
+    it('bleibt derselbe Setzer ueber Durchlaeufe hinweg', () => {
+        /*
+         * `useCallback` ohne Abhaengigkeiten: Das Produkt reicht ihn
+         * moeglicherweise in eine Abhaengigkeitsliste, und ein bei jedem
+         * Zeichnen neuer Setzer waere dort eine Schleife.
+         */
+        const { gesehen, unmount } = probe(ENTWURF);
+        const vorher = gesehen.aktuell!.fassungGesetzt;
+
+        act(() => gesehen.aktuell!.setBetreff('etwas anderes'));
+
+        expect(gesehen.aktuell!.fassungGesetzt).toBe(vorher);
+
+        unmount();
+    });
+
+    it('faengt ohne brauchbare Kennung am Entwurf LEER an', () => {
+        // Ein Entwurf ohne Kennung ist nichts, was man ersetzen koennte.
+        const { gesehen, unmount } = probe({ ...ENTWURF, uid: '' as never });
+
+        expect(gesehen.aktuell!.sendeFelder).toEqual({});
+
+        unmount();
+    });
+});

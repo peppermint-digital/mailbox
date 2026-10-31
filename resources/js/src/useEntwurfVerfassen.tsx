@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { EmailAddress } from './EmailComposerForm';
 
 /**
@@ -107,6 +107,55 @@ export interface EntwurfVerfassen {
      * Produkt es bedenkenlos hineinstreuen.
      */
     sendeFelder: { draft_folder?: string; draft_uid?: string };
+    /**
+     * Was beim SPEICHERN mitmuss, damit die Vorfassung ersetzt und nicht
+     * verdoppelt wird.
+     *
+     * Dieselbe Fassung wie in {@see sendeFelder}, nur in der Schreibweise, die
+     * `SpeichertEntwuerfe` liest. Zwei Namen fuer eine Sache, und absichtlich
+     * BEIDE hier: Liesse man das Produkt umbenennen, haette es die Fassung in
+     * der Hand — und damit die Gelegenheit, die eine Stelle zu zwei zu machen.
+     */
+    speicherFelder: { replace_folder?: string; replace_uid?: string };
+    /**
+     * Nach dem Speichern: Welche Fassung jetzt im Postfach liegt.
+     *
+     * ## Warum es das geben MUSS
+     *
+     * Gefunden von `mail-2b` am 31.10.2026 beim Verdrahten von v0.198.0, und
+     * sie hat es gemeldet, bevor sie es im Produkt geloest hat.
+     *
+     * Der Ablauf, der ohne das bricht, ist der normale: Entwurf oeffnen,
+     * weiterschreiben, „Als Entwurf speichern" (der Server legt eine neue
+     * Fassung ab und raeumt die alte per `purge` weg), dann doch senden.
+     *
+     * `sendeFelder` war aus dem ANFANGSWERT abgeleitet und aenderte sich nie.
+     * Beim Senden gingen also `draft_folder`/`draft_uid` der Fassung mit, die
+     * gerade entfernt wurde. Zwei stille Folgen:
+     *
+     * 1. Die Anhaenge werden aus einem Entwurf nachgeladen, den es nicht mehr
+     *    gibt.
+     * 2. Abgeloest wird nach dem Senden nichts — die gerade gespeicherte
+     *    Fassung bleibt im Entwurfsordner liegen.
+     *
+     * ## Warum im Haken und nicht im Produkt
+     *
+     * Dasselbe Argument wie oben an dieser Datei, und `mail-2b` hat es mir
+     * zurueckgegeben: Haelt das Produkt die Fassung mit eigenem `useState` und
+     * streut sie beim Senden ueber `sendeFelder`, liegt sie an zwei Stellen —
+     * und bei der naechsten Ergaenzung weiss niemand, welche fuehrt.
+     *
+     * ## Keine Kennung heisst: nicht mehr ersetzen
+     *
+     * `null` oder eine leere Kennung setzt die Fassung ZURUECK, statt die alte
+     * stehen zu lassen. Ein Server, der keine nennt (IMAPs `APPEND` darf das),
+     * hat die Vorfassung trotzdem entfernt — die alte Kennung zeigt dann ins
+     * Leere, und sie weiter mitzuschicken ist genau der Fehler, den dieser
+     * Haken behebt. Die Folge ist, dass die gespeicherte Fassung nach dem
+     * Senden liegen bleibt; das ist sichtbar und harmlos, waehrend das andere
+     * still und schaedlich ist.
+     */
+    fassungGesetzt: (ordner?: string | null, uid?: number | string | null) => void;
 }
 
 export function useEntwurfVerfassen(
@@ -127,6 +176,23 @@ export function useEntwurfVerfassen(
     const [betreff, setBetreff] = useState(entwurf?.subject ?? '');
     const [inhalt, setInhalt] = useState(entwurf?.body_html ?? '');
 
+    /**
+     * Welche Fassung dieses Entwurfs gerade im Postfach liegt.
+     *
+     * Der eine Ort fuer eine Angabe, die sich AENDERT — anders als alles
+     * andere in diesem Haken, das Anfangswerte sind. Siehe
+     * {@see EntwurfVerfassen.fassungGesetzt}.
+     */
+    const [fassung, setFassung] = useState<{ ordner: string; uid: string } | null>(
+        entwurf && String(entwurf.uid ?? '') !== '' ? { ordner: entwurf.folder, uid: String(entwurf.uid) } : null,
+    );
+
+    const fassungGesetzt = useCallback((ordner?: string | null, uid?: number | string | null) => {
+        const kennung = uid === null || uid === undefined ? '' : String(uid);
+
+        setFassung(kennung === '' || !ordner ? null : { ordner, uid: kennung });
+    }, []);
+
     return {
         kontoId,
         setKontoId,
@@ -141,7 +207,14 @@ export function useEntwurfVerfassen(
         inhalt,
         setInhalt,
         vorhandeneAnhaenge: entwurf?.attachments ?? [],
-        sendeFelder: entwurf ? { draft_folder: entwurf.folder, draft_uid: String(entwurf.uid) } : {},
+        /*
+         * Aus der FASSUNG abgeleitet und nicht aus dem Anfangswert. Beides
+         * sieht gleich aus, solange niemand speichert — und danach zeigt das
+         * eine auf eine Nachricht, die es nicht mehr gibt.
+         */
+        sendeFelder: fassung ? { draft_folder: fassung.ordner, draft_uid: fassung.uid } : {},
+        speicherFelder: fassung ? { replace_folder: fassung.ordner, replace_uid: fassung.uid } : {},
+        fassungGesetzt,
     };
 }
 

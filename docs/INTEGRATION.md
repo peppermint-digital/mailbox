@@ -149,8 +149,18 @@ shape, same field errors, different answer.
 
 Two things the product must carry back and forth:
 
-- `uid` from the answer becomes `replace_uid` on the **next** save. Without it
-  the second click files a second version instead of replacing the first.
+- `uid` from the answer becomes `replace_uid` on the **next** save, **and**
+  `draft_uid` on the next send. Hand it to `useEntwurfVerfassen`'s
+  `fassungGesetzt(folder, uid)` and spread `speicherFelder` when saving,
+  `sendeFelder` when sending — one place, two spellings. Keeping the version in
+  the product's own state puts it in two places, and the next addition will not
+  know which one leads.
+
+  Why it matters: saving **purges** the previous version. A send that still
+  carries the old `draft_uid` reaches for a draft that is gone — and since
+  v0.200.0 the package answers that with a 502 and a sentence rather than
+  sending the mail without the draft's attachments. Before that it sent
+  silently, which is the expensive half of bug #1155 from the other side.
 - `bcc_verworfen` says a blind copy was sent along and **not** stored. Show it.
   The reason is in the trait: the mailbox contract exposes no `bcc` for a
   message, so writing one would mean storing something the writer can never

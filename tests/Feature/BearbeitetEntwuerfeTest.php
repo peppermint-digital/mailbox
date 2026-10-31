@@ -172,6 +172,8 @@ it('reicht von den Anhaengen nur Name und Groesse heraus, nicht den Inhalt', fun
 it('holt die Anhaenge mit Bytes aus dem Entwurf', function () {
     Mailboxes::fake(function () {
         $attrappe = Mockery::mock(Mailbox::class);
+        // Seit dem 31.10.2026 wird zuerst gefragt, ob der Entwurf noch da ist.
+        $attrappe->shouldReceive('message')->with('Drafts', 9)->andReturn(['subject' => 'Angebot']);
         $attrappe->shouldReceive('attachments')->with('Drafts', 9)->andReturn([
             ['filename' => 'Rechnung.pdf', 'mime_type' => 'application/pdf', 'contents' => 'PDF'],
         ]);
@@ -270,6 +272,7 @@ describe('die zwei Befunde aus dem Rollout von v0.189.0 (31.10.2026)', function 
          */
         Mailboxes::fake(function () {
             $attrappe = Mockery::mock(Mailbox::class);
+            $attrappe->shouldReceive('message')->andReturn(['subject' => 'Entwurf']);
             $attrappe->shouldReceive('attachments')->andThrow(new RuntimeException('IMAP weg'));
 
             return $attrappe;
@@ -284,11 +287,56 @@ describe('die zwei Befunde aus dem Rollout von v0.189.0 (31.10.2026)', function 
         // darf den Versand aufhalten.
         Mailboxes::fake(function () {
             $attrappe = Mockery::mock(Mailbox::class);
+            $attrappe->shouldReceive('message')->andReturn(['subject' => 'Entwurf']);
             $attrappe->shouldReceive('attachments')->andReturn([]);
 
             return $attrappe;
         });
 
         expect((new TestControllerFuerEntwuerfe)->anhaenge(entwurfsKonto(), 'Drafts', 9))->toBe([]);
+    });
+
+    it('bricht ab, wenn der Entwurf gar nicht mehr im Postfach liegt', function () {
+        /*
+         * Der dritte Fall, und er sah bis zum 31.10.2026 wie der zweite aus
+         * (Befund von mail-2b beim Verdrahten von v0.198.0).
+         *
+         * `attachments()` gibt fuer eine Nachricht, die es nicht mehr gibt,
+         * eine LEERE LISTE heraus — nachgesehen in
+         * `Imap\MailboxClient::attachments()`. „Keine Anhaenge" und „den
+         * Entwurf gibt es nicht mehr" waren damit dieselbe Antwort, und die
+         * Nachricht ging ohne ihre Anhaenge hinaus.
+         *
+         * Erreichbar war das im normalen Ablauf: Entwurf oeffnen, „Als
+         * Entwurf speichern" (die Vorfassung wird entfernt), dann doch senden
+         * — mit der Kennung der entfernten Fassung.
+         */
+        Mailboxes::fake(function () {
+            $attrappe = Mockery::mock(Mailbox::class);
+            $attrappe->shouldReceive('message')->with('Drafts', 9)->andReturn(null);
+            // UND NICHT gefragt: Wer nicht da ist, wird nicht nach Dateien gefragt.
+            $attrappe->shouldNotReceive('attachments');
+
+            return $attrappe;
+        });
+
+        expect(fn () => (new TestControllerFuerEntwuerfe)->anhaenge(entwurfsKonto(), 'Drafts', 9))
+            ->toThrow(EntwurfsAnhaengeNichtLesbar::class, 'liegt nicht mehr im Postfach');
+    });
+
+    it('fragt gar nicht nach, wenn keine Fassung benannt ist', function () {
+        /*
+         * Der Normalfall „kein Entwurf im Spiel". Hier darf KEIN Abruf
+         * stattfinden — sonst kostet jede gewoehnliche Mail eine Postfach-Runde.
+         */
+        Mailboxes::fake(function () {
+            $attrappe = Mockery::mock(Mailbox::class);
+            $attrappe->shouldNotReceive('message');
+            $attrappe->shouldNotReceive('attachments');
+
+            return $attrappe;
+        });
+
+        expect((new TestControllerFuerEntwuerfe)->anhaenge(entwurfsKonto(), null, null))->toBe([]);
     });
 });

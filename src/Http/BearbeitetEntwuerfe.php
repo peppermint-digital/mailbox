@@ -192,7 +192,41 @@ trait BearbeitetEntwuerfe
         }
 
         try {
-            $dateien = Mailboxes::for($konto)->attachments($ordner, $uid);
+            $postfach = Mailboxes::for($konto);
+
+            /*
+             * ZUERST nachsehen, ob der Entwurf ueberhaupt noch da ist
+             * (31.10.2026, Befund von mail-2b).
+             *
+             * `attachments()` gibt fuer eine Nachricht, die es nicht mehr
+             * gibt, eine LEERE LISTE heraus — nachgesehen in
+             * `Imap\MailboxClient::attachments()`, Zeile „if (! $nachricht)
+             * return []". Das ist fuer sich richtig, hier aber genau der
+             * stille Verlust, gegen den dieser ganze Zug gebaut ist: Die
+             * Nachricht ginge ohne ihre Anhaenge hinaus, und der Absender
+             * erfuehre es nie.
+             *
+             * Der Fall war im normalen Ablauf erreichbar: Entwurf oeffnen,
+             * „Als Entwurf speichern" (die Vorfassung wird entfernt), dann
+             * doch senden — mit der Kennung der entfernten Fassung. Die
+             * Oberflaeche schreibt die Fassung seit v0.200.0 fort, aber zwei
+             * offene Fenster oder ein anderer Klient genuegen weiterhin.
+             *
+             * Ein Abruf mehr auf einem Weg, der schon mehrere macht, gegen
+             * einen Verlust, den niemand bemerkt: Das ist kein Tauschgeschaeft,
+             * ueber das man lange nachdenkt.
+             */
+            if ($postfach->message($ordner, $uid) === null) {
+                throw new EntwurfsAnhaengeNichtLesbar(
+                    'Dieser Entwurf liegt nicht mehr im Postfach — vermutlich wurde er inzwischen gespeichert '
+                    .'oder gelöscht. Die Nachricht wurde NICHT gesendet, weil ihre Anhänge daran hängen. '
+                    .'Bitte die Seite neu laden und erneut senden.'
+                );
+            }
+
+            $dateien = $postfach->attachments($ordner, $uid);
+        } catch (EntwurfsAnhaengeNichtLesbar $e) {
+            throw $e;
         } catch (\Throwable $e) {
             report($e);
 
