@@ -278,6 +278,18 @@ final class Werkzeug
             'value' => (string) ($feld['wert'] ?? ''),
         ];
 
+        /*
+         * Nur setzen, wenn es gesetzt ist.
+         *
+         * Ein `multiple: false` an jedem Feld waere dieselbe Auskunft und
+         * dreimal so viel Draht — und es wuerde behaupten, jedes Feld haette
+         * sich die Frage gestellt. Die meisten haben es nicht; ein fehlender
+         * Schluessel liest sich richtig als „einfach".
+         */
+        if ($feld['mehrfach'] ?? false) {
+            $hinaus['multiple'] = true;
+        }
+
         if (is_array($feld['auswahl'] ?? null)) {
             $hinaus['options'] = array_map(static fn (array $w): array => [
                 'value' => (string) ($w['wert'] ?? ''),
@@ -306,6 +318,10 @@ final class Werkzeug
             'pflicht' => (bool) ($roh['required'] ?? false),
             'wert' => (string) ($roh['value'] ?? ''),
         ];
+
+        if ($roh['multiple'] ?? false) {
+            $feld['mehrfach'] = true;
+        }
 
         if (is_array($roh['options'] ?? null)) {
             $feld['auswahl'] = array_map(static fn (mixed $w): array => [

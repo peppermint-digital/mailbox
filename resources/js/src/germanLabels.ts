@@ -229,6 +229,10 @@ const werkzeuge: MailWerkzeugleisteLabels = {
             ? `„${verben[0]}" braucht eine Angabe, die diese Ansicht nicht erfassen kann.`
             : `${verben.length} Werkzeuge brauchen Angaben, die diese Ansicht nicht erfassen kann: ${verben.join(', ')}.`,
     bitteWaehlen: 'Bitte wählen …',
+    abbrechen: 'Abbrechen',
+    keineAnhaenge: 'Diese Nachricht hat keine Anhänge.',
+    rueckfrageJa: 'Ja, ausführen',
+    groesse: (bytes) => (bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`),
 };
 
 /**

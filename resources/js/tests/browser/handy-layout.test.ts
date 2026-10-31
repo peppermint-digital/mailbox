@@ -74,7 +74,7 @@ const GERAETE = [320, 360, 375, 390, 393, 412, 414, 428, 430];
 const HOEHE = 844;
 
 /** Die vier Zustaende, die die Attrappe gleichzeitig zeichnet. */
-const FASSUNGEN = ['liste', 'schublade', 'lesen', 'assistent', 'verfassen'] as const;
+const FASSUNGEN = ['liste', 'schublade', 'lesen', 'assistent', 'verfassen', 'werkzeuge'] as const;
 type Fassung = (typeof FASSUNGEN)[number];
 
 /**
@@ -287,10 +287,28 @@ beforeAll(async () => {
     await seite.click('[data-fassung="assistent"] [data-slot="attrappe-zeile"]');
     await seite.click('[data-fassung="assistent"] [data-slot="mailbox-mobil-leiste"] [aria-label="Postfach-Assistent"]');
 
+    /*
+     * Die fuenfte Fassung: die Werkzeugleiste AUFGEKLAPPT, mit einer offenen
+     * Maske darin (#9145).
+     *
+     * Eigene Fassung und nicht am `lesen` mitgemessen, weil das Aufklappen den
+     * Mailtext nach unten schiebt — und „der Text faengt im oberen Drittel
+     * an" ist eine Zusicherung ueber die ZUGEKLAPPTE Leiste, also ueber den
+     * Zustand, in dem jemand eine Mail oeffnet. Beides an einer Fassung zu
+     * pruefen hiesse, eine der beiden Aussagen aufzugeben.
+     *
+     * Die engste Maske wird aufgemacht: „Aufgabe anhaengen" hat eine
+     * Anhangwahl mit Haken UND ein Textfeld.
+     */
+    await seite.click('[data-fassung="werkzeuge"] [data-slot="attrappe-zeile"]');
+    await seite.click('[data-fassung="werkzeuge"] [data-slot="mail-werkzeugleiste-aufklapper"]');
+    await seite.click('[data-fassung="werkzeuge"] [data-slot="mail-werkzeugleiste-inhalt"] button[aria-expanded="false"]');
+
     /* Und der Riegel darauf: Sind die vier Zustaende nicht entstanden, taugt die ganze Reihe nichts. */
     await seite.waitForSelector('[data-fassung="schublade"] [data-slot="mailbox-schublade-kopf"]');
     await seite.waitForSelector('[data-fassung="lesen"] [data-slot="mail-message-actions"]');
     await seite.waitForSelector('[data-fassung="assistent"] [data-slot="mailbox-aside"]');
+    await seite.waitForSelector('[data-fassung="werkzeuge"] [data-slot="mail-werkzeugleiste-maske"]');
 
     for (const breite of GERAETE) {
         /*

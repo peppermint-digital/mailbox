@@ -71,6 +71,34 @@ const KONTEN = [{ id: 1, name: 'department.purchasing@peppermint-digital.de' }];
  * 180 px hoch, und zwar ueber der Mail, die man lesen wollte. Sie gehoeren in
  * die Messung, sonst misst sie einen Fall, den es in keinem Produkt gibt.
  */
+/**
+ * Vier Verben, und zwei davon mit Feldern (#9145).
+ *
+ * Die Felder gehoeren in die Attrappe, weil die Maske am Telefon das ENGSTE
+ * ist, was die Leiste zu zeichnen hat: eine Anhangwahl mit Haken, dazu ein
+ * Textfeld, in 320 px Breite. Ohne sie misst die Reihe nur Knoepfe — und
+ * genau das war der Stand, der die Maske noetig gemacht hat.
+ */
+const FELDER: Record<string, MailWerkzeug['fields']> = {
+    aufgabe: [
+        { name: 'anhang', label: 'Anhänge', type: 'anhang', required: false, multiple: true },
+        { name: 'notiz', label: 'Notiz', type: 'text', required: false },
+    ] as never,
+    zustaendig: [
+        {
+            name: 'person',
+            label: 'Person',
+            type: 'select',
+            required: true,
+            value: 'bastian@peppermint-digital.de',
+            options: [
+                { value: 'bastian@peppermint-digital.de', label: 'Bastian Stelljes' },
+                { value: 'einkauf@peppermint-digital.de', label: 'Einkauf Peppermint Digital' },
+            ],
+        },
+    ] as never,
+};
+
 const WERKZEUGE: MailWerkzeug[] = [
     ['ticket', 'Ticket erstellen', 'ticket'],
     ['beleg', 'Als Eingangsrechnung', 'receipt'],
@@ -82,12 +110,18 @@ const WERKZEUGE: MailWerkzeug[] = [
     icon: icon!,
     order: i,
     group: null,
-    fields: null,
+    fields: FELDER[key!] ?? null,
     confirm: null,
     state: null,
     href: null,
     system: 'Verwaltung',
 })) as MailWerkzeug[];
+
+/** Die Anhaenge, die die Leiste in einem `anhang`-Feld anbietet. */
+const WERKZEUG_ANHAENGE = [
+    { filename: 'Rechnung-2026-0147.pdf', size: 128_000 },
+    { filename: 'Lieferschein-CRUDE-HARZ-Q1.pdf', size: 42_500 },
+];
 
 const NACHRICHT: MailMessageViewMessage = {
     uid: 4711,
@@ -205,6 +239,7 @@ function Fassung({ kennung }: { kennung: string }) {
                             leerAberVollstaendig={false}
                             erreicht
                             ausloesen={() => Promise.resolve({ ok: true, message: 'ok' })}
+                            anhaenge={WERKZEUG_ANHAENGE}
                         />
                         <MailMessageView
                             aktionenUnten
@@ -318,7 +353,7 @@ function Verfassen() {
     );
 }
 
-for (const kennung of ['liste', 'schublade', 'lesen', 'assistent', 'verfassen'] as const) {
+for (const kennung of ['liste', 'schublade', 'lesen', 'assistent', 'verfassen', 'werkzeuge'] as const) {
     const kasten = document.createElement('div');
     kasten.dataset.fassung = kennung;
     /*

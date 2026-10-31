@@ -412,7 +412,7 @@ export function MailboxFlaeche({
               date?: string;
               body_html?: string | null;
               body_text?: string | null;
-              attachments?: { filename: string }[];
+              attachments?: { filename: string; size?: number }[];
           }
         | null;
 
@@ -800,6 +800,13 @@ export function MailboxFlaeche({
                                     ausloesen={werkzeuge.ausloesen}
                                     verbergen={werkzeugeVerbergen}
                                     eigene={werkzeugeEigene}
+                                    /*
+                                     * Die Anhaenge der offenen Mail, fuer Felder
+                                     * der Art `anhang`. Von hier und nicht vom
+                                     * Verb: Das Paket kennt sie schon, es zeigt
+                                     * sie an — siehe MailWerkzeugleiste.
+                                     */
+                                    anhaenge={nachricht?.attachments ?? undefined}
                                     labels={germanLabels.werkzeuge}
                                     onMeldung={(meldung, gelungen) => {
                                         // Beides zeigen, auch die Absage: Ein Verb, das nicht

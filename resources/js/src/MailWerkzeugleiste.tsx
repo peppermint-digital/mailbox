@@ -3,6 +3,7 @@ import {
     ChevronDown,
     CircleAlert,
     FileText,
+    Paperclip,
     ListChecks,
     Loader2,
     Receipt,
@@ -13,7 +14,7 @@ import {
     Wrench,
 } from 'lucide-react';
 import { useState } from 'react';
-import type { MailWerkzeug } from './useMailWerkzeuge';
+import type { MailWerkzeug, MailWerkzeugFeld } from './useMailWerkzeuge';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { cn } from './ui/utils';
@@ -60,7 +61,81 @@ import { cn } from './ui/utils';
  * raten legt Arbeit in die falsche Schublade. Also: Wer `url` trägt, führt
  * hin. Das sieht man am Pfeil, und es ist dieselbe Entscheidung, die der
  * Server in `fuehrtHin()` trifft — hier nur sichtbar gemacht.
+ *
+ * Das ist der Stand, den #9145 abbaut: Ein Verb soll seine Maske HIER öffnen,
+ * statt wegzuführen. Seit v0.194.0 geht das für Felder, die diese Ansicht
+ * zeichnen kann (`select`, `text`, `anhang`); der Auswähler mit Suche kommt
+ * in v0.195.0, und erst danach ist ein Verweis-Verb die Ausnahme statt der
+ * Regel. Bis dahin stehen beide Wege nebeneinander — nicht aus Unschlüssigkeit,
+ * sondern weil ein Verb, dessen Angabe hier niemand erfassen kann, lieber
+ * hinführt als zuverlässig zu scheitern.
+ *
+ * ## Warum die Felder in einer Maske stehen und nicht neben dem Knopf
+ *
+ * Bis v0.193.x stand das eine zeichenbare Feld (`select`) INLINE neben seinem
+ * Knopf. Das ging, solange es eine Klappliste war, und hört genau dann auf:
+ *
+ *   - Eine Anhangwahl ist eine Liste mit Haken. Sie hat keine Zeilenhöhe.
+ *   - Zwei Felder an einem Verb schieben die Nachbarverben aus der Reihe.
+ *   - Am Telefon geht es nicht auf, und das ist Arithmetik und keine
+ *     Geschmacksfrage: Eine Klappliste war `max-w-[12rem]`, also bis 192 px.
+ *     Bei 320 px Gerätebreite bleiben in der Leiste rund 296 px — eine Liste
+ *     dieser Breite kann nicht neben ihrem eigenen Knopf stehen.
+ *
+ * Gemessen wird seither die Maske selbst: `handy-layout.test.ts` führt eine
+ * fünfte Fassung („werkzeuge") mit aufgeklappter Leiste und offener Maske
+ * durch 320 bis 430 px. Dort ist die Leiste 57 px hoch, nichts läuft
+ * waagerecht über, nichts überlappt. Eine eigene Fassung, weil die offene
+ * Maske den Mailtext nach unten schiebt (573 px statt 369) — und „der Text
+ * fängt im oberen Drittel an" ist eine Zusicherung über die ZUGEKLAPPTE
+ * Leiste, also über den Zustand, in dem jemand eine Mail öffnet.
+ *
+ * Also: Ein Verb mit Feldern ist in der Reihe EIN Knopf, und der klappt seine
+ * Maske unter der Reihe auf. Eine Maske zur Zeit — zwei halbgefüllte Masken
+ * nebeneinander sind eine Gelegenheit, die Angabe ins falsche Verb zu tippen.
+ *
+ * Was eingegeben wurde, bleibt beim Schließen stehen (je Verb, nach Schlüssel
+ * UND System). Wer die Maske zumacht, um in der Mail etwas nachzulesen, hat
+ * sonst beim Wiederaufmachen ein leeres Formular — und das ist der Moment, in
+ * dem jemand aufgibt und doch ins andere System springt.
  */
+
+/**
+ * Ein Anhang der offenen Mail — so wenig, wie die Leiste braucht.
+ *
+ * Absichtlich nicht `MailMessageViewAttachment`: Die Leiste braucht Namen und
+ * Größe, nicht Index und MIME-Art. Der engere Typ nimmt auch Anhänge an, die
+ * ein Produkt aus einer anderen Quelle hat (etwa einem Entwurf), ohne dass
+ * dort etwas umgebaut werden muss.
+ */
+export interface WerkzeugAnhang {
+    filename: string;
+    size?: number | null;
+}
+
+/**
+ * Feldarten, die diese Ansicht zeichnen kann.
+ *
+ * Als Liste und nicht als `switch` im Zeichnen: Die Frage „kann ich dieses
+ * Verb anbieten?" wird VOR dem Zeichnen gestellt (`zeichenbar`), und beide
+ * Stellen müssen dieselbe Antwort geben. Zwei Rechnungen hatten wir schon
+ * einmal — siehe `werteFuer`.
+ */
+const ZEICHENBARE_ARTEN = ['select', 'text', 'anhang'] as const;
+
+/**
+ * Woran die Ansicht ein Verb festmacht: Schlüssel UND System.
+ *
+ * Der Schlüssel allein ist nur im eigenen System eindeutig — „Aufgabe
+ * anhängen" gibt es im Manager und in der Verwaltung, und das sind zwei
+ * verschiedene Dinge. Stand vorher dreimal als Ausdruck im Zeichnen; jetzt
+ * einmal, weil inzwischen drei Zustände daran hängen (Eingaben, offene Maske,
+ * offene Rückfrage) und ein Auseinanderlaufen hieße: Die Maske von A zeigt die
+ * Eingaben von B.
+ */
+function kennungVon(werkzeug: MailWerkzeug): string {
+    return werkzeug.key + (werkzeug.system ?? '');
+}
 
 /** Die Wörter. Vorgaben auf Deutsch; `germanLabels.werkzeuge` reicht sie herein. */
 export interface MailWerkzeugleisteLabels {
@@ -82,6 +157,14 @@ export interface MailWerkzeugleisteLabels {
     nichtZeichenbar: (verben: string[]) => string;
     /** Was in einer leeren Auswahl steht, solange niemand gewählt hat. */
     bitteWaehlen: string;
+    /** Der Knopf, der die offene Maske wieder zumacht. */
+    abbrechen: string;
+    /** Steht in der Maske, wenn ein `anhang`-Feld nichts zur Wahl hat. */
+    keineAnhaenge: string;
+    /** Der bestätigende Knopf einer Rückfrage. */
+    rueckfrageJa: string;
+    /** `(bytes) => …` — die Größe eines Anhangs, in Worten des Produkts. */
+    groesse: (bytes: number) => string;
 }
 
 export const WERKZEUGLEISTE_VORGABEN: MailWerkzeugleisteLabels = {
@@ -103,6 +186,10 @@ export const WERKZEUGLEISTE_VORGABEN: MailWerkzeugleisteLabels = {
             ? `„${verben[0]}" braucht eine Angabe, die diese Ansicht nicht erfassen kann.`
             : `${verben.length} Werkzeuge brauchen Angaben, die diese Ansicht nicht erfassen kann: ${verben.join(', ')}.`,
     bitteWaehlen: 'Bitte wählen …',
+    abbrechen: 'Abbrechen',
+    keineAnhaenge: 'Diese Nachricht hat keine Anhänge.',
+    rueckfrageJa: 'Ja, ausführen',
+    groesse: (bytes) => (bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`),
 };
 
 /**
@@ -175,6 +262,20 @@ export interface MailWerkzeugleisteProps {
      * damit es im eigenen System genauso heisst wie bei den Nachbarn.
      */
     eigene?: Record<string, () => void>;
+    /**
+     * Die Anhänge der offenen Mail — für Felder der Art `anhang`.
+     *
+     * Kommt von der Fläche und nicht vom Verb: Die Anhänge kennt das Paket
+     * schon, es zeigt sie an. Sie noch einmal von jedem Produkt einsammeln zu
+     * lassen wäre dieselbe Liste aus einer schlechteren Quelle — das Produkt
+     * müsste die Mail dafür selbst holen, und ein fremdes System kann das gar
+     * nicht.
+     *
+     * Fehlt die Angabe, hat ein `anhang`-Feld nichts zur Wahl. Dann ist der
+     * Knopf aus und die Maske sagt es. Nicht: Knopf weg — das sähe aus, als
+     * gäbe es das Verb hier nicht.
+     */
+    anhaenge?: WerkzeugAnhang[];
     labels?: Partial<MailWerkzeugleisteLabels>;
     className?: string;
 }
@@ -191,6 +292,7 @@ export function MailWerkzeugleiste({
     onNavigate,
     verbergen,
     eigene,
+    anhaenge,
     labels,
     className,
 }: MailWerkzeugleisteProps) {
@@ -219,7 +321,27 @@ export function MailWerkzeugleiste({
      * Nach Kennung (Schlüssel + System) und nicht nach Schlüssel allein:
      * „Aufgabe anhängen" gibt es in zwei Systemen, und das sind zwei Verben.
      */
-    const [eingaben, setEingaben] = useState<Record<string, Record<string, string>>>({});
+    const [eingaben, setEingaben] = useState<Record<string, Record<string, unknown>>>({});
+
+    /**
+     * Welche Maske offen ist — eine Kennung oder keine.
+     *
+     * Ein einzelner Wert und keine Menge: Mehr als eine offene Maske ist kein
+     * Komfort, sondern die Gelegenheit, die Angabe ins falsche Verb zu tippen.
+     * Die EINGABEN liegen daneben in `eingaben` und bleiben beim Schließen
+     * stehen; offen ist nur, was man gerade sieht.
+     */
+    const [maske, setMaske] = useState<string | null>(null);
+
+    /**
+     * Welches Verb gerade nachfragt.
+     *
+     * Hier und nicht in `globalThis.confirm`: Ein Browser-Dialog hält den
+     * ganzen Reiter an, lässt sich nicht gestalten, nicht übersetzen und in
+     * einer Inertia-Anwendung nicht testen. Vor allem aber ist er genau das,
+     * was dieser Task abbaut — eine Frage, die NICHT in der Leiste steht.
+     */
+    const [rueckfrage, setRueckfrage] = useState<string | null>(null);
 
     const sichtbar = verbergen ? werkzeuge.filter((w) => !verbergen(w)) : werkzeuge;
 
@@ -232,7 +354,7 @@ export function MailWerkzeugleiste({
      * und dann sucht jemand den Fehler bei sich.
      */
     const zeichenbar = (werkzeug: MailWerkzeug): boolean =>
-        (werkzeug.fields ?? []).every((feld) => feld.type === 'select');
+        (werkzeug.fields ?? []).every((feld) => (ZEICHENBARE_ARTEN as readonly string[]).includes(feld.type));
 
     /**
      * Die WIRKSAMEN Werte eines Verbs: was der Mensch gewählt hat, sonst die
@@ -247,18 +369,86 @@ export function MailWerkzeugleiste({
      * `??` je Feld: Wer eines von zwei Feldern angefasst hat, soll das andere
      * weiter vorbelegt sehen — und mitschicken.
      */
-    function werteFuer(werkzeug: MailWerkzeug): Record<string, string> {
-        const kennung = werkzeug.key + (werkzeug.system ?? '');
-        const werte: Record<string, string> = {};
+    function werteFuer(werkzeug: MailWerkzeug): Record<string, unknown> {
+        const kennung = kennungVon(werkzeug);
+        const werte: Record<string, unknown> = {};
 
         for (const feld of werkzeug.fields ?? []) {
-            werte[feld.name] = eingaben[kennung]?.[feld.name] ?? feld.value ?? '';
+            const angefasst = eingaben[kennung]?.[feld.name];
+
+            /*
+             * Ein Mehrfachfeld trägt eine LISTE, auch wenn nur ein Haken
+             * steht — und eine leere Liste, wenn keiner steht. Das darf nicht
+             * zu `''` zusammenfallen: Der Server unterscheidet „nichts
+             * gewählt" von „ein Feld, das es nicht gab", und `''` liest sich
+             * als Zweites.
+             */
+            if (feld.multiple) {
+                werte[feld.name] = Array.isArray(angefasst) ? angefasst : feld.value ? [feld.value] : [];
+
+                continue;
+            }
+
+            werte[feld.name] = (angefasst as string | undefined) ?? feld.value ?? '';
         }
 
         return werte;
     }
 
+    /** Was in einem Feld steht, als Text — fürs Zeichnen einfacher Felder. */
+    function textWert(werkzeug: MailWerkzeug, feldName: string): string {
+        const wert = werteFuer(werkzeug)[feldName];
+
+        return typeof wert === 'string' ? wert : '';
+    }
+
+    /** Die gehakten Werte eines Mehrfachfeldes. */
+    function listeWert(werkzeug: MailWerkzeug, feldName: string): string[] {
+        const wert = werteFuer(werkzeug)[feldName];
+
+        return Array.isArray(wert) ? (wert as string[]) : [];
+    }
+
+    function setzeWert(kennung: string, feldName: string, wert: unknown): void {
+        setEingaben((vorher) => ({
+            ...vorher,
+            [kennung]: { ...(vorher[kennung] ?? {}), [feldName]: wert },
+        }));
+    }
+
+    /**
+     * Fehlt an diesem Verb eine Pflichtangabe?
+     *
+     * Eine Stelle für alle Feldarten, weil der KNOPF davon abhängt und der
+     * Knopf nur einmal existiert. Beim Mehrfachfeld ist „leere Liste" die
+     * fehlende Angabe, nicht `''`.
+     */
+    function fehltPflichtAn(werkzeug: MailWerkzeug): boolean {
+        return (werkzeug.fields ?? []).some((feld) => {
+            if (!feld.required) {
+                return false;
+            }
+
+            const wert = werteFuer(werkzeug)[feld.name];
+
+            return Array.isArray(wert) ? wert.length === 0 : (wert ?? '') === '';
+        });
+    }
+
     const nichtZeichenbar = sichtbar.filter((w) => !w.url && !w.state && !zeichenbar(w));
+
+    /*
+     * Das Verb, dessen Maske offen ist — aus `sichtbar` gesucht und nicht
+     * gemerkt.
+     *
+     * Der Unterschied zaehlt: Die Werkzeuge kommen bei jedem Oeffnen einer
+     * Mail neu, und ein gemerktes Verb waere dann das von GESTERN — mit dem
+     * Zustand und den Feldern der vorigen Nachricht. Gemerkt wird nur die
+     * Kennung; welches Verb dazu gehoert, entscheidet die aktuelle Liste.
+     * Ist es nicht mehr dabei, ist die Maske zu, und das ist richtig.
+     */
+    const offeneMaske = maske ? (sichtbar.find((w) => kennungVon(w) === maske) ?? null) : null;
+    const offeneRueckfrage = rueckfrage ? (sichtbar.find((w) => kennungVon(w) === rueckfrage) ?? null) : null;
 
     /*
      * `leerAberVollstaendig` bleibt die Auskunft des Hakens und wird NICHT
@@ -275,21 +465,23 @@ export function MailWerkzeugleiste({
         return null;
     }
 
-    async function klick(werkzeug: MailWerkzeug) {
-        if (werkzeug.confirm && !globalThis.confirm?.(werkzeug.confirm)) {
-            return;
-        }
-
-        /*
-         * Beansprucht dieses Produkt das Verb, übernimmt es hier — ohne
-         * Serveraufruf und ohne Laufanzeige. Was danach passiert, weiss nur
-         * das Produkt: Der Manager öffnet einen Dialog, und ob der zu etwas
-         * führt, entscheidet sich dort.
-         *
-         * VOR der Laufanzeige, nicht danach: Ein Knopf, der sich beim Öffnen
-         * eines Dialogs als „wird ausgeführt" markiert und dann nie fertig
-         * wird, sieht aus wie ein Hänger.
-         */
+    /**
+     * Ein Klick auf das Verb selbst — drei Wege, und die Reihenfolge ist die
+     * Entscheidung.
+     *
+     *   1. Beansprucht das Produkt das Verb, übernimmt es. Ohne alles andere.
+     *   2. Hat das Verb Felder, klappt die Maske auf. Ausgelöst wird dort.
+     *   3. Sonst: Rückfrage, wenn eine verlangt ist, sonst sofort.
+     *
+     * Die Maske VOR der Rückfrage: Erst zustimmen und dann ein Formular
+     * sehen heißt, zugestimmt zu haben, bevor man wusste, wozu.
+     *
+     * Der eigene Weg bleibt ganz vorne und OHNE Laufanzeige. Was danach
+     * passiert, weiss nur das Produkt: Der Manager öffnet einen Dialog, und
+     * ein Knopf, der sich dabei als „wird ausgeführt" markiert und nie fertig
+     * wird, sieht aus wie ein Hänger.
+     */
+    function klickAufVerb(werkzeug: MailWerkzeug): void {
         const eigenerWeg = eigene?.[werkzeug.key];
 
         if (eigenerWeg) {
@@ -298,7 +490,27 @@ export function MailWerkzeugleiste({
             return;
         }
 
-        const kennung = werkzeug.key + (werkzeug.system ?? '');
+        const kennung = kennungVon(werkzeug);
+
+        if ((werkzeug.fields ?? []).length > 0) {
+            setRueckfrage(null);
+            setMaske((offen) => (offen === kennung ? null : kennung));
+
+            return;
+        }
+
+        if (werkzeug.confirm) {
+            setMaske(null);
+            setRueckfrage(kennung);
+
+            return;
+        }
+
+        void klick(werkzeug);
+    }
+
+    async function klick(werkzeug: MailWerkzeug) {
+        const kennung = kennungVon(werkzeug);
 
         setLaufend(kennung);
 
@@ -317,9 +529,22 @@ export function MailWerkzeugleiste({
 
                     return naechste;
                 });
+
+                /*
+                 * Und die Maske zu. Eine offene Maske nach dem Erfolg liest
+                 * sich als „noch nicht abgeschickt", und der zweite Klick
+                 * legt das Ticket ein zweites Mal an.
+                 *
+                 * NUR bei Erfolg: Nach einer Absage bleibt sie offen, mit dem
+                 * Eingetippten darin. Wer die Maske im Fehlerfall verliert,
+                 * tippt alles neu — und die Absage kam oft genug von einer
+                 * Angabe, die man ändern wollte, nicht wegwerfen.
+                 */
+                setMaske((offen) => (offen === kennung ? null : offen));
             }
         } finally {
             setLaufend(null);
+            setRueckfrage((offen) => (offen === kennung ? null : offen));
         }
     }
 
@@ -355,7 +580,7 @@ export function MailWerkzeugleiste({
 
                 {sichtbar.map((werkzeug) => {
                     const Symbol = SYMBOLE[werkzeug.icon ?? ''] ?? Wrench;
-                    const kennung = werkzeug.key + (werkzeug.system ?? '');
+                    const kennung = kennungVon(werkzeug);
                     const beschaeftigt = laufend === kennung;
 
                     /*
@@ -426,57 +651,32 @@ export function MailWerkzeugleiste({
                         return null;
                     }
 
-                    const felder = werkzeug.fields ?? [];
-                    const werte = werteFuer(werkzeug);
-
                     /*
-                     * Fehlt eine Pflichtangabe, ist der Knopf aus — nicht
-                     * verborgen. Verborgen hiesse „das Verb gibt es hier
-                     * nicht"; aus heisst „es fehlt noch etwas", und daneben
-                     * steht, was.
+                     * EIN Knopf, auch wenn das Verb Felder hat. Die Felder
+                     * stehen in der Maske unter der Reihe — siehe Klassentext.
+                     *
+                     * `aria-expanded` nur, wenn es etwas aufzuklappen gibt:
+                     * An einem Knopf, der sofort tut, wäre es eine Lüge.
                      */
-                    const fehltPflicht = felder.some(
-                        (feld) => feld.required && (werte[feld.name] ?? '') === '',
-                    );
+                    const hatFelder = (werkzeug.fields ?? []).length > 0;
+                    const istOffen = maske === kennung || rueckfrage === kennung;
 
                     return (
-                        <span key={kennung} className="flex flex-wrap items-center gap-1">
-                            {felder.map((feld) => (
-                                <select
-                                    key={feld.name}
-                                    aria-label={feld.label}
-                                    value={werte[feld.name]}
-                                    disabled={beschaeftigt}
-                                    onChange={(e) =>
-                                        setEingaben((vorher) => ({
-                                            ...vorher,
-                                            [kennung]: { ...(vorher[kennung] ?? {}), [feld.name]: e.target.value },
-                                        }))
-                                    }
-                                    className="h-7 max-w-[12rem] rounded-md border bg-background px-1.5 text-xs"
-                                >
-                                    <option value="">{texte.bitteWaehlen}</option>
-                                    {(feld.options ?? []).map((wahl) => (
-                                        <option key={wahl.value} value={wahl.value}>
-                                            {wahl.label}
-                                        </option>
-                                    ))}
-                                </select>
-                            ))}
-
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                disabled={beschaeftigt || fehltPflicht}
-                                onClick={() => void klick(werkzeug)}
-                                className="h-7 gap-1 px-2 text-xs"
-                            >
-                                {beschaeftigt ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Symbol className="h-3.5 w-3.5" />}
-                                {beschaeftigt ? texte.laeuft : werkzeug.label}
-                                {werkzeug.system_label && <Badge variant="outline">{werkzeug.system_label}</Badge>}
-                            </Button>
-                        </span>
+                        <Button
+                            key={kennung}
+                            type="button"
+                            variant={istOffen ? 'secondary' : 'outline'}
+                            size="sm"
+                            aria-expanded={hatFelder || werkzeug.confirm ? istOffen : undefined}
+                            disabled={beschaeftigt}
+                            onClick={() => klickAufVerb(werkzeug)}
+                            className="h-7 gap-1 px-2 text-xs"
+                        >
+                            {beschaeftigt ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Symbol className="h-3.5 w-3.5" />}
+                            {beschaeftigt ? texte.laeuft : werkzeug.label}
+                            {werkzeug.system_label && <Badge variant="outline">{werkzeug.system_label}</Badge>}
+                            {hatFelder && <ChevronDown className={cn('h-3 w-3 opacity-60 transition-transform', istOffen && 'rotate-180')} />}
+                        </Button>
                     );
                 })}
 
@@ -494,6 +694,132 @@ export function MailWerkzeugleiste({
                     </span>
                 )}
             </div>
+
+            {/*
+                Die Maske des offenen Verbs — unter der Reihe, nicht in ihr.
+
+                Hier und nicht neben dem Knopf, weil eine Anhangwahl keine
+                Zeilenhoehe hat und zwei Felder die Nachbarverben aus der
+                Reihe schieben. Siehe Klassentext.
+            */}
+            {offeneMaske && (
+                <div
+                    data-slot="mail-werkzeugleiste-maske"
+                    className="flex flex-col gap-2 rounded-md border bg-muted/30 p-2"
+                >
+                    <p className="flex items-center gap-1 text-xs font-medium">
+                        {offeneMaske.label}
+                        {offeneMaske.system_label && <Badge variant="outline">{offeneMaske.system_label}</Badge>}
+                    </p>
+
+                    {(offeneMaske.fields ?? []).map((feld) => (
+                        <label key={feld.name} className="flex flex-col gap-1 text-xs">
+                            <span className="text-muted-foreground">
+                                {feld.label}
+                                {feld.required && <span aria-hidden="true"> *</span>}
+                            </span>
+
+                            {feld.type === 'anhang' ? (
+                                <Anhangwahl
+                                    feld={feld}
+                                    anhaenge={anhaenge ?? []}
+                                    gewaehlt={listeWert(offeneMaske, feld.name)}
+                                    einzeln={textWert(offeneMaske, feld.name)}
+                                    texte={texte}
+                                    onWahl={(wert) => setzeWert(kennungVon(offeneMaske), feld.name, wert)}
+                                />
+                            ) : feld.type === 'text' ? (
+                                <input
+                                    type="text"
+                                    value={textWert(offeneMaske, feld.name)}
+                                    onChange={(e) => setzeWert(kennungVon(offeneMaske), feld.name, e.target.value)}
+                                    className="h-8 rounded-md border bg-background px-2 text-xs"
+                                />
+                            ) : (
+                                <select
+                                    value={textWert(offeneMaske, feld.name)}
+                                    onChange={(e) => setzeWert(kennungVon(offeneMaske), feld.name, e.target.value)}
+                                    className="h-8 rounded-md border bg-background px-1.5 text-xs"
+                                >
+                                    <option value="">{texte.bitteWaehlen}</option>
+                                    {(feld.options ?? []).map((wahl) => (
+                                        <option key={wahl.value} value={wahl.value}>
+                                            {wahl.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+                        </label>
+                    ))}
+
+                    {/*
+                        Die Rueckfrage steht in DERSELBEN Maske, unter den
+                        Feldern. Ein zweites Kaestchen fuer eine Frage, deren
+                        Gegenstand daruebersteht, waere ein Umweg.
+                    */}
+                    {offeneMaske.confirm && <p className="text-xs text-amber-700 dark:text-amber-500">{offeneMaske.confirm}</p>}
+
+                    <div className="flex items-center gap-1.5">
+                        <Button
+                            type="button"
+                            size="sm"
+                            disabled={laufend === kennungVon(offeneMaske) || fehltPflichtAn(offeneMaske)}
+                            onClick={() => void klick(offeneMaske)}
+                            className="h-7 px-2 text-xs"
+                        >
+                            {laufend === kennungVon(offeneMaske) ? texte.laeuft : offeneMaske.label}
+                        </Button>
+
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setMaske(null)}
+                            className="h-7 px-2 text-xs"
+                        >
+                            {texte.abbrechen}
+                        </Button>
+                    </div>
+                </div>
+            )}
+
+            {/*
+                Die Rueckfrage eines Verbs OHNE Felder — als Kaestchen, nicht
+                als `globalThis.confirm`. Der Browser-Dialog haelt den ganzen
+                Reiter an, laesst sich nicht uebersetzen und nicht pruefen;
+                vor allem ist er genau das, was dieser Task abbaut: eine
+                Frage, die nicht in der Leiste steht.
+            */}
+            {offeneRueckfrage && (
+                <div
+                    data-slot="mail-werkzeugleiste-rueckfrage"
+                    className="flex flex-col gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2"
+                >
+                    <p className="text-xs">{offeneRueckfrage.confirm}</p>
+
+                    <div className="flex items-center gap-1.5">
+                        <Button
+                            type="button"
+                            size="sm"
+                            disabled={laufend === kennungVon(offeneRueckfrage)}
+                            onClick={() => void klick(offeneRueckfrage)}
+                            className="h-7 px-2 text-xs"
+                        >
+                            {laufend === kennungVon(offeneRueckfrage) ? texte.laeuft : texte.rueckfrageJa}
+                        </Button>
+
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setRueckfrage(null)}
+                            className="h-7 px-2 text-xs"
+                        >
+                            {texte.abbrechen}
+                        </Button>
+                    </div>
+                </div>
+            )}
 
             {/*
              * Zwei getrennte Zeilen, weil es zwei Lagen sind:
@@ -533,5 +859,94 @@ export function MailWerkzeugleiste({
             )}
             </div>
         </div>
+    );
+}
+
+/**
+ * Die Anhänge DIESER Mail zur Wahl.
+ *
+ * Die Liste kommt von der Fläche, nicht vom Verb — das Paket kennt die
+ * Anhänge schon, es zeigt sie an. Ein Verb, das sie selbst einsammeln müsste,
+ * müsste die Mail holen; ein fremdes Verb kann das gar nicht.
+ *
+ * ## Warum der Dateiname und nicht der Index
+ *
+ * Der Index stimmt nur, solange beide Seiten dieselbe Mail in derselben
+ * Reihenfolge sehen. Bei einer Mail, die ein anderes System geholt hat, ist
+ * das eine Annahme und keine Tatsache — und wenn sie nicht stimmt, wird der
+ * falsche Anhang verbucht, ohne dass es jemand merkt.
+ *
+ * ## Mehrfach oder einzeln
+ *
+ * Zwei Darstellungen, weil es zwei Fragen sind: „welche hängst du an" ist
+ * eine Liste mit Haken, „aus welchem machst du den Beleg" ist eine Wahl. Eine
+ * Mehrfachauswahl für eine Einzelfrage zu nehmen lädt dazu ein, zwei zu
+ * haken, und dann entscheidet drüben die Reihenfolge.
+ */
+function Anhangwahl({
+    feld,
+    anhaenge,
+    gewaehlt,
+    einzeln,
+    texte,
+    onWahl,
+}: {
+    feld: MailWerkzeugFeld;
+    anhaenge: WerkzeugAnhang[];
+    gewaehlt: string[];
+    einzeln: string;
+    texte: MailWerkzeugleisteLabels;
+    onWahl: (wert: string[] | string) => void;
+}) {
+    if (anhaenge.length === 0) {
+        /*
+         * Gesagt und nicht verschwiegen. Ein leeres Kästchen sähe aus wie
+         * „lädt noch"; der Knopf ist ohnehin aus, wenn das Feld Pflicht ist.
+         */
+        return <span className="text-muted-foreground">{texte.keineAnhaenge}</span>;
+    }
+
+    if (!feld.multiple) {
+        return (
+            <select
+                value={einzeln}
+                onChange={(e) => onWahl(e.target.value)}
+                className="h-8 rounded-md border bg-background px-1.5 text-xs"
+            >
+                <option value="">{texte.bitteWaehlen}</option>
+                {anhaenge.map((anhang) => (
+                    <option key={anhang.filename} value={anhang.filename}>
+                        {anhang.filename}
+                        {typeof anhang.size === 'number' ? ` (${texte.groesse(anhang.size)})` : ''}
+                    </option>
+                ))}
+            </select>
+        );
+    }
+
+    return (
+        <span className="flex flex-col gap-1">
+            {anhaenge.map((anhang) => (
+                <label key={anhang.filename} className="flex min-h-8 items-center gap-1.5">
+                    <input
+                        type="checkbox"
+                        checked={gewaehlt.includes(anhang.filename)}
+                        onChange={(e) =>
+                            onWahl(
+                                e.target.checked
+                                    ? [...gewaehlt, anhang.filename]
+                                    : gewaehlt.filter((name) => name !== anhang.filename),
+                            )
+                        }
+                        className="h-4 w-4"
+                    />
+                    <Paperclip className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                    <span className="truncate">{anhang.filename}</span>
+                    {typeof anhang.size === 'number' && (
+                        <span className="shrink-0 text-muted-foreground">({texte.groesse(anhang.size)})</span>
+                    )}
+                </label>
+            ))}
+        </span>
     );
 }

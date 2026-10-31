@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MailWerkzeugleiste } from '../src/MailWerkzeugleiste';
 import type { MailWerkzeug } from '../src/useMailWerkzeuge';
-import { render } from './support/render';
+import { click, render } from './support/render';
 
 /*
  * Die Verben stehen im Inhalt der Leiste, nicht in ihrem Kopf.
@@ -15,6 +15,76 @@ import { render } from './support/render';
  * da.
  */
 const INHALT = '[data-slot="mail-werkzeugleiste-inhalt"]';
+const MASKE = '[data-slot="mail-werkzeugleiste-maske"]';
+const RUECKFRAGE = '[data-slot="mail-werkzeugleiste-rueckfrage"]';
+
+/** Den Knopf eines Verbs IN DER REIHE. */
+function verbknopf(container: HTMLElement, text: string): HTMLButtonElement {
+    const knoepfe = [...container.querySelectorAll(`${INHALT} button`)];
+    const treffer = knoepfe.find((k) => (k.textContent ?? '').includes(text));
+
+    if (!treffer) {
+        throw new Error(`Kein Knopf mit „${text}" — vorhanden: ${knoepfe.map((k) => k.textContent).join(' | ')}`);
+    }
+
+    return treffer as HTMLButtonElement;
+}
+
+/**
+ * Die Maske eines Verbs aufklappen.
+ *
+ * Seit v0.195.0 stehen die Felder nicht mehr neben dem Knopf, sondern in
+ * einer Maske unter der Reihe (#9145). Dass die Tests dafuer einen Klick mehr
+ * brauchen, ist kein Umstand, sondern die Sache selbst: Ein Verb mit Feldern
+ * ist in der Reihe EIN Knopf, und das muss so geprueft werden, wie es benutzt
+ * wird.
+ *
+ * `verbknopf` findet den Knopf der REIHE und nicht den der Maske, weil der
+ * erste Treffer in Dokumentreihenfolge gewinnt — die Maske steht darunter.
+ */
+function maskeAuf(container: HTMLElement, text: string): HTMLElement {
+    click(verbknopf(container, text));
+
+    const maske = container.querySelector(MASKE);
+
+    if (!maske) {
+        throw new Error(`„${text}" hat keine Maske aufgeklappt.`);
+    }
+
+    return maske as HTMLElement;
+}
+
+/** Der ausloesende Knopf IN der Maske — er traegt den Namen des Verbs. */
+function maskenknopf(maske: HTMLElement): HTMLButtonElement {
+    return maske.querySelector('button') as HTMLButtonElement;
+}
+
+/**
+ * Einen Wert in ein Feld setzen und React davon erzaehlen.
+ *
+ * Danach gehoert ein `vi.waitFor` an die Aufrufstelle: Der Zustand ist einen
+ * Takt spaeter da, und ein Test, der sofort prueft, prueft den Stand von
+ * vorher.
+ */
+function waehle(feld: HTMLSelectElement | HTMLInputElement, wert: string): void {
+    /*
+     * Ueber den Setter des Prototyps und nicht ueber `feld.value = …`.
+     *
+     * React merkt sich an gesteuerten Feldern den letzten Wert, den es selbst
+     * gesetzt hat. Eine direkte Zuweisung geht an diesem Merker vorbei, und
+     * das folgende `input`-Ereignis wird dann als „kein Unterschied"
+     * verworfen — bei einem `select` fiel das nicht auf (React hoert dort auf
+     * `change`), beim Textfeld schon: Der Test setzte den Text, und der
+     * Zustand blieb leer.
+     */
+    const bauart = feld instanceof HTMLSelectElement ? HTMLSelectElement : HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(bauart.prototype, 'value')?.set;
+
+    setter?.call(feld, wert);
+
+    feld.dispatchEvent(new Event('change', { bubbles: true }));
+    feld.dispatchEvent(new Event('input', { bubbles: true }));
+}
 
 /**
  * Die eine Werkzeugleiste für alle Systeme (#8313/#8316).
@@ -53,6 +123,7 @@ interface LeisteOptionen {
     onMeldung?: (m: string, ok: boolean) => void;
     eigene?: Record<string, () => void>;
     verbergen?: (w: MailWerkzeug) => boolean;
+    anhaenge?: { filename: string; size?: number | null }[];
 }
 
 function leiste(optionen: LeisteOptionen = {}) {
@@ -82,6 +153,7 @@ function leiste(optionen: LeisteOptionen = {}) {
             onMeldung={optionen.onMeldung}
             eigene={optionen.eigene}
             verbergen={optionen.verbergen}
+            anhaenge={optionen.anhaenge}
         />,
     );
 }
@@ -224,21 +296,82 @@ describe('Verweis-Verb gegen Auslöse-Verb', () => {
         unmount();
     });
 
-    it('fragt nach, wenn das Verb eine Rückfrage verlangt — und tut bei Nein nichts', async () => {
+    it('fragt in der Leiste nach — nicht im Browser-Dialog', async () => {
+        /*
+         * Bis v0.194.x stand hier `globalThis.confirm`. Drei Dinge sprachen
+         * dagegen, und das dritte ist der Grund fuer #9145:
+         *
+         *   - Der Dialog haelt den ganzen Reiter an.
+         *   - Er laesst sich nicht uebersetzen und nicht gestalten.
+         *   - Er ist eine Frage, die NICHT in der Leiste steht — genau das,
+         *     was dieser Task abbaut.
+         *
+         * Der Test haengt deshalb ausdruecklich eine Attrappe an
+         * `globalThis.confirm`, die beim Aufruf scheitert: Wer ihn
+         * wiedereinbaut, soll es hier merken und nicht im Betrieb.
+         */
         const ausloesen = vi.fn(async () => ({ ok: true, message: 'getan' }));
         const alt = globalThis.confirm;
-        globalThis.confirm = () => false;
+        globalThis.confirm = () => {
+            throw new Error('globalThis.confirm darf hier nicht mehr vorkommen.');
+        };
 
         const { container, unmount } = leiste({
             werkzeuge: [werkzeug({ confirm: 'Wirklich einen Beleg anlegen?' })],
             ausloesen,
         });
 
-        container.querySelector(`${INHALT} button`)!.click();
-        await new Promise((r) => setTimeout(r, 0));
+        click(verbknopf(container, 'Ticket anlegen'));
 
+        const kasten = container.querySelector(RUECKFRAGE);
+
+        expect(kasten).not.toBeNull();
+        expect(kasten!.textContent).toContain('Wirklich einen Beleg anlegen?');
+        // Gefragt, nicht getan.
         expect(ausloesen).not.toHaveBeenCalled();
+
         globalThis.confirm = alt;
+        unmount();
+    });
+
+    it('tut es nach dem Ja — und nimmt den Kasten weg', async () => {
+        const ausloesen = vi.fn(async () => ({ ok: true, message: 'getan' }));
+
+        const { container, unmount } = leiste({
+            werkzeuge: [werkzeug({ confirm: 'Wirklich einen Beleg anlegen?' })],
+            ausloesen,
+        });
+
+        click(verbknopf(container, 'Ticket anlegen'));
+        click(container.querySelector(`${RUECKFRAGE} button`)!);
+
+        await vi.waitFor(() => expect(ausloesen).toHaveBeenCalledTimes(1));
+        await vi.waitFor(() => expect(container.querySelector(RUECKFRAGE)).toBeNull());
+
+        unmount();
+    });
+
+    it('tut bei Abbrechen nichts und laesst den Knopf stehen', () => {
+        const ausloesen = vi.fn(async () => ({ ok: true, message: 'getan' }));
+
+        const { container, unmount } = leiste({
+            werkzeuge: [werkzeug({ confirm: 'Wirklich einen Beleg anlegen?' })],
+            ausloesen,
+        });
+
+        click(verbknopf(container, 'Ticket anlegen'));
+
+        const knoepfe = container.querySelectorAll(`${RUECKFRAGE} button`);
+
+        expect(knoepfe).toHaveLength(2); // Ja und Abbrechen
+
+        click(knoepfe[1]);
+
+        expect(container.querySelector(RUECKFRAGE)).toBeNull();
+        expect(ausloesen).not.toHaveBeenCalled();
+        // Das Verb ist noch da — abgebrochen heisst nicht weg.
+        expect(verbknopf(container, 'Ticket anlegen')).not.toBeNull();
+
         unmount();
     });
 });
@@ -367,17 +500,74 @@ describe('Felder — die Zusage, hinter der bis zum 20.10.2026 nichts stand', ()
         });
     }
 
-    it('zeichnet die Auswahl und hält den Knopf aus, solange die Pflichtangabe fehlt', () => {
+    it('zeichnet die Auswahl in der Maske und hält den Knopf aus, solange die Pflichtangabe fehlt', () => {
         const { container, unmount } = leiste({ werkzeuge: [mitAuswahl()] });
 
-        const auswahl = container.querySelector('select');
-        const knopf = container.querySelector(`${INHALT} button`);
+        // Zugeklappt ist das Feld NICHT da. Ein Verb mit Feldern ist in der
+        // Reihe ein Knopf — sonst schiebt es seine Nachbarn aus der Zeile.
+        expect(container.querySelector('select')).toBeNull();
+
+        const maske = maskeAuf(container, 'Zuständig');
+        const auswahl = maske.querySelector('select');
 
         expect(auswahl).not.toBeNull();
         expect(auswahl?.querySelectorAll('option')).toHaveLength(3); // „bitte wählen" + zwei
         // AUS und nicht verborgen: Verborgen hiesse „das Verb gibt es hier
         // nicht", aus heisst „es fehlt noch etwas".
-        expect(knopf?.disabled).toBe(true);
+        expect(maskenknopf(maske).disabled).toBe(true);
+
+        unmount();
+    });
+
+    it('klappt die Maske wieder zu, wenn man dasselbe Verb nochmal anklickt', () => {
+        const { container, unmount } = leiste({ werkzeuge: [mitAuswahl()] });
+
+        maskeAuf(container, 'Zuständig');
+        click(verbknopf(container, 'Zuständig'));
+
+        expect(container.querySelector(MASKE)).toBeNull();
+
+        unmount();
+    });
+
+    it('hat nur EINE Maske offen, auch wenn zwei Verben Felder haben', () => {
+        /*
+         * Zwei halbgefuellte Masken nebeneinander sind die Gelegenheit, die
+         * Angabe ins falsche Verb zu tippen. Beide Verben tragen hier ein
+         * Feld namens `person` — genau der Fall, in dem es keiner merkt.
+         */
+        const { container, unmount } = leiste({
+            werkzeuge: [mitAuswahl(), mitAuswahl({ key: 'vertretung', label: 'Vertretung' })],
+        });
+
+        maskeAuf(container, 'Zuständig');
+        maskeAuf(container, 'Vertretung');
+
+        const masken = container.querySelectorAll(MASKE);
+
+        expect(masken).toHaveLength(1);
+        expect(masken[0].textContent).toContain('Vertretung');
+
+        unmount();
+    });
+
+    it('behält das Eingetippte, wenn die Maske zu und wieder auf geht', async () => {
+        /*
+         * Wer die Maske zumacht, um in der Mail etwas nachzulesen, darf nicht
+         * mit einem leeren Formular zurueckkommen — das ist der Moment, in
+         * dem jemand aufgibt und doch ins andere System springt.
+         */
+        const { container, unmount } = leiste({ werkzeuge: [mitAuswahl()] });
+
+        const maske = maskeAuf(container, 'Zuständig');
+        waehle(maske.querySelector('select')!, 'bodo@example.test');
+
+        await vi.waitFor(() => expect(container.querySelector(`${MASKE} select`)!.value).toBe('bodo@example.test'));
+
+        click(verbknopf(container, 'Zuständig')); // zu
+        const wieder = maskeAuf(container, 'Zuständig'); // auf
+
+        expect(wieder.querySelector('select')!.value).toBe('bodo@example.test');
 
         unmount();
     });
@@ -394,15 +584,13 @@ describe('Felder — die Zusage, hinter der bis zum 20.10.2026 nichts stand', ()
             },
         });
 
-        const auswahl = container.querySelector('select')!;
-        const knopf = container.querySelector(`${INHALT} button`)!;
+        const maske = maskeAuf(container, 'Zuständig');
 
-        auswahl.value = 'bodo@example.test';
-        auswahl.dispatchEvent(new Event('change', { bubbles: true }));
+        waehle(maske.querySelector('select')!, 'bodo@example.test');
 
-        await vi.waitFor(() => expect(knopf.disabled).toBe(false));
+        await vi.waitFor(() => expect(maskenknopf(maske).disabled).toBe(false));
 
-        knopf.click();
+        click(maskenknopf(maske));
 
         await vi.waitFor(() => expect(gesehen).toHaveLength(1));
 
@@ -453,32 +641,59 @@ describe('Felder — die Zusage, hinter der bis zum 20.10.2026 nichts stand', ()
         unmount();
     });
 
-    it('setzt die Auswahl nach einem gelungenen Verb zurück', () => {
+    it('schließt die Maske nach einem gelungenen Verb und setzt die Auswahl zurück', async () => {
         /*
-         * Eine stehengebliebene Auswahl liest sich wie „das ist der aktuelle
-         * Stand". Der steht aber im Zustand, den der Server neu schickt — und
-         * die beiden können auseinanderliegen, sobald jemand anders zuweist.
+         * Zwei Dinge auf einmal, weil sie dieselbe Gefahr abwenden: Eine
+         * stehengebliebene Auswahl liest sich wie „das ist der aktuelle
+         * Stand" (der steht aber im Zustand, den der Server neu schickt), und
+         * eine offene Maske liest sich wie „noch nicht abgeschickt" — der
+         * zweite Klick legt dann das Ticket ein zweites Mal an.
          */
         const { container, unmount } = leiste({
             werkzeuge: [mitAuswahl()],
             ausloesen: async () => ({ ok: true, message: 'getan' }),
         });
 
-        const auswahl = container.querySelector('select')!;
+        const maske = maskeAuf(container, 'Zuständig');
 
-        auswahl.value = 'bodo@example.test';
-        auswahl.dispatchEvent(new Event('change', { bubbles: true }));
+        waehle(maske.querySelector('select')!, 'bodo@example.test');
 
-        const knopf = container.querySelector(`${INHALT} button`)!;
+        await vi.waitFor(() => expect(maskenknopf(maske).disabled).toBe(false));
 
-        return vi
-            .waitFor(() => expect(knopf.disabled).toBe(false))
-            .then(() => {
-                knopf.click();
+        click(maskenknopf(maske));
 
-                return vi.waitFor(() => expect(container.querySelector('select')!.value).toBe(''));
-            })
-            .then(() => unmount());
+        await vi.waitFor(() => expect(container.querySelector(MASKE)).toBeNull());
+
+        expect(maskeAuf(container, 'Zuständig').querySelector('select')!.value).toBe('');
+
+        unmount();
+    });
+
+    it('lässt die Maske nach einer Absage OFFEN — mit dem Eingetippten darin', async () => {
+        /*
+         * Die Gegenprobe. Wer die Maske im Fehlerfall verliert, tippt alles
+         * neu — und die Absage kam oft genug von einer Angabe, die man
+         * ändern wollte, nicht wegwerfen.
+         */
+        const { container, unmount } = leiste({
+            werkzeuge: [mitAuswahl()],
+            ausloesen: async () => ({ ok: false, message: 'Dafür fehlt dir die Berechtigung.' }),
+        });
+
+        const maske = maskeAuf(container, 'Zuständig');
+
+        waehle(maske.querySelector('select')!, 'bodo@example.test');
+
+        await vi.waitFor(() => expect(maskenknopf(maske).disabled).toBe(false));
+
+        click(maskenknopf(maske));
+
+        await vi.waitFor(() => expect(maskenknopf(maske).disabled).toBe(false));
+
+        expect(container.querySelector(MASKE)).not.toBeNull();
+        expect(container.querySelector(`${MASKE} select`)!.value).toBe('bodo@example.test');
+
+        unmount();
     });
 });
 
@@ -516,9 +731,11 @@ describe('Vorbelegung: den Stand zeigen UND änderbar lassen', () => {
     it('zeigt die vorbelegte Person und lässt den Knopf zu', () => {
         const { container, unmount } = leiste({ werkzeuge: [mitVorbelegung('bodo@example.test')] });
 
-        expect(container.querySelector('select')?.value).toBe('bodo@example.test');
+        const maske = maskeAuf(container, 'Zuständig');
+
+        expect(maske.querySelector('select')?.value).toBe('bodo@example.test');
         // Nicht aus: Es fehlt nichts, und das Ändern ist hier der Normalfall.
-        expect(container.querySelector(`${INHALT} button`)?.disabled).toBe(false);
+        expect(maskenknopf(maske).disabled).toBe(false);
 
         unmount();
     });
@@ -535,7 +752,7 @@ describe('Vorbelegung: den Stand zeigen UND änderbar lassen', () => {
             },
         });
 
-        container.querySelector(`${INHALT} button`)!.click();
+        click(maskenknopf(maskeAuf(container, 'Zuständig')));
 
         await vi.waitFor(() => expect(gesehen).toHaveLength(1));
 
@@ -556,14 +773,13 @@ describe('Vorbelegung: den Stand zeigen UND änderbar lassen', () => {
             },
         });
 
-        const auswahl = container.querySelector('select')!;
+        const maske = maskeAuf(container, 'Zuständig');
 
-        auswahl.value = 'anna@example.test';
-        auswahl.dispatchEvent(new Event('change', { bubbles: true }));
+        waehle(maske.querySelector('select')!, 'anna@example.test');
 
-        await vi.waitFor(() => expect(container.querySelector('select')!.value).toBe('anna@example.test'));
+        await vi.waitFor(() => expect(container.querySelector(`${MASKE} select`)!.value).toBe('anna@example.test'));
 
-        container.querySelector(`${INHALT} button`)!.click();
+        click(maskenknopf(maske));
 
         await vi.waitFor(() => expect(gesehen).toHaveLength(1));
 
@@ -576,8 +792,10 @@ describe('Vorbelegung: den Stand zeigen UND änderbar lassen', () => {
         // Niemand zuständig: Dann fehlt die Pflichtangabe wirklich.
         const { container, unmount } = leiste({ werkzeuge: [mitVorbelegung('')] });
 
-        expect(container.querySelector('select')?.value).toBe('');
-        expect(container.querySelector(`${INHALT} button`)?.disabled).toBe(true);
+        const maske = maskeAuf(container, 'Zuständig');
+
+        expect(maske.querySelector('select')?.value).toBe('');
+        expect(maskenknopf(maske).disabled).toBe(true);
 
         unmount();
     });
@@ -675,6 +893,200 @@ describe('ein Verb, das das Produkt selbst bedient (#8434)', () => {
         knopfMit(container, 'Aufgabe anhängen').click();
 
         await vi.waitFor(() => expect(ausloesen).toHaveBeenCalledOnce());
+        unmount();
+    });
+});
+
+describe('die Feldarten, die die Leiste zeichnen kann (#9145)', () => {
+    /*
+     * Bis v0.194.x war es genau eine: `select` mit fertiger Liste. Alles
+     * andere landete in der Zeile „braucht eine Angabe, die diese Ansicht
+     * nicht erfassen kann" — und daran hing der ganze Rest des Tasks: Ein
+     * Verb, das seine Angabe hier nicht einsammeln kann, FUEHRT HIN, und
+     * dieser Sprung ist das, was abgebaut wird.
+     */
+
+    const ANHAENGE = [
+        { filename: 'Angebot_Meier.pdf', size: 188_416 },
+        { filename: 'Signatur.png', size: 12_288 },
+    ];
+
+    function mitFeld(feld: Record<string, unknown>): MailWerkzeug {
+        return werkzeug({ key: 'beleg', label: 'Als Eingangsrechnung', fields: [feld as never] });
+    }
+
+    it('zeichnet ein Textfeld und schickt, was darin steht', async () => {
+        const gesehen: unknown[] = [];
+
+        const { container, unmount } = leiste({
+            werkzeuge: [mitFeld({ name: 'notiz', label: 'Notiz', type: 'text', required: true })],
+            ausloesen: async (w, eingabe) => {
+                gesehen.push(eingabe);
+
+                return { ok: true, message: 'getan' };
+            },
+        });
+
+        const maske = maskeAuf(container, 'Als Eingangsrechnung');
+        const feld = maske.querySelector('input[type="text"]') as HTMLInputElement;
+
+        expect(feld).not.toBeNull();
+        expect(maskenknopf(maske).disabled).toBe(true);
+
+        waehle(feld, 'Rechnung Oktober');
+
+        await vi.waitFor(() => expect(maskenknopf(maske).disabled).toBe(false));
+
+        click(maskenknopf(maske));
+
+        await vi.waitFor(() => expect(gesehen).toHaveLength(1));
+        expect(gesehen[0]).toEqual({ notiz: 'Rechnung Oktober' });
+
+        unmount();
+    });
+
+    it('bietet die Anhänge DIESER Mail an — ohne dass das Verb sie mitschickt', async () => {
+        /*
+         * Der Kern der Feldart: Das Feld trägt KEINE `options`. Die Liste
+         * kommt von der Fläche, weil das Paket die Anhänge schon kennt — ein
+         * fremdes Verb könnte sie gar nicht liefern.
+         */
+        const gesehen: unknown[] = [];
+
+        const { container, unmount } = leiste({
+            werkzeuge: [mitFeld({ name: 'anhang', label: 'Anhang', type: 'anhang', required: true })],
+            anhaenge: ANHAENGE,
+            ausloesen: async (w, eingabe) => {
+                gesehen.push(eingabe);
+
+                return { ok: true, message: 'getan' };
+            },
+        });
+
+        const maske = maskeAuf(container, 'Als Eingangsrechnung');
+        const auswahl = maske.querySelector('select') as HTMLSelectElement;
+
+        expect([...auswahl.querySelectorAll('option')].map((o) => o.value)).toEqual([
+            '',
+            'Angebot_Meier.pdf',
+            'Signatur.png',
+        ]);
+        // Die Groesse steht dabei, sonst sind zwei Anhaenge mit aehnlichem
+        // Namen nicht zu unterscheiden.
+        expect(auswahl.textContent).toContain('184.0 KB');
+
+        waehle(auswahl, 'Angebot_Meier.pdf');
+
+        await vi.waitFor(() => expect(maskenknopf(maske).disabled).toBe(false));
+
+        click(maskenknopf(maske));
+
+        await vi.waitFor(() => expect(gesehen).toHaveLength(1));
+        // Der DATEINAME, nicht der Index: Der stimmt nur, solange beide
+        // Seiten dieselbe Mail in derselben Reihenfolge sehen.
+        expect(gesehen[0]).toEqual({ anhang: 'Angebot_Meier.pdf' });
+
+        unmount();
+    });
+
+    it('macht aus `multiple` eine Mehrfachauswahl und schickt eine LISTE', async () => {
+        const gesehen: unknown[] = [];
+
+        const { container, unmount } = leiste({
+            werkzeuge: [mitFeld({ name: 'anhang', label: 'Anhänge', type: 'anhang', multiple: true, required: true })],
+            anhaenge: ANHAENGE,
+            ausloesen: async (w, eingabe) => {
+                gesehen.push(eingabe);
+
+                return { ok: true, message: 'getan' };
+            },
+        });
+
+        const maske = maskeAuf(container, 'Als Eingangsrechnung');
+        const haken = maske.querySelectorAll('input[type="checkbox"]');
+
+        expect(haken).toHaveLength(2);
+        expect(maske.querySelector('select')).toBeNull();
+        // Leere Liste ist die fehlende Pflichtangabe — nicht `''`.
+        expect(maskenknopf(maske).disabled).toBe(true);
+
+        click(haken[0]);
+
+        await vi.waitFor(() => expect(maskenknopf(maske).disabled).toBe(false));
+
+        click(maskenknopf(maske));
+
+        await vi.waitFor(() => expect(gesehen).toHaveLength(1));
+        // Eine Liste, auch bei nur einem Haken. Wer beides lesen muesste,
+        // bekaeme genau den Fehler, den `multiple` vermeiden soll.
+        expect(gesehen[0]).toEqual({ anhang: ['Angebot_Meier.pdf'] });
+
+        unmount();
+    });
+
+    it('sagt es, wenn die Mail keine Anhänge hat — und hält den Knopf aus', () => {
+        /*
+         * Ein leeres Kaestchen saehe aus wie „laedt noch". Der Knopf ist aus,
+         * weil die Angabe Pflicht ist; das Verb bleibt aber stehen, denn ob es
+         * hier SINNVOLL ist, entscheidet `anwendbar()` drueben und nicht diese
+         * Ansicht.
+         */
+        const { container, unmount } = leiste({
+            werkzeuge: [mitFeld({ name: 'anhang', label: 'Anhang', type: 'anhang', required: true })],
+            anhaenge: [],
+        });
+
+        const maske = maskeAuf(container, 'Als Eingangsrechnung');
+
+        expect(maske.textContent).toContain('keine Anhänge');
+        expect(maskenknopf(maske).disabled).toBe(true);
+
+        unmount();
+    });
+
+    it('bietet eine unbekannte Feldart weiterhin NICHT an — und sagt es', () => {
+        /*
+         * Die Gegenprobe zu den drei neuen Arten: Die Liste ist nicht
+         * gewachsen zu „alles geht". Eine Art, die hier niemand zeichnen kann,
+         * ist kein toter Knopf und kein stilles Weglassen.
+         */
+        const { container, unmount } = leiste({
+            werkzeuge: [mitFeld({ name: 'datum', label: 'Fällig am', type: 'datum', required: true })],
+        });
+
+        expect(container.querySelector(`${INHALT} button`)).toBeNull();
+        expect(container.textContent).toContain('nicht erfassen');
+
+        unmount();
+    });
+
+    it('zeichnet zwei Felder verschiedener Art in EINER Maske', () => {
+        /*
+         * Der Fall aus dem Task: „Aufgabe anhaengen" braucht die Aufgabe, den
+         * Anhang und eine Notiz. Zwei Felder nebeneinander in der Reihe waren
+         * der Grund fuer die Maske — sie schoben die Nachbarverben heraus.
+         */
+        const { container, unmount } = leiste({
+            werkzeuge: [
+                werkzeug({
+                    key: 'aufgabe',
+                    label: 'Aufgabe anhängen',
+                    fields: [
+                        { name: 'anhang', label: 'Anhang', type: 'anhang', multiple: true } as never,
+                        { name: 'notiz', label: 'Notiz', type: 'text' } as never,
+                    ],
+                }),
+            ],
+            anhaenge: ANHAENGE,
+        });
+
+        const maske = maskeAuf(container, 'Aufgabe anhängen');
+
+        expect(maske.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
+        expect(maske.querySelector('input[type="text"]')).not.toBeNull();
+        // Kein Pflichtfeld dabei: Dann darf der Knopf von Anfang an zu.
+        expect(maskenknopf(maske).disabled).toBe(false);
+
         unmount();
     });
 });

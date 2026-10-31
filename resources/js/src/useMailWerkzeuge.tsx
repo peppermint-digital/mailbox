@@ -61,6 +61,15 @@ export interface MailWerkzeugFeld {
      */
     value?: string;
     options?: MailWerkzeugFeldOption[];
+    /**
+     * Mehrfachauswahl — dann kommt eine LISTE von Werten zurueck, auch bei
+     * nur einem Haken.
+     *
+     * Fehlt die Angabe, ist es ein einzelner Wert. Die Unterscheidung steht
+     * im Feld und nicht in der Art, weil sie fuer mehrere Arten gilt: eine
+     * Anhangwahl kann eine oder mehrere sein, und das weiss nur das Verb.
+     */
+    multiple?: boolean;
 }
 
 /** Ein Verb, so wie der Server es schickt (siehe `Werkzeug::toArray()`). */

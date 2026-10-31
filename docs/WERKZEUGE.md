@@ -49,6 +49,7 @@ one merged list). Deliberately the same, down to the naming: one pattern for
 |---|---|
 | `Werkzeuge\Werkzeug` | the shape of a verb — key, word, icon, order, group, fields, state |
 | `Werkzeuge\Vorgangswerkzeug` | what **this** system contributes: `werkzeug()` · `anwendbar()` · `zustand()` · `verweis()` · `ausfuehren()` |
+| `Werkzeuge\LiefertFelder` | the extra contract for a verb that asks before it acts |
 | `Werkzeuge\Werkzeugverzeichnis` | what this system registered |
 | `Werkzeuge\GesamtWerkzeuge` | own verbs plus the other systems', merged into one toolbar |
 | `Werkzeuge\Vorgang` | **which mail** — by address, thread key and Message-ID |
@@ -131,6 +132,46 @@ not only reveal what is possible, they trigger it — in *other* systems. A
 forgotten riddle here is not a mailbox opened too wide; it is a receipt booked
 in a colleague's accounting.
 
+## Asking before doing: the mask in the bar
+
+A verb may need input. It declares that by implementing `Werkzeuge\LiefertFelder`
+— a second interface, asked by `instanceof`, so the three product tools that
+exist today do not break when a capability most verbs never need is added.
+
+The fields are collected **in the bar**, in a mask that opens under the verb.
+Not in a dialog, and not in the product's own window: a verb that sends you
+somewhere to type two words has already lost the thing this toolbar is for.
+
+Three field types, and the third is the interesting one:
+
+| `art` | What the bar draws | Who supplies the choices |
+|---|---|---|
+| `select` | a dropdown | **you**, in `auswahl` |
+| `text` | one line | nobody |
+| `anhang` | the attachments of **this** mail | the **package** |
+
+`anhang` carries no `auswahl` — anything put there is ignored. The package
+already knows the attachments; it is showing them. Having every product collect
+them again would be the same list from a worse source, and a foreign verb could
+not do it at all. What arrives is the **file name**, never the index: the index
+only holds while both sides see the same mail in the same order, and for a mail
+another system fetched that is an assumption, not a fact.
+
+`mehrfach => true` turns a choice into a multiple choice — then a **list** of
+values arrives, even for a single tick, and an empty list when nothing is
+ticked. Without the flag a single value arrives. Reading both is exactly the
+bug the type is there to prevent.
+
+A field type the bar cannot draw is **not** an error and **not** a dead button:
+the verb is not offered, and the bar *says* it cannot draw it. Silently leaving
+it out looks like "does not exist", and then someone goes looking for the fault
+in themselves.
+
+`rueckfrage` is asked in the same place — a box in the bar with the sentence
+and two buttons. It used to be `window.confirm`, which stops the whole tab,
+cannot be translated, and is the one thing this design is about: a question
+that is **not** in the bar.
+
 ## A verb that only leads there
 
 Some verbs need a chooser. "Link the contact" needs a contact — a searchable
@@ -154,6 +195,14 @@ then the click was wasted. The first real link verb had the address in
 
 A verb that *does* returns `null` here. Answering both is a contradiction; it
 is then treated as a link and never executed.
+
+**This is the exception that is being retired.** Since v0.195.0 a verb whose
+input the bar *can* collect belongs in the bar — see the section above. What is
+still missing is the searchable picker (a contact out of twelve thousand); it
+arrives as the field type `suche` with `Werkzeuge\LiefertAuswahl`, and only
+then is a link verb the rare case rather than the normal one. Until then both
+ways stand side by side: a verb whose input nobody here can collect had better
+lead somewhere than fail reliably.
 
 A link verb is **never executed**. `Werkzeugverzeichnis::ausfuehren()` refuses
 it — and the rule lives there rather than in the interface, because it has to
