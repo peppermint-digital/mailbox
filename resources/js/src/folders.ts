@@ -134,6 +134,25 @@ const ANZEIGENAMEN: readonly { name: string; flag: string | null; aliase: readon
     { name: 'Gesendet', flag: 'sent', aliase: ['sent', 'sent items', 'sent mail', 'gesendet', 'gesendete objekte', 'gesendete elemente'] },
     { name: 'Spam', flag: 'junk', aliase: ['junk', 'junk e-mail', 'junk-e-mail', 'spam', 'bulk mail'] },
     { name: 'Papierkorb', flag: 'trash', aliase: ['trash', 'deleted', 'deleted items', 'papierkorb', 'gelöschte elemente', 'geloschte elemente', 'gel&apy-schte elemente'] },
+    /*
+     * `archives` fehlt hier MIT ABSICHT — bitte nicht „ergaenzen".
+     *
+     * Gemessen am 31.10.2026 von `mail-rollout3` an drei echten Postfaechern:
+     * Bei henneberg@ und bei department@ liegen `Archiv` UND `Archives`
+     * NEBENEINANDER (letzteres mit Unterordnern `Archives/2023` bis `/2026`).
+     * Heute bleiben die beiden unterscheidbar, weil diese Tabelle GENAU
+     * vergleicht und `archives` nicht darin steht.
+     *
+     * Wer die Schreibweise als „fehlend" nachtraegt, bekommt die Kollision
+     * sofort — und zwar in zwei Postfaechern gleichzeitig: Zwei verschiedene
+     * Ordner hiessen dann beide „Archiv", und im Suchergebnis liessen sich
+     * ihre Treffer nicht mehr auseinanderhalten.
+     *
+     * Fuers VERHALTEN ist `Archives` trotzdem abgedeckt: Dort prueft
+     * `STANDARD_FOLDER_ALIASES` auf Teiltreffer, und `archive` steckt in
+     * `archives`. Die beiden Tabellen beantworten verschiedene Fragen und
+     * vergleichen deshalb verschieden — genau dafuer gibt es sie getrennt.
+     */
     { name: 'Archiv', flag: 'archive', aliase: ['archive', 'archiv', 'archived', 'archiviert'] },
     { name: 'Posteingang', flag: 'inbox', aliase: ['inbox', 'posteingang'] },
 ];

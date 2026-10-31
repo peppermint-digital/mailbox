@@ -103,3 +103,50 @@ describe('ordnerAnzeigename', () => {
         expect(ordnerAnzeigename({ path: 'Eigenes' })).toBe('Eigenes');
     });
 });
+
+describe('Ordner, die sich fast gleich schreiben', () => {
+    it('haelt „Archiv" und „Archives" auseinander — sie liegen in zwei Postfaechern nebeneinander', () => {
+        /*
+         * Gemessen am 31.10.2026 an henneberg@ und department@: Beide Ordner
+         * existieren dort NEBENEINANDER, `Archives` mit Jahres-Unterordnern.
+         *
+         * Diese Zusicherung steht hier, damit das Nachtragen von `archives`
+         * als „fehlende Schreibweise" auffällt, bevor es ausgeliefert wird:
+         * Dann hiessen beide „Archiv", und im Suchergebnis liessen sich ihre
+         * Treffer nicht mehr auseinanderhalten.
+         */
+        expect(ordnerAnzeigename({ path: 'Archiv' })).toBe('Archiv');
+        expect(ordnerAnzeigename({ path: 'Archives' })).toBe('Archives');
+        expect(ordnerAnzeigename({ path: 'Archives/2026' })).toBe('Archives/2026');
+    });
+
+    it('deckt „Archives" beim VERHALTEN trotzdem ab — andere Frage, anderer Vergleich', () => {
+        // `looksLikeFolder` prüft auf Teiltreffer, und `archive` steckt in
+        // `archives`. Genau dafür sind es zwei Tabellen.
+        expect(looksLikeFolder({ path: 'Archives' }, 'Archive')).toBe(true);
+    });
+
+    it('laesst „Junk Mail" heute stehen — und das ist eine offene Frage, keine Entscheidung', () => {
+        /*
+         * Gefunden am 31.10.2026 bei info@schuelerferienpass.de.
+         *
+         * Fürs VERHALTEN ist der Ordner abgedeckt: Die andere Tabelle prüft
+         * auf Teiltreffer, und `junk` steckt in `Junk Mail`. Aus der Suche
+         * fliegt er also korrekt heraus.
+         *
+         * Für die ANZEIGE ist die Lage unsauber, und zwar auf eine Art, die
+         * ich hier festhalte statt sie wegzuerklären: In der Liste stehen
+         * `junk`, `junk e-mail`, `junk-e-mail`, `spam` und `bulk mail`. Ein
+         * Ordner namens `Junk` wird also zu „Spam", `Junk Mail` aber nicht.
+         * Dafür gibt es kein Prinzip — es ist schlicht eine Schreibweise, die
+         * niemand aufgeschrieben hat.
+         *
+         * NICHT ergänzt, weil es eine Kollision erzeugen könnte, die nur an
+         * echten Postfächern zu sehen ist (siehe „Archiv"/„Archives" oben).
+         * Die Frage liegt bei der Rollout-Session. Diese Zusicherung hält den
+         * heutigen Stand fest, damit eine Änderung auffällt und nicht
+         * nebenbei passiert.
+         */
+        expect(ordnerAnzeigename({ path: 'Junk Mail' })).toBe('Junk Mail');
+    });
+});
