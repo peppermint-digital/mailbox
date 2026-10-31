@@ -1137,7 +1137,9 @@ class MailboxClient implements Mailbox
             foreach ((array) $ordner->flags() as $flag) {
                 $kennzeichen = mb_strtolower((string) $flag);
 
-                foreach (['trash', 'junk', 'drafts'] as $unerwuenscht) {
+                // `drafts` stand hier bis zum 31.10.2026 daneben. Warum es
+                // dort nicht hingehoert, steht an FolderNames::EXCLUDED_FROM_SEARCH.
+                foreach (['trash', 'junk'] as $unerwuenscht) {
                     if (str_contains($kennzeichen, $unerwuenscht)) {
                         return true;
                     }

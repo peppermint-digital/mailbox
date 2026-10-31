@@ -339,15 +339,33 @@ describe('Suche ueber alle Ordner (IMAP)', function () {
         suchOrdner('Archiv', [], [suchNachricht(5, 'Treffer Archiv', '2026-09-01T10:00:00+00:00')]),
     ]);
 
-    it('laesst Papierkorb, Spam und Entwuerfe aus — an der Kennzeichnung, nicht am Namen', function () use ($postfach) {
+    it('laesst Papierkorb und Spam aus — an der Kennzeichnung, nicht am Namen', function () use ($postfach) {
         // O365 liefert Ordnernamen UTF-7-kodiert; ein Namensvergleich auf
         // „geloescht" liefe dort ins Leere. Am echten Postfach gemessen: 10 von
         // 50 Treffern kamen aus dem Papierkorb, bevor das ueber die Flags lief.
         [$zeilen, $gesamt, $durchsucht] = suchKlient($postfach())->searchAll(Criteria::fromArray(['text' => 'x']));
 
-        expect(array_column($zeilen, 'subject'))->toBe(['Treffer Eingang', 'Treffer Archiv'])
-            ->and($gesamt)->toBe(2)
-            ->and($durchsucht)->toBe(2);
+        expect(array_column($zeilen, 'subject'))->not->toContain('Weggeworfen')
+            ->and(array_column($zeilen, 'subject'))->not->toContain('Spam')
+            ->and($gesamt)->toBe(3)
+            ->and($durchsucht)->toBe(3);
+    });
+
+    it('FINDET den Entwurf — er ist der eigene Text, nicht geloeschte Post', function () use ($postfach) {
+        /*
+         * Hier stand bis zum 31.10.2026 das Gegenteil, in derselben Zeile wie
+         * Papierkorb und Spam. Der Entwurfsordner traegt hier beides, was ihn
+         * frueher ausgeschlossen hat: die Kennzeichnung `\Drafts` UND den
+         * kodierten Namen `Entw&APw-rfe`. Beide Wege muessen ihn jetzt
+         * durchlassen.
+         *
+         * Gefunden hat die Luecke eine Rollout-Session, die einen Pruefpunkt
+         * nicht ausfuehren konnte: 0 Treffer in 20 Ordnern fuer ihre eigenen
+         * Testentwuerfe.
+         */
+        [$zeilen] = suchKlient($postfach())->searchAll(Criteria::fromArray(['text' => 'x']));
+
+        expect(array_column($zeilen, 'subject'))->toContain('Nie abgeschickt');
     });
 
     it('erkennt den Papierkorb an der Kennzeichnung, auch wenn der Name harmlos ist', function () {
@@ -379,10 +397,23 @@ describe('Suche ueber alle Ordner (IMAP)', function () {
     });
 
     it('haengt an jede Zeile den Ordner, in dem sie gefunden wurde', function () use ($postfach) {
+        /*
+         * Am BETREFF festgemacht, nicht an der Position. Die Liste ist nach
+         * Datum sortiert — als am 31.10.2026 die Entwuerfe dazukamen, wurde
+         * aus `zeilen[0]` eine andere Mail, und der Test fiel, ohne dass an
+         * dem, was er pruefen soll, etwas falsch war.
+         *
+         * Und der Ordner am Treffer ist seit demselben Tag mehr als eine
+         * Angabe: Er ist der Grund, aus dem ein Entwurf im Suchergebnis
+         * stehen darf, ohne mit einer normalen Mail verwechselt zu werden.
+         */
         [$zeilen] = suchKlient($postfach())->searchAll(Criteria::fromArray(['text' => 'x']));
 
-        expect($zeilen[0]['folder'])->toBe('INBOX')
-            ->and($zeilen[1]['folder'])->toBe('Archiv');
+        $ordnerZu = array_combine(array_column($zeilen, 'subject'), array_column($zeilen, 'folder'));
+
+        expect($ordnerZu['Treffer Eingang'])->toBe('INBOX')
+            ->and($ordnerZu['Treffer Archiv'])->toBe('Archiv')
+            ->and($ordnerZu['Nie abgeschickt'])->toBe('Entw&APw-rfe');
     });
 
     it('laesst einen gesperrten Ordner die Suche nicht beenden', function () {

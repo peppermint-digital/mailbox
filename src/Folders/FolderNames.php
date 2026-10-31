@@ -30,17 +30,45 @@ class FolderNames
     /**
      * Folders a search must not return.
      *
-     * Deleted mail, spam and half-written drafts are not results — a hit from
-     * the trash is at best confusing and at worst a mail the user believed was
-     * gone.
+     * Deleted mail and spam are not results: a hit from the trash is at best
+     * confusing and at worst a mail the user believed was gone.
+     *
+     * ## Entwuerfe stehen hier NICHT mehr (31.10.2026)
+     *
+     * Bis dahin standen sie daneben, mit derselben Begruendung — „half-written
+     * drafts are not results". Gebuendelt, und damit nie einzeln entschieden.
+     *
+     * Aufgefallen ist es, als eine Rollout-Session einen Pruefpunkt nicht
+     * ausfuehren konnte: Sie suchte nach ihren eigenen Testentwuerfen und bekam
+     * 0 Treffer in 20 Ordnern, waehrend dieselbe Suche nach einem Wort aus dem
+     * Posteingang 34 lieferte.
+     *
+     * Die drei Gruende, aus denen Entwuerfe anders liegen als Papierkorb und
+     * Spam:
+     *
+     * 1. **Bei Papierkorb und Spam ist das Argument ein SICHERHEITSargument.**
+     *    Ein Treffer von dort ist im schlimmsten Fall eine Mail, die jemand
+     *    geloescht glaubte. Bei einem Entwurf gibt es das nicht — es ist der
+     *    eigene Text, und nichts daran ist verborgen.
+     * 2. **Seit v0.189.0 kann man mit einem gefundenen Entwurf etwas
+     *    anfangen**: weiterbearbeiten. Findbarkeit hat damit einen Zweck, den
+     *    sie vorher nicht hatte.
+     * 3. **Die Verwechslungsgefahr ist laengst geloest.** Die Trefferliste
+     *    schreibt an jeden Treffer, aus welchem Ordner er kommt
+     *    (`germanLabels.list.foundInFolder`). „Sieht aus wie eine normale
+     *    Mail" trifft nicht mehr zu.
+     *
+     * Entschieden am 31.10.2026. Papierkorb und Spam bleiben ausdruecklich
+     * draussen — wer sie hier wieder herausnehmen will, loest ein anderes
+     * Problem als dieses.
      *
      * @var list<string>
      */
     public const EXCLUDED_FROM_SEARCH = [
-        'trash', 'papierkorb', 'deleted', 'junk', 'spam', 'draft',
-        'gelöscht', 'geloscht', 'entwürfe', 'entwurfe',
+        'trash', 'papierkorb', 'deleted', 'junk', 'spam',
+        'gelöscht', 'geloscht',
         // IMAP modified UTF-7, the way Office 365 reports them:
-        'gel&apy-schte', 'entw&apw-rfe',
+        'gel&apy-schte',
     ];
 
     /**

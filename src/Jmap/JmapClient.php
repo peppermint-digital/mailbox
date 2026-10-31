@@ -567,7 +567,11 @@ class JmapClient implements Mailbox
         $ordner = $this->folders();
         $raus = array_values(array_filter(
             $ordner,
-            fn (array $f): bool => in_array($f['role'], ['trash', 'junk', 'drafts'], true)
+            // MIT geaendert am 31.10.2026, nicht nur die IMAP-Seite: Sonst
+            // faende dieselbe Suche je nach Transport etwas anderes, und das
+            // waere der unangenehmste Unterschied von allen — einer, den
+            // niemand sieht. Begruendung an FolderNames::EXCLUDED_FROM_SEARCH.
+            fn (array $f): bool => in_array($f['role'], ['trash', 'junk'], true)
                 || FolderNames::isExcludedFromSearch($f['path']),
         ));
 
