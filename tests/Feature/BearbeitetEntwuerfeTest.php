@@ -92,9 +92,16 @@ it('laedt einen Entwurf aus jedem Ordner, der wirklich vorkommt', function (stri
 
 it('laesst die Maske nicht leer, wenn der Entwurf nur Text hat', function () {
     /*
-     * Entwuerfe, die ein anderes System abgelegt hat (nanoclaw ueber Graph
-     * oder IMAP), haben oft kein `body_html`. Ohne Rueckfall sieht der Mensch
-     * eine leere Maske und schreibt alles noch einmal.
+     * Ein Entwurf ohne HTML-Teil. Ohne Rueckfall sieht der Mensch eine leere
+     * Maske und schreibt alles noch einmal.
+     *
+     * NICHT belegt ist, dass das haeufig vorkommt — hier stand bis zum
+     * 31.10.2026 „nanoclaw-Entwuerfe haben oft kein body_html".
+     * `mail-rollout3` hat an henneberg@ vier Entwuerfe nachgesehen, darunter
+     * zwei von nanoclaw: ALLE trugen `body_html`. Die Zusicherung bleibt
+     * trotzdem — sie sichert einen Fall ab, den ein per IMAP-`append`
+     * abgelegter Entwurf aus einem Skript jederzeit erzeugen kann, und sie
+     * ist der einzige Ort, an dem er ueberhaupt geprueft wird.
      */
     Mailboxes::fake(function () {
         $attrappe = Mockery::mock(Mailbox::class);

@@ -114,7 +114,7 @@ export type VerfassenFeldProps = Omit<EmailComposerFormProps, 'labels' | 'editor
      * erste Teil verlangt sie weiter. Genau daran fiel der CRM-Übersetzer
      * (TS2739, 22.10.2026).
      */
-    Partial<Pick<EmailComposerFormProps, 'recipients' | 'signatureSource'>> & {
+    Partial<Pick<EmailComposerFormProps, 'recipients' | 'signatureSource' | 'editor'>> & {
         /**
          * Einzelne Wörter überschreiben.
          *
@@ -127,12 +127,25 @@ export type VerfassenFeldProps = Omit<EmailComposerFormProps, 'labels' | 'editor
         labels?: Partial<EmailComposerFormLabels>;
     };
 
-export function VerfassenFeld({ labels, recipients, signatureSource, ...eigenschaften }: VerfassenFeldProps) {
+export function VerfassenFeld({ labels, recipients, signatureSource, editor, ...eigenschaften }: VerfassenFeldProps) {
     return (
         <EmailComposerForm
             {...eigenschaften}
             labels={{ ...germanLabels.verfassen, ...labels } as EmailComposerFormLabels}
-            editor={Editor}
+            /*
+             * Der Editor ist seit dem 31.10.2026 ebenfalls uebersteuerbar, aus
+             * demselben Grund wie Adressquelle und Signaturen: Die Vorgabe
+             * deckt alle vier Produkte, aber eines mit eigenen Erweiterungen
+             * soll sie ersetzen koennen, OHNE diese Huelle zu umgehen.
+             *
+             * Der Fall dahinter ist konkret: Der Projekt-Manager haengt an
+             * seinen Editor einen Schreibassistenten und eine Spracheingabe.
+             * Beide sitzen schon in den dafuer vorgesehenen Plaetzen des
+             * Paket-Editors (`extraActions`, `statusBar`) — aber die Huelle
+             * daraus ist seine, und ohne diesen Platz muesste er an
+             * `VerfassenFeld` vorbei direkt auf `EmailComposerForm` gehen.
+             */
+            editor={editor ?? Editor}
             recipients={recipients ?? empfaengerQuelle}
             signatureSource={signatureSource ?? leereSignaturQuelle}
         />

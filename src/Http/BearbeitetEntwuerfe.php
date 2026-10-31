@@ -38,10 +38,24 @@ use Peppermint\Mailbox\Models\MailAccount;
  * Sie stehen im Manager seit Bug #1155 und wandern mit, weil sie sonst in drei
  * Produkten neu gelernt werden muessten:
  *
- * 1. **Ein Entwurf ohne HTML bleibt nicht leer.** Entwuerfe, die ein anderes
- *    System abgelegt hat (nanoclaw ueber Graph oder IMAP), haben oft nur
- *    `body_text`. Ohne Rueckfall steht die Maske leer da und der Mensch
- *    schreibt alles noch einmal.
+ * 1. **Ein Entwurf ohne HTML bleibt nicht leer.** Hat ein Entwurf nur
+ *    `body_text`, stuende die Maske ohne Rueckfall leer da und der Mensch
+ *    schriebe alles noch einmal.
+ *
+ *    Hier stand bis zum 31.10.2026 „Entwuerfe, die ein anderes System abgelegt
+ *    hat (nanoclaw ueber Graph oder IMAP), haben OFT nur `body_text`". Als
+ *    allgemeine Aussage ist das nicht belegt, und fuer das Postfach, um das es
+ *    ging, ist es falsch: `mail-rollout3` hat am 31.10.2026 vier Entwuerfe an
+ *    henneberg@ nachgesehen, darunter zwei von nanoclaw (27.10. und 29.10.) —
+ *    **alle vier trugen `body_html`**, in der Form `<meta http-equiv=…>Text<br>`.
+ *    Office 365 bzw. Graph legt dort immer einen HTML-Teil an, und das
+ *    Entwurfs-Werkzeug von AI Brain erzeugt ebenfalls HTML aus dem Text.
+ *
+ *    Der Rueckfall bleibt trotzdem, und zwar als das, was er ist: ein Riegel
+ *    gegen einen Fall, der an diesem Postfach nicht vorkommt, aber vorkommen
+ *    KANN — ein per IMAP-`append` abgelegter Entwurf aus einem Skript muss
+ *    keinen HTML-Teil haben. Er kostet vier Zeilen; eine leere Maske kostet
+ *    einen ganzen Text.
  * 2. **Die Anhaenge kommen aus dem ENTWURF, nicht aus dem Browser** — und sie
  *    muessen VOR dem Versand geholt werden. Bis zum Versand ist der Entwurf
  *    die einzige Kopie seiner Dateien.

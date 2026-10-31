@@ -821,6 +821,60 @@ export function EmailComposerForm({
                 </div>
             </div>
 
+            {/*
+                Was der ENTWURF mitbringt — unabhaengig davon, ob dieses
+                Produkt Dateien anhaengen kann (31.10.2026, Befund von
+                mail-rollout3).
+
+                Der Block stand bis dahin INNERHALB von `allowAttachments`,
+                und dessen Vorgabe ist `false`. CRM, Verwaltung und AI Brain
+                geben die Eigenschaft nicht mit — ihre Verfassen-Seiten senden
+                JSON und koennen gar nichts hochladen. Damit war die zweite
+                Haelfte von Bug #1155 in DREI von vier Produkten weiter
+                unsichtbar: Die Dateien gingen beim Senden mit, zu sehen waren
+                sie nicht.
+
+                Es sind zwei verschiedene Fragen, und sie gehoeren getrennt:
+                „Darf dieses Produkt Dateien anhaengen?" und „Was bringt der
+                Entwurf mit?" Ein Produkt ohne Upload-Weg soll trotzdem zeigen,
+                was mitgeht.
+
+                Der naheliegende Gegenvorschlag — in den drei Produkten
+                `allowAttachments` setzen — waere falsch: Dann erschiene „Datei
+                hinzufuegen", und die gewaehlte Datei fiele still auf den
+                Boden, weil die Seite JSON sendet.
+            */}
+            {vorhandeneAnhaenge.length > 0 && (
+                <div>
+                    {/* Eigene Ueberschrift: Ohne `allowAttachments` gibt es den
+                        Abschnitt darunter gar nicht, und eine Liste ohne Namen
+                        erklaert sich nicht. */}
+                    <Label className="text-xs text-muted-foreground">{labels.attachments}</Label>
+                    <div className="mt-2 space-y-1" data-slot="composer-vorhandene-anhaenge">
+                        {vorhandeneAnhaenge.map((datei, i) => (
+                            <div
+                                key={`${datei.filename}-${i}`}
+                                className="flex items-center justify-between rounded-md border border-dashed bg-muted/20 px-3 py-1.5 text-sm"
+                                title={labels.attachmentFromDraft ?? undefined}
+                            >
+                                <span className="truncate">
+                                    {datei.filename} <span className="text-xs text-muted-foreground">({formatBytes(datei.size)})</span>
+                                </span>
+                                {/*
+                                    Kein Entfernen-Kreuz: Die Datei liegt im
+                                    Entwurf, nicht hier. Ein Kreuz, das sie
+                                    nicht wegbekommt, waere eine Luege; wer
+                                    sie loswerden will, nimmt sie im Entwurf
+                                    heraus. Der gestrichelte Rand sagt dasselbe
+                                    ohne Worte: gehoert dazu, kommt aber nicht
+                                    von hier.
+                                */}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {allowAttachments && (
                 <div>
                     <div className="flex items-center justify-between">
@@ -831,30 +885,6 @@ export function EmailComposerForm({
                         </Button>
                         <input ref={fileInput} type="file" multiple className="hidden" onChange={onFilesPicked} />
                     </div>
-                    {vorhandeneAnhaenge.length > 0 && (
-                        <div className="mt-2 space-y-1" data-slot="composer-vorhandene-anhaenge">
-                            {vorhandeneAnhaenge.map((datei, i) => (
-                                <div
-                                    key={`${datei.filename}-${i}`}
-                                    className="flex items-center justify-between rounded-md border border-dashed bg-muted/20 px-3 py-1.5 text-sm"
-                                    title={labels.attachmentFromDraft ?? undefined}
-                                >
-                                    <span className="truncate">
-                                        {datei.filename} <span className="text-xs text-muted-foreground">({formatBytes(datei.size)})</span>
-                                    </span>
-                                    {/*
-                                        Kein Entfernen-Kreuz: Die Datei liegt im
-                                        Entwurf, nicht hier. Ein Kreuz, das sie
-                                        nicht wegbekommt, waere eine Luege; wer
-                                        sie loswerden will, nimmt sie im Entwurf
-                                        heraus. Der gestrichelte Rand sagt dasselbe
-                                        ohne Worte: gehoert dazu, kommt aber nicht
-                                        von hier.
-                                    */}
-                                </div>
-                            ))}
-                        </div>
-                    )}
                     {attachments.length > 0 && (
                         <div className="mt-2 space-y-1">
                             {attachments.map((file, i) => (
