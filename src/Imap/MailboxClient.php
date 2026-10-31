@@ -1133,23 +1133,21 @@ class MailboxClient implements Mailbox
      */
     private function excludedFromSearch(mixed $ordner): bool
     {
-        try {
-            foreach ((array) $ordner->flags() as $flag) {
-                $kennzeichen = mb_strtolower((string) $flag);
+        $marken = [];
 
-                // `drafts` stand hier bis zum 31.10.2026 daneben. Warum es
-                // dort nicht hingehoert, steht an FolderNames::EXCLUDED_FROM_SEARCH.
-                foreach (['trash', 'junk'] as $unerwuenscht) {
-                    if (str_contains($kennzeichen, $unerwuenscht)) {
-                        return true;
-                    }
-                }
-            }
+        try {
+            $marken = (array) $ordner->flags();
         } catch (\Throwable) {
-            // Server without special-use: the name decides below.
+            // Server without special-use: the name decides on its own.
         }
 
-        return FolderNames::isExcludedFromSearch((string) $ordner->path());
+        /*
+         * Beide Haelften an EINER Stelle, seit dem 31.10.2026. Die
+         * Flaggen-Schleife stand hier und war private — und der Projekt-Manager
+         * hatte sie deshalb abgeschrieben. Als die Entwuerfe aus der
+         * Namensliste herauskamen, widersprach sich seine Kopie selbst.
+         */
+        return FolderNames::isExcludedFromSearch((string) $ordner->path(), $marken);
     }
 
     private function refuseEmpty(Criteria $criteria): void

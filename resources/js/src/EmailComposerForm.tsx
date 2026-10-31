@@ -863,12 +863,41 @@ export function EmailComposerForm({
                 hinzufuegen", und die gewaehlte Datei fiele still auf den
                 Boden, weil die Seite JSON sendet.
             */}
-            {vorhandeneAnhaenge.length > 0 && (
+            {(zeigtAnhaenge || vorhandeneAnhaenge.length > 0) && (
                 <div>
-                    {/* Eigene Ueberschrift: Ohne `allowAttachments` gibt es den
-                        Abschnitt darunter gar nicht, und eine Liste ohne Namen
-                        erklaert sich nicht. */}
-                    <Label className="text-xs text-muted-foreground">{labels.attachments}</Label>
+                    {/*
+                        EIN Abschnitt, nicht zwei (31.10.2026, gemeldet von
+                        mail-rollout3: „zwei Ueberschriften ‚Anhänge'
+                        untereinander").
+                        
+                        Mein eigener Fehler aus v0.190.1. Dort habe ich den
+                        Entwurfs-Block aus `allowAttachments` herausgeloest —
+                        richtig, denn ein Produkt ohne Upload-Weg soll trotzdem
+                        zeigen, was mitgeht — und ihm eine eigene Ueberschrift
+                        gegeben, weil er sonst namenlos dasteht. Uebersehen
+                        habe ich den Fall, in dem es BEIDES gibt.
+                        
+                        Zwei getrennte Bloecke mit einer Ueberschrift im
+                        zweiten waeren auch falsch gewesen: Dann stuende der
+                        Name HINTER der ersten Liste. Also ein Abschnitt, der
+                        erscheint, sobald es etwas zu zeigen ODER etwas zu tun
+                        gibt — und darin in dieser Reihenfolge: Ueberschrift,
+                        Hinzufuegen (nur wenn moeglich), was der Entwurf
+                        mitbringt, was der Mensch gerade angehaengt hat.
+                    */}
+                    <div className="flex items-center justify-between">
+                        <Label className="text-xs text-muted-foreground">{labels.attachments}</Label>
+                        {zeigtAnhaenge && (
+                            <>
+                                <Button type="button" variant="ghost" size="sm" onClick={() => fileInput.current?.click()}>
+                                    <Paperclip className="mr-1 h-3 w-3" />
+                                    {labels.addFile}
+                                </Button>
+                                <input ref={fileInput} type="file" multiple className="hidden" onChange={onFilesPicked} />
+                            </>
+                        )}
+                    </div>
+                    {vorhandeneAnhaenge.length > 0 && (
                     <div className="mt-2 space-y-1" data-slot="composer-vorhandene-anhaenge">
                         {vorhandeneAnhaenge.map((datei, i) => (
                             <div
@@ -891,19 +920,7 @@ export function EmailComposerForm({
                             </div>
                         ))}
                     </div>
-                </div>
-            )}
-
-            {zeigtAnhaenge && (
-                <div>
-                    <div className="flex items-center justify-between">
-                        <Label className="text-xs text-muted-foreground">{labels.attachments}</Label>
-                        <Button type="button" variant="ghost" size="sm" onClick={() => fileInput.current?.click()}>
-                            <Paperclip className="mr-1 h-3 w-3" />
-                            {labels.addFile}
-                        </Button>
-                        <input ref={fileInput} type="file" multiple className="hidden" onChange={onFilesPicked} />
-                    </div>
+                    )}
                     {attachments.length > 0 && (
                         <div className="mt-2 space-y-1">
                             {attachments.map((file, i) => (

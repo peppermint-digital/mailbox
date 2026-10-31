@@ -2,7 +2,7 @@ import { act } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { MailboxFlaeche } from '../src/MailboxFlaeche';
 import type { MailboxSeiteErgebnis } from '../src/useMailboxSeite';
-import { click, render } from './support/render';
+import { click, render, textOf } from './support/render';
 
 /**
  * Die eine Fläche der Mailseite (#8377).
@@ -1023,6 +1023,116 @@ describe('einen Entwurf weiterbearbeiten (31.10.2026)', () => {
         });
 
         expect(container.querySelector('[title="Weiter bearbeiten"]')).toBeNull();
+        unmount();
+    });
+});
+
+describe('einen Suchtreffer aus einem anderen Ordner oeffnen (31.10.2026)', () => {
+    /**
+     * Gemessen von `mail-rollout3` am lebenden AI Brain, Netzwerk
+     * mitgeschrieben: Klick auf einen Treffer aus „Gesendete Elemente" →
+     * `GET /mailbox/3/message/21543?folder=INBOX`. Der Server findet die UID
+     * dort nicht, die Leseansicht bleibt auf der vorherigen Mail stehen. Kein
+     * Fehler, keine Wirkung — der Klick tat einfach nichts.
+     *
+     * KEINE Regression: Die Zeile `offene.open(msg, ordnerPfad)` stand
+     * unverändert seit `9e051e0` (22.10.2026), dem Commit, der diese Fläche
+     * ins Paket brachte. Sichtbar wurde sie erst mit v0.190.0, weil Entwürfe
+     * seitdem in der Suche auftauchen und damit viel mehr Treffer aus fremden
+     * Ordnern kommen.
+     *
+     * `rows.ts` trägt das Feld seit jeher: „Only on search hits: which folder
+     * the message sits in." Es wurde nur nie gelesen.
+     */
+    function trefferZeile(ordner: string | null) {
+        return {
+            msg: {
+                uid: 21543,
+                message_id: '<21543@b>',
+                subject: 'Messung F5 nach dem Senden',
+                from_address: 'ich@example.test',
+                from_name: 'Ich',
+                date: '',
+                has_attachments: false,
+                attachment_count: 0,
+                is_read: true,
+                is_flagged: false,
+                preview: '',
+                folder: ordner,
+                source: 'mailbox',
+            },
+            key: 'k21543',
+            count: 1,
+            isMember: false,
+            isOutbound: false,
+        };
+    }
+
+    function trefferSeite(oeffnen: ReturnType<typeof vi.fn>, ordner: string | null) {
+        const s = seite({
+            ordnerPfad: 'INBOX',
+            offene: { message: null, loading: false, open: oeffnen, close: vi.fn() },
+            zeilen: [trefferZeile(ordner)] as never,
+            sichtbareZeilen: ((z: unknown) => z) as never,
+            /* `ticked` ist eine Menge, keine Liste — die Liste fragt `.has()`. */
+            auswahl: {
+                ticked: new Set(),
+                targets: [],
+                toggle: vi.fn(),
+                clear: vi.fn(),
+                expanded: new Set(),
+                toggleThread: vi.fn(),
+            } as never,
+        });
+
+        // Suchmodus: Nur dann traegt eine Zeile ueberhaupt einen fremden Ordner.
+        (s.suche as unknown as Record<string, unknown>).isSearchMode = true;
+
+        return s;
+    }
+
+    it('gibt den Ordner DER ZEILE mit, nicht den links gewaehlten', () => {
+        const oeffnen = vi.fn();
+        const { container, unmount } = flaeche({ seite: trefferSeite(oeffnen, 'Gesendete Elemente') });
+
+        const zeile = container.querySelector('[data-slot="mail-message-open"]');
+
+        expect(zeile, 'die Trefferzeile wurde nicht gezeichnet').not.toBeNull();
+        click(zeile!);
+
+        expect(oeffnen).toHaveBeenCalled();
+        /*
+         * Das zweite Argument ist, was als `?folder=` an den Server geht.
+         * Genau diese Stelle war falsch.
+         */
+        expect(oeffnen.mock.calls[0]![1]).toBe('Gesendete Elemente');
+        unmount();
+    });
+
+    it('nimmt weiter den gewaehlten Ordner, wenn die Zeile keinen eigenen hat', () => {
+        // Ausserhalb der Suche tragen die Zeilen kein `folder` — dann ist der
+        // links gewählte der richtige, und das muss so bleiben.
+        const oeffnen = vi.fn();
+        const { container, unmount } = flaeche({ seite: trefferSeite(oeffnen, null) });
+
+        click(container.querySelector('[data-slot="mail-message-open"]')!);
+
+        expect(oeffnen.mock.calls[0]![1]).toBe('INBOX');
+        unmount();
+    });
+
+    it('nennt den Ordner am Treffer DEUTSCH, nicht in IMAP-Schreibweise', () => {
+        /*
+         * „Entw&APw-rfe" stand dort roh. Das ist hier nicht nur hässlich: Der
+         * Ordner am Treffer ist seit v0.190.0 die BEGRÜNDUNG dafür, dass ein
+         * Entwurf im Suchergebnis stehen darf, ohne mit einer normalen Mail
+         * verwechselt zu werden. Eine Begründung, die niemand lesen kann,
+         * trägt nicht.
+         */
+        const { container, unmount } = flaeche({ seite: trefferSeite(vi.fn(), 'Entw&APw-rfe') });
+
+        expect(textOf(container)).toContain('Entwürfe');
+        expect(textOf(container)).not.toContain('Entw&APw-rfe');
         unmount();
     });
 });

@@ -6,6 +6,7 @@ import { Skeleton } from './ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { cn } from './ui/utils';
 import { useMailboxPane } from './MailboxPane';
+import { ordnerAnzeigename } from './folders';
 
 /**
  * The message list of a mailbox — flat messages or conversations, one row each.
@@ -341,13 +342,26 @@ export function MailMessageList<M extends RowMessage>({
                                     </span>
                                 </VollerText>
 
-                                {/* In search, WHERE the hit sits is the point. */}
+                                {/*
+                                    In search, WHERE the hit sits is the point — und zwar
+                                    lesbar. Hier stand der ROHE Pfad, also
+                                    `Entw&APw-rfe` statt „Entwürfe" (31.10.2026, gemeldet
+                                    von mail-rollout3).
+                                    
+                                    `ordnerAnzeigename()` gibt es seit v0.188.0; die
+                                    Ordnerliste benutzt es, diese Zeile wurde vergessen.
+                                    Das ist hier nicht nur haesslich: Der Ordner am
+                                    Treffer ist seit v0.190.0 die BEGRUENDUNG dafuer, dass
+                                    ein Entwurf im Suchergebnis stehen darf, ohne mit
+                                    einer normalen Mail verwechselt zu werden. Eine
+                                    Begruendung, die niemand lesen kann, traegt nicht.
+                                */}
                                 {isSearchMode && row.msg.folder && row.msg.folder !== currentFolder ? (
                                     <span
                                         className="shrink-0 rounded bg-muted px-1 text-[10px] text-muted-foreground"
-                                        title={labels.foundInFolder(row.msg.folder)}
+                                        title={labels.foundInFolder(ordnerAnzeigename({ path: row.msg.folder }))}
                                     >
-                                        {row.msg.folder}
+                                        {ordnerAnzeigename({ path: row.msg.folder })}
                                     </span>
                                 ) : isSearchMode && row.msg.source === 'stored' ? (
                                     <span className="shrink-0 rounded bg-muted px-1 text-[10px] text-muted-foreground" title={labels.archivedTitle}>

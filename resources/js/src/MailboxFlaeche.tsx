@@ -716,7 +716,33 @@ export function MailboxFlaeche({
                                         selectedUids={auswahl.ticked}
                                         formatDate={(iso) => (iso ? new Date(iso).toLocaleString('de-DE') : '-')}
                                         formatSender={(m) => m.from_name || m.from_address || 'Unbekannt'}
-                                        onOpen={(msg) => void offene.open(msg, ordnerPfad)}
+                                        /*
+                                             * Der Ordner der ZEILE, nicht der links
+                                             * gewaehlte (31.10.2026, gemessen von
+                                             * mail-rollout3 am lebenden AI Brain).
+                                             *
+                                             * Hier stand seit `9e051e0` — dem Commit, der
+                                             * diese Flaeche ins Paket brachte — nur
+                                             * `ordnerPfad`. Bei einem Suchtreffer aus einem
+                                             * ANDEREN Ordner ging damit
+                                             * `?folder=INBOX` an den Server, der die UID
+                                             * dort nicht findet, und die Leseansicht blieb
+                                             * auf der vorherigen Mail stehen. Kein Fehler,
+                                             * keine Wirkung — der Klick tat einfach nichts.
+                                             *
+                                             * KEINE Regression: Die Zeile ist unveraendert
+                                             * seit dem 22.10.2026. Sichtbar wurde sie erst
+                                             * mit v0.190.0, weil Entwuerfe seitdem in der
+                                             * Suche auftauchen und damit viel mehr Treffer
+                                             * aus fremden Ordnern kommen.
+                                             *
+                                             * `rows.ts` traegt das Feld laengst: „Only on
+                                             * search hits: which folder the message sits
+                                             * in." Es wurde nur nie gelesen. Derselbe
+                                             * Fehler wie #7690 an den Aktionen, eine
+                                             * Ebene frueher.
+                                             */
+                                        onOpen={(msg) => void offene.open(msg, msg.folder ?? ordnerPfad)}
                                         onToggleSelect={auswahl.toggle}
                                         /*
                                          * #1177. Alle drei fuehrt `useMailboxSeite`

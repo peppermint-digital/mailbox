@@ -75,3 +75,34 @@ it('answers for a single kind without walking all of them', function () {
         // this class has no opinion about.
         ->and(FolderNames::looksLike('Sent Mail', 'Gibtsnicht'))->toBeFalse();
 });
+
+describe('die Flaggen gehoeren zur selben Frage (31.10.2026)', function () {
+    /*
+     * Bis dahin stand der Flaggen-Teil `private` in MailboxClient, und nur der
+     * Namensteil war oeffentlich. Der Projekt-Manager hatte sich die Flaggen
+     * deshalb daneben geschrieben — wortgleich.
+     *
+     * Solange beide Haelften dasselbe sagten, fiel es nicht auf. Mit v0.190.0
+     * kamen die Entwuerfe aus der Namensliste heraus, und die Kopie
+     * widersprach sich selbst: ueber den NAMEN erlaubt, ueber die FLAGGE
+     * verboten. Ein Test im Manager ist genau darueber gefallen.
+     *
+     * Eine halb oeffentliche Entscheidung lockt zur Nachbildung.
+     */
+    it('schliesst ueber die Marke aus, auch wenn der Name harmlos ist', function () {
+        expect(FolderNames::isExcludedFromSearch('Ablage 2026', ['\\Trash']))->toBeTrue()
+            ->and(FolderNames::isExcludedFromSearch('Unerwünschtes', ['\\Junk']))->toBeTrue();
+    });
+
+    it('laesst Entwuerfe auch ueber die MARKE durch — beide Haelften sagen dasselbe', function () {
+        // Der Fall, an dem die Kopie im Manager zerbrochen ist.
+        expect(FolderNames::isExcludedFromSearch('Entw&APw-rfe', ['\\Drafts']))->toBeFalse()
+            ->and(FolderNames::isExcludedFromSearch('Konzepte', ['\\Drafts']))->toBeFalse();
+    });
+
+    it('bleibt ohne Flaggen genau wie vorher', function () {
+        // Bestandsaufrufer geben nur den Pfad — fuer sie aendert sich nichts.
+        expect(FolderNames::isExcludedFromSearch('Trash'))->toBeTrue()
+            ->and(FolderNames::isExcludedFromSearch('INBOX'))->toBeFalse();
+    });
+});

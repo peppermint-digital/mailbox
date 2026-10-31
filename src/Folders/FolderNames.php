@@ -72,6 +72,19 @@ class FolderNames
     ];
 
     /**
+     * Die IMAP-Marken, die einen Ordner aus der Suche nehmen.
+     *
+     * `drafts` steht hier NICHT, aus demselben Grund, aus dem es nicht mehr in
+     * {@see EXCLUDED_FROM_SEARCH} steht — die Begruendung dort gilt wortgleich.
+     * Die beiden Listen muessen zusammenpassen, sonst beantwortet dieselbe
+     * Frage je nach Server etwas anderes: Wer `\Drafts` setzt, bekaeme ein
+     * anderes Ergebnis als wer seinen Ordner nur „Entwürfe" nennt.
+     *
+     * @var list<string>
+     */
+    public const EXCLUDED_FLAGS = ['trash', 'junk'];
+
+    /**
      * What the trash folder may be called.
      *
      * ## Why this list is a data-loss boundary, not a convenience
@@ -132,8 +145,47 @@ class FolderNames
      * Matches on substrings, on purpose: real folders are called
      * `INBOX.Trash`, `[Gmail]/Papierkorb`, `Gelöschte Elemente`.
      */
-    public static function isExcludedFromSearch(string $path): bool
+    /**
+     * Darf eine Suche diesen Ordner ueberhaupt durchsuchen?
+     *
+     * ## Die Flaggen zuerst, der Name als Rueckfall
+     *
+     * Dieselbe Reihenfolge wie ueberall in dieser Klasse: Ein Server, der
+     * `\Trash` setzt, hat die Frage beantwortet. Erst ohne Marke entscheidet
+     * der Name.
+     *
+     * ## Warum die Flaggen seit dem 31.10.2026 HIER stehen
+     *
+     * Sie standen vorher in `MailboxClient::excludedFromSearch()` und waren
+     * `private`. Oeffentlich gab es nur den Namensteil — und wer die ganze
+     * Frage beantworten musste, schrieb sich die Flaggen daneben.
+     *
+     * Genau das war im Projekt-Manager passiert: eine wortgleiche Kopie,
+     * erst die Flaggen, dann als Rueckfall diese Methode. Solange beide
+     * Haelften dasselbe sagten, fiel es nicht auf. Mit v0.190.0 kamen die
+     * Entwuerfe aus der Namensliste heraus — und die Kopie widersprach sich
+     * selbst: ueber den NAMEN erlaubt, ueber die FLAGGE weiter verboten.
+     * Ein Test im Manager ist genau darueber gefallen.
+     *
+     * **Eine halb oeffentliche Entscheidung lockt zur Nachbildung.** Deshalb
+     * nimmt diese Methode jetzt beides. Wer nur den Pfad hat, ruft sie wie
+     * bisher; wer die Flaggen hat, reicht sie mit und bekommt die ganze
+     * Antwort.
+     *
+     * @param  list<string>  $flags  die IMAP-Marken des Ordners, falls bekannt
+     */
+    public static function isExcludedFromSearch(string $path, array $flags = []): bool
     {
+        foreach ($flags as $flag) {
+            $marke = mb_strtolower((string) $flag);
+
+            foreach (self::EXCLUDED_FLAGS as $unerwuenscht) {
+                if (str_contains($marke, $unerwuenscht)) {
+                    return true;
+                }
+            }
+        }
+
         return self::containsAny($path, self::EXCLUDED_FROM_SEARCH);
     }
 
