@@ -132,7 +132,24 @@ const ANZEIGENAMEN: readonly { name: string; flag: string | null; aliase: readon
      */
     { name: 'Entwürfe', flag: 'drafts', aliase: ['drafts', 'entwürfe', 'entwurfe', 'entwurf', 'entw&apw-rfe'] },
     { name: 'Gesendet', flag: 'sent', aliase: ['sent', 'sent items', 'sent mail', 'gesendet', 'gesendete objekte', 'gesendete elemente'] },
-    { name: 'Spam', flag: 'junk', aliase: ['junk', 'junk e-mail', 'junk-e-mail', 'spam', 'bulk mail'] },
+    /*
+     * `junk mail` steht hier seit dem 31.10.2026, und zwar nach einer Messung
+     * und nicht nach einem Gefuehl: 85 Ordner aus 8 Postfaechern der Flotte,
+     * jeder einmal durch `ordnerAnzeigename`, in beiden Aufrufformen (Liste
+     * mit Flaggen, Trefferzeile ohne). Null Kollisionen, mit und ohne diesen
+     * Alias.
+     *
+     * Noetig war er fuer die Trefferzeile der Suche: Die kennt nur den Pfad,
+     * also keine Flagge. Dort zeigte „Junk-E-Mail" „Spam", „Junk Mail" aber
+     * den Rohnamen — dieselbe Sorte Ordner, zwei verschiedene Anzeigen, in 6
+     * von 8 Postfaechern. In der LISTE war nie etwas kaputt: Alle acht
+     * Spam-Ordner der Flotte tragen `\Junk`, und die Flagge wird zuerst
+     * gefragt.
+     *
+     * `spambucket` (ein Postfach hat ihn) bleibt absichtlich draussen: ein
+     * selbstgewaehlter Name, und seine Flagge deckt ihn ab.
+     */
+    { name: 'Spam', flag: 'junk', aliase: ['junk', 'junk e-mail', 'junk-e-mail', 'junk mail', 'spam', 'bulk mail'] },
     { name: 'Papierkorb', flag: 'trash', aliase: ['trash', 'deleted', 'deleted items', 'papierkorb', 'gelöschte elemente', 'geloschte elemente', 'gel&apy-schte elemente'] },
     /*
      * `archives` fehlt hier MIT ABSICHT — bitte nicht „ergaenzen".
@@ -140,6 +157,12 @@ const ANZEIGENAMEN: readonly { name: string; flag: string | null; aliase: readon
      * Gemessen am 31.10.2026 von `mail-rollout3` an drei echten Postfaechern:
      * Bei henneberg@ und bei department@ liegen `Archiv` UND `Archives`
      * NEBENEINANDER (letzteres mit Unterordnern `Archives/2023` bis `/2026`).
+     * Die Messung ueber die ganze Flotte am selben Tag (85 Ordner, 8
+     * Postfaecher) hat das bestaetigt und nichts Milderndes gefunden: In
+     * genau diesen zwei Postfaechern stehen beide Ordner da. Zwei weitere
+     * haben `Archives` allein, eines hat `Archive` allein — und weil
+     * `archive` in dieser Tabelle steht, heisst dort genau ein Ordner
+     * „Archiv", was richtig ist.
      * Heute bleiben die beiden unterscheidbar, weil diese Tabelle GENAU
      * vergleicht und `archives` nicht darin steht.
      *

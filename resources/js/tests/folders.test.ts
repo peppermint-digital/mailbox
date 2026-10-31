@@ -126,27 +126,41 @@ describe('Ordner, die sich fast gleich schreiben', () => {
         expect(looksLikeFolder({ path: 'Archives' }, 'Archive')).toBe(true);
     });
 
-    it('laesst „Junk Mail" heute stehen — und das ist eine offene Frage, keine Entscheidung', () => {
+    it('nennt „Junk Mail" Spam — gemessen an 85 Ordnern aus 8 Postfaechern', () => {
         /*
-         * Gefunden am 31.10.2026 bei info@schuelerferienpass.de.
+         * Gefunden am 31.10.2026 bei info@schuelerferienpass.de, entschieden
+         * am selben Tag — mit Daten statt mit einer Vermutung.
          *
-         * Fürs VERHALTEN ist der Ordner abgedeckt: Die andere Tabelle prüft
-         * auf Teiltreffer, und `junk` steckt in `Junk Mail`. Aus der Suche
-         * fliegt er also korrekt heraus.
+         * Die Lage vorher: In der Liste standen `junk`, `junk e-mail`,
+         * `junk-e-mail`, `spam` und `bulk mail`. Ein Ordner namens `Junk`
+         * wurde also zu „Spam", `Junk Mail` aber nicht. Dafuer gab es kein
+         * Prinzip — es war eine Schreibweise, die niemand aufgeschrieben hat.
+         * Ergaenzt wurde sie trotzdem nicht, weil eine Kollision drohte, die
+         * nur an echten Postfaechern zu sehen ist (siehe „Archiv"/„Archives"
+         * oben).
          *
-         * Für die ANZEIGE ist die Lage unsauber, und zwar auf eine Art, die
-         * ich hier festhalte statt sie wegzuerklären: In der Liste stehen
-         * `junk`, `junk e-mail`, `junk-e-mail`, `spam` und `bulk mail`. Ein
-         * Ordner namens `Junk` wird also zu „Spam", `Junk Mail` aber nicht.
-         * Dafür gibt es kein Prinzip — es ist schlicht eine Schreibweise, die
-         * niemand aufgeschrieben hat.
+         * Also gemessen: 85 Ordner aus 8 Postfaechern der Flotte, jeder
+         * einmal durch diese Funktion, und zwar in BEIDEN Aufrufformen, die
+         * im Paket vorkommen — die Ordnerliste gibt `{path, name, flags}`,
+         * die Trefferzeile der Suche gibt `{path}` allein. Ergebnis: null
+         * Kollisionen, mit und ohne diesen Alias. Dazu zwei Befunde:
          *
-         * NICHT ergänzt, weil es eine Kollision erzeugen könnte, die nur an
-         * echten Postfächern zu sehen ist (siehe „Archiv"/„Archives" oben).
-         * Die Frage liegt bei der Rollout-Session. Diese Zusicherung hält den
-         * heutigen Stand fest, damit eine Änderung auffällt und nicht
-         * nebenbei passiert.
+         *   1. In der LISTE war nichts kaputt. Alle acht Spam-Ordner der
+         *      Flotte tragen `\Junk`, und die Flagge wird zuerst gefragt.
+         *   2. In der TREFFERZEILE war es kaputt, bei 6 von 8 Postfaechern:
+         *      ohne Flagge fiel „Junk Mail" auf den Rohnamen zurueck,
+         *      waehrend „Junk-E-Mail" (Konto 3 und 4) „Spam" zeigte. Zwei
+         *      Schreibweisen desselben Ordners, zwei verschiedene Anzeigen.
+         *
+         * Punkt 2 ist der Grund fuer die Ergaenzung. `spambucket` (Konto 11)
+         * bleibt absichtlich draussen: ein selbstgewaehlter Name, und die
+         * Flagge deckt ihn ab.
          */
-        expect(ordnerAnzeigename({ path: 'Junk Mail' })).toBe('Junk Mail');
+        expect(ordnerAnzeigename({ path: 'Junk Mail' })).toBe('Spam');
+        expect(ordnerAnzeigename({ path: 'Junk-E-Mail' })).toBe('Spam');
+
+        // Weiter draussen, weil die Flagge genuegt und der Name einem Menschen gehoert.
+        expect(ordnerAnzeigename({ path: 'INBOX.spambucket', name: 'spambucket' })).toBe('spambucket');
+        expect(ordnerAnzeigename({ path: 'INBOX.spambucket', name: 'spambucket', flags: ['\\Junk'] })).toBe('Spam');
     });
 });
