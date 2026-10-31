@@ -2,6 +2,7 @@
 
 use Illuminate\Http\Request;
 use Peppermint\Mailbox\Contracts\Mailbox;
+use Peppermint\Mailbox\Exceptions\EntwurfsAnhaengeNichtLesbar;
 use Peppermint\Mailbox\Http\BearbeitetEntwuerfe;
 use Peppermint\Mailbox\Mailboxes;
 use Peppermint\Mailbox\Models\MailAccount;
@@ -226,3 +227,61 @@ it('verschluckt einen Fehlschlag beim Abloesen — die Nachricht ist drausssen',
 
     (new TestControllerFuerEntwuerfe)->abloesen(entwurfsKonto(), 'Drafts', 9, true);
 })->throwsNoExceptions();
+
+describe('die zwei Befunde aus dem Rollout von v0.189.0 (31.10.2026)', function () {
+    it('gibt das Konto des Entwurfs mit heraus', function () {
+        /*
+         * Die Verfassen-Seiten setzten ihr Konto auf `accounts[0]`. Bei einem
+         * Entwurf aus einem ZWEITEN Postfach ging die Nachricht ueber das
+         * falsche Konto hinaus — und abgeloest wurde der Entwurf auch nicht,
+         * weil das Abloesen dasselbe falsche Postfach fragt.
+         *
+         * Wer den Entwurf hat, hat auch sein Konto. Also reist es mit, statt
+         * dass drei Produkte es sich zusammensuchen.
+         */
+        Mailboxes::fake(function () {
+            $attrappe = Mockery::mock(Mailbox::class);
+            $attrappe->shouldReceive('message')->andReturn(['subject' => 'Aus dem zweiten Postfach']);
+
+            return $attrappe;
+        });
+
+        $entwurf = (new TestControllerFuerEntwuerfe)->laden(entwurfsAnfrage('Drafts', 3), entwurfsKonto());
+
+        expect($entwurf['account_id'])->toBe(entwurfsKonto()->id);
+    });
+
+    it('bricht ab, statt ohne die Anhaenge des Entwurfs zu senden', function () {
+        /*
+         * Regression gegen den Projekt-Manager, gefunden von mail-rollout3.
+         *
+         * Der Zug verschluckte einen Fehlschlag beim Holen und lieferte eine
+         * leere Liste — die Nachricht ging ohne ihre Anhaenge hinaus, und der
+         * Absender erfuhr es nicht. Der Manager bricht ab, und das ist
+         * richtig: Lieber nicht gesendet als ohne die Rechnung. Eine Mail
+         * laesst sich nicht zurueckholen.
+         */
+        Mailboxes::fake(function () {
+            $attrappe = Mockery::mock(Mailbox::class);
+            $attrappe->shouldReceive('attachments')->andThrow(new RuntimeException('IMAP weg'));
+
+            return $attrappe;
+        });
+
+        expect(fn () => (new TestControllerFuerEntwuerfe)->anhaenge(entwurfsKonto(), 'Drafts', 9))
+            ->toThrow(EntwurfsAnhaengeNichtLesbar::class);
+    });
+
+    it('unterscheidet „keine Anhaenge" von „nicht ladbar"', function () {
+        // Das Erste ist der Normalfall und voellig in Ordnung. Nur das Zweite
+        // darf den Versand aufhalten.
+        Mailboxes::fake(function () {
+            $attrappe = Mockery::mock(Mailbox::class);
+            $attrappe->shouldReceive('attachments')->andReturn([]);
+
+            return $attrappe;
+        });
+
+        expect((new TestControllerFuerEntwuerfe)->anhaenge(entwurfsKonto(), 'Drafts', 9))->toBe([]);
+    });
+});

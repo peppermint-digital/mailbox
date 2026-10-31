@@ -332,3 +332,64 @@ it('laesst den Rumpf unveraendert, wenn kein Zitat mitkommt', function () {
 
     expect($controller->nachricht?->html)->toBe('<p>Gern</p><blockquote>Ihre Frage</blockquote>');
 });
+
+describe('ein wiederaufgenommener Entwurf (31.10.2026)', function () {
+    afterEach(fn () => Peppermint\Mailbox\Mailboxes::fake(null));
+
+    it('sendet GAR NICHT, wenn die Anhaenge des Entwurfs nicht ladbar sind', function () {
+        /*
+         * Regression gegen den Projekt-Manager, gefunden von mail-rollout3
+         * beim Nachzug von v0.189.0.
+         *
+         * Der Zug verschluckte den Fehlschlag und schickte die Nachricht ohne
+         * ihre Anhaenge. „Lieber nicht gesendet als ohne die Rechnung": Eine
+         * Mail laesst sich nicht zurueckholen, ein zweiter Versuch kostet eine
+         * Minute.
+         *
+         * Woran man sieht, dass wirklich VOR dem Versand abgebrochen wird und
+         * nicht erst danach: Das Konto dieser Probe zeigt auf einen toten
+         * SMTP-Port. Ginge der Versand los, stuende in der Antwort die
+         * SMTP-Absage. Es steht die Entwurfs-Absage da.
+         */
+        Peppermint\Mailbox\Mailboxes::fake(function () {
+            $attrappe = Mockery::mock(Peppermint\Mailbox\Contracts\Mailbox::class);
+            $attrappe->shouldReceive('attachments')->andThrow(new RuntimeException('IMAP weg'));
+
+            return $attrappe;
+        });
+
+        $antwort = (new TestControllerFuerVersand(versandKonto()))->send(versandAnfrage([
+            'to' => [['email' => 'kunde@example.test']],
+            'subject' => 'Angebot',
+            'body_html' => '<p>Anbei</p>',
+            'draft_folder' => 'Entw&APw-rfe',
+            'draft_uid' => 9,
+        ]), 1);
+
+        $daten = $antwort->getData(true);
+
+        expect($daten['success'])->toBeFalse()
+            ->and($daten['message'])->toContain('Anhänge des Entwurfs')
+            ->and($daten['message'])->toContain('NICHT gesendet')
+            ->and($daten['message'])->not->toContain('konnte nicht versendet werden');
+    });
+
+    it('laesst eine Nachricht OHNE Entwurf unberuehrt', function () {
+        // Der Normalfall darf von alldem nichts merken: kein Entwurf, kein
+        // Postfachzugriff, und die Absage kommt wie bisher vom Versand.
+        Peppermint\Mailbox\Mailboxes::fake(function () {
+            $attrappe = Mockery::mock(Peppermint\Mailbox\Contracts\Mailbox::class);
+            $attrappe->shouldNotReceive('attachments');
+
+            return $attrappe;
+        });
+
+        $antwort = (new TestControllerFuerVersand(versandKonto()))->send(versandAnfrage([
+            'to' => [['email' => 'kunde@example.test']],
+            'subject' => 'Ohne Entwurf',
+            'body_html' => '<p>Text</p>',
+        ]), 1);
+
+        expect($antwort->getData(true)['message'])->toContain('konnte nicht versendet werden');
+    });
+});

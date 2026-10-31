@@ -3,6 +3,7 @@
 namespace Peppermint\Mailbox\Http;
 
 use Illuminate\Http\Request;
+use Peppermint\Mailbox\Exceptions\EntwurfsAnhaengeNichtLesbar;
 use Peppermint\Mailbox\Mailboxes;
 use Peppermint\Mailbox\Models\MailAccount;
 
@@ -57,7 +58,7 @@ trait BearbeitetEntwuerfe
      * Beides ist kein Fehler: Wer den Entwurf inzwischen woanders geloescht
      * hat, soll eine leere Maske bekommen und keine Fehlerseite.
      *
-     * @return array{folder: string, uid: int|string, to: array, cc: array, bcc: array, subject: string, body_html: string, attachments: list<array{filename: string, size: int}>}|null
+     * @return array{account_id: int|string, folder: string, uid: int|string, to: array, cc: array, bcc: array, subject: string, body_html: string, attachments: list<array{filename: string, size: int}>}|null
      */
     protected function entwurfAusAnfrage(Request $request, MailAccount $konto): ?array
     {
@@ -81,6 +82,20 @@ trait BearbeitetEntwuerfe
         }
 
         return [
+            /*
+             * Das Konto reist MIT dem Entwurf (31.10.2026, Befund von
+             * mail-rollout3).
+             *
+             * Die Verfassen-Seiten in CRM, Verwaltung und AI Brain setzen ihr
+             * Konto auf `accounts[0]` — die erste Zeile der Liste. Bei einem
+             * Entwurf aus einem ZWEITEN Postfach ginge die Nachricht damit
+             * ueber das falsche Konto hinaus, und abgeloest wuerde der Entwurf
+             * auch nicht: Das Abloesen fragt dasselbe falsche Postfach.
+             *
+             * Das Produkt soll das nicht selbst zusammensuchen muessen. Wer
+             * den Entwurf hat, hat auch sein Konto — also reist es mit.
+             */
+            'account_id' => $konto->id,
             'folder' => $ordner,
             'uid' => is_numeric($uid) ? (int) $uid : (string) $uid,
             'to' => $nachricht['to'] ?? [],
@@ -133,7 +148,28 @@ trait BearbeitetEntwuerfe
     /**
      * Die Anhaenge des Entwurfs, mit Bytes — VOR dem Versand zu holen.
      *
+     * ## Ein Fehlschlag hier bricht ab und sendet NICHT
+     *
+     * Hier stand bis zum 31.10.2026 ein `catch`, das den Fehler meldete und
+     * eine leere Liste zurueckgab. Die Nachricht ging dann ohne ihre Anhaenge
+     * hinaus — und der Absender erfuhr es nicht.
+     *
+     * Der Projekt-Manager bricht in diesem Fall ab, und das ist die richtige
+     * Entscheidung: **Lieber nicht gesendet als ohne die Rechnung.** Eine Mail
+     * ohne den angekuendigten Anhang laesst sich nicht zurueckholen; ein
+     * Abbruch mit klarer Meldung kostet einen zweiten Versuch.
+     *
+     * Beim Umzug ins Paket war das verlorengegangen — gefunden von
+     * `mail-rollout3` beim Vergleich gegen den Manager. Genau die Sorte
+     * Einzelheit, die beim Herausziehen einer Faehigkeit als Kleinkram
+     * aussieht.
+     *
+     * KEINE Anhaenge zu haben ist etwas anderes als sie nicht holen zu
+     * KOENNEN. Das Erste ist eine leere Liste, das Zweite diese Ausnahme.
+     *
      * @return list<array{contents: string, filename: string, mime?: string|null}>
+     *
+     * @throws EntwurfsAnhaengeNichtLesbar
      */
     protected function entwurfsAnhaenge(MailAccount $konto, ?string $ordner, int|string|null $uid): array
     {
@@ -146,7 +182,11 @@ trait BearbeitetEntwuerfe
         } catch (\Throwable $e) {
             report($e);
 
-            return [];
+            throw new EntwurfsAnhaengeNichtLesbar(
+                'Die Anhänge des Entwurfs konnten nicht geladen werden. Die Nachricht wurde NICHT gesendet — '
+                .'ohne ihre Anhänge hinauszugehen wäre schlimmer als ein zweiter Versuch.',
+                previous: $e,
+            );
         }
 
         return array_values(array_map(static fn (array $datei): array => [

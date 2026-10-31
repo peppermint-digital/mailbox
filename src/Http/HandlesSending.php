@@ -4,6 +4,7 @@ namespace Peppermint\Mailbox\Http;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Peppermint\Mailbox\Exceptions\EntwurfsAnhaengeNichtLesbar;
 use Peppermint\Mailbox\Mailboxes;
 use Peppermint\Mailbox\Models\MailAccount;
 use Peppermint\Mailbox\Sending\Mailer;
@@ -126,6 +127,29 @@ trait HandlesSending
             'References' => $daten['references'] ?? null,
         ]);
 
+        /*
+         * Die Anhaenge des Entwurfs ZUERST, und ein Fehlschlag bricht hier ab
+         * (31.10.2026, Regression gegen den Manager, gefunden von
+         * mail-rollout3).
+         *
+         * Vorher lieferte der Zug bei einem Fehlschlag eine leere Liste, und
+         * die Nachricht ging ohne ihre Anhaenge hinaus — ohne dass der
+         * Absender es erfuhr. Lieber nicht gesendet als ohne die Rechnung:
+         * Eine Mail laesst sich nicht zurueckholen, ein zweiter Versuch
+         * kostet eine Minute.
+         *
+         * Vor dem Bauen der Nachricht und damit lange vor dem Versand — die
+         * Absage hier ist eine echte Absage und kein halber Zustand.
+         */
+        try {
+            $entwurfsAnhaenge = $this->entwurfsAnhaenge($konto, $entwurfsordner, $entwurfsUid);
+        } catch (EntwurfsAnhaengeNichtLesbar $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 502);
+        }
+
         $nachricht = new Outgoing(
             subject: $daten['subject'],
             html: $daten['body_html'].($daten['quoted_html'] ?? ''),
@@ -140,7 +164,7 @@ trait HandlesSending
              * Dateien. Wer erst nach dem Senden holt, holt aus einem Ordner,
              * den er gerade leert.
              */
-            rawAttachments: $this->entwurfsAnhaenge($konto, $entwurfsordner, $entwurfsUid),
+            rawAttachments: $entwurfsAnhaenge,
             headers: $kopfzeilen,
         );
 

@@ -18,12 +18,17 @@ import type { EmailAddress } from './EmailComposerForm';
  * ## Was das Produkt damit tut
  *
  * ```tsx
- * const entwurf = useEntwurfVerfassen(draft);   // `draft` kommt vom Controller
+ * const entwurf = useEntwurfVerfassen(draft, { kontoId: accounts[0]?.id ?? null });
  *
- * // … <VerfassenFeld to={entwurf.an} onToChange={entwurf.setAn} … />
+ * // … <VerfassenFeld accountId={entwurf.kontoId} onAccountIdChange={entwurf.setKontoId}
+ * //                  to={entwurf.an} onToChange={entwurf.setAn} … />
  *
- * body: JSON.stringify({ …, ...entwurf.sendeFelder })
+ * fetch(`/mailbox/${entwurf.kontoId}/send`, { body: JSON.stringify({ …, ...entwurf.sendeFelder }) })
  * ```
+ *
+ * **Die Adresse des Sendens haengt an `entwurf.kontoId`, nicht an
+ * `accounts[0]`.** Genau dort sass der Fehler: Ein Entwurf aus dem zweiten
+ * Postfach wurde ueber das erste verschickt.
  *
  * ## Die Anhaenge sind absichtlich keine `File`
  *
@@ -35,6 +40,15 @@ import type { EmailAddress } from './EmailComposerForm';
  */
 
 export interface VerfasstenEntwurf {
+    /**
+     * Das Postfach, in dem der Entwurf liegt.
+     *
+     * Reist mit, seit dem 31.10.2026: Die Verfassen-Seiten setzten ihr Konto
+     * auf `accounts[0]`. Bei einem Entwurf aus einem ZWEITEN Postfach ging die
+     * Nachricht damit ueber das falsche Konto hinaus — und abgeloest wurde der
+     * Entwurf auch nicht, weil das Abloesen dasselbe falsche Postfach fragt.
+     */
+    account_id: number | string;
     folder: string;
     uid: number | string;
     to?: EmailAddress[];
@@ -45,6 +59,14 @@ export interface VerfasstenEntwurf {
 }
 
 export interface EntwurfVerfassen {
+    /**
+     * Das vorgewaehlte Postfach — das des Entwurfs, sonst die Vorbelegung.
+     *
+     * Das Produkt reicht es an die Kontoauswahl durch, statt selbst
+     * `accounts[0]` zu nehmen.
+     */
+    kontoId: number | null;
+    setKontoId: (wert: number | null) => void;
     an: EmailAddress[];
     setAn: (wert: EmailAddress[]) => void;
     kopie: EmailAddress[];
@@ -65,19 +87,24 @@ export interface EntwurfVerfassen {
 
 export function useEntwurfVerfassen(
     entwurf: VerfasstenEntwurf | null | undefined,
-    vorbelegung?: { an?: EmailAddress[] },
+    vorbelegung?: { an?: EmailAddress[]; kontoId?: number | null },
 ): EntwurfVerfassen {
     /*
      * Anfangswerte, nicht laufend abgeglichen: Der Entwurf kommt mit der Seite
      * und aendert sich waehrend des Schreibens nicht. Ein `useEffect`, der ihn
      * nachtraegt, waere genau der Rueckspringer aus dem Kommentar oben.
      */
+    const [kontoId, setKontoId] = useState<number | null>(
+        entwurf ? Number(entwurf.account_id) : (vorbelegung?.kontoId ?? null),
+    );
     const [an, setAn] = useState<EmailAddress[]>(entwurf?.to ?? vorbelegung?.an ?? []);
     const [kopie, setKopie] = useState<EmailAddress[]>(entwurf?.cc ?? []);
     const [betreff, setBetreff] = useState(entwurf?.subject ?? '');
     const [inhalt, setInhalt] = useState(entwurf?.body_html ?? '');
 
     return {
+        kontoId,
+        setKontoId,
         an,
         setAn,
         kopie,
