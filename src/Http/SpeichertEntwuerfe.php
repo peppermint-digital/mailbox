@@ -82,6 +82,7 @@ use Peppermint\Mailbox\Sending\Outgoing;
 trait SpeichertEntwuerfe
 {
     use BearbeitetEntwuerfe;
+    use Feldnamen;
 
     abstract protected function accountFor(int $account): MailAccount;
 
@@ -135,7 +136,13 @@ trait SpeichertEntwuerfe
              */
             'replace_folder' => ['nullable', 'string'],
             'replace_uid' => ['nullable'],
-        ]);
+            /*
+             * Die deutschen Feldnamen im DRITTEN Argument, nicht im zweiten:
+             * Das zweite sind eigene Saetze, und die will hier niemand —
+             * Laravels Saetze sind richtig, nur die Feldnamen darin waren
+             * Datenbankspalten. Siehe {@see Feldnamen}.
+             */
+        ], [], $this->feldnamen());
 
         $konto = $this->accountFor($account);
         $postfach = Mailboxes::for($konto);

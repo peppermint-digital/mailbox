@@ -55,6 +55,7 @@ trait HandlesSending
      * anderen drei erst wieder haetten gelernt werden muessen.
      */
     use BearbeitetEntwuerfe;
+    use Feldnamen;
 
     /**
      * Das Konto, ueber das gesendet werden soll — oder ein Abbruch.
@@ -115,7 +116,12 @@ trait HandlesSending
              */
             'draft_folder' => ['nullable', 'string'],
             'draft_uid' => ['nullable'],
-        ]);
+            /*
+             * Die deutschen Feldnamen im DRITTEN Argument, nicht im zweiten:
+             * Laravels Saetze sind richtig, nur die Feldnamen darin waren
+             * Datenbankspalten. Siehe {@see Feldnamen}.
+             */
+        ], [], $this->feldnamen());
 
         $konto = $this->accountFor($account);
 
@@ -217,7 +223,7 @@ trait HandlesSending
             'source_type' => ['required', 'string'],
             'source_folder' => ['required_if:source_type,imap', 'nullable', 'string'],
             'source_uid' => ['required_if:source_type,imap', 'nullable'],
-        ]);
+        ], [], $this->feldnamen());
 
         $konto = $this->accountFor($account);
 
