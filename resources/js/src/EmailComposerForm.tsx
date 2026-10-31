@@ -183,6 +183,19 @@ export interface EmailComposerFormProps {
 
     accounts?: ComposerAccount[];
     signatureAccountId?: number | null;
+    /**
+     * Die Blindkopie anbieten. **Vorgabe: ja**, seit dem 31.10.2026.
+     *
+     * Vorher `false`, und damit musste jedes Produkt daran denken — drei von
+     * vier taten es nicht, und ihre Verfassen-Seite konnte kein BCC. Bastians
+     * Ansage beim Vergleich der vier Seiten war „voller Umfang ueberall", und
+     * eine Faehigkeit, die jedes Produkt erst einschalten muss, ist in drei von
+     * vier Produkten vergessen.
+     *
+     * Was dadurch erscheint, ist der SCHALTER neben „Cc", nicht das Feld: Das
+     * geht erst auf, wenn jemand ihn drueckt oder schon eine Adresse
+     * darinsteht. Ein Produkt, das BCC ausdruecklich nicht will, setzt `false`.
+     */
     allowBcc?: boolean;
     allowAttachments?: boolean;
     sending?: boolean;
@@ -361,7 +374,7 @@ export function EmailComposerForm({
     onAttachmentsChange,
     accounts = [],
     signatureAccountId = null,
-    allowBcc = false,
+    allowBcc = true,
     allowAttachments,
     sending = false,
     submitLabel,

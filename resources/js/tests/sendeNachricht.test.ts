@@ -153,3 +153,94 @@ describe('sendeNachricht', () => {
         expect(ergebnis.message).toContain('keine Verbindung');
     });
 });
+
+describe('die Fehler AM FELD aus einer 422', () => {
+    /*
+     * Vorher las diese Funktion aus einer 422 nur `message` und warf `errors`
+     * weg. CRM, Verwaltung und AI Brain konnten die Eigenschaft `errors` des
+     * Formulars darum gar nicht fuellen und zeigten eine Meldung oben — also
+     * „etwas stimmt nicht" statt „diese Adresse stimmt nicht".
+     * Gefunden von `mail-2b` beim Vergleich der vier Verfassen-Seiten.
+     */
+    it('bringt sie auf die Feldnamen des Formulars', async () => {
+        /*
+         * DER Punkt. Laravel meldet `to.0.email`, das Formular kennt `to`.
+         * Wer die Schluessel durchreicht, wie sie kommen, bekommt ein
+         * `errors`, das fuer jedes Feld „kein Fehler" sagt — und dann sieht
+         * ein falscher erster Empfaenger genauso aus wie ein verschluckter
+         * Fehler.
+         */
+        const holen = vi.fn(async () =>
+            antwort(
+                {
+                    message: 'Die Angaben sind unvollständig.',
+                    errors: {
+                        'to.0.email': ['Keine gültige Adresse.'],
+                        subject: ['Der Betreff fehlt.'],
+                        'attachments.2': ['Die Datei ist zu groß.'],
+                    },
+                },
+                false,
+                422,
+            ),
+        );
+
+        const ergebnis = await sendeNachricht('/mailbox/1/send', DATEN, [], { csrfToken: 'x', fetch: holen as never });
+
+        expect(ergebnis.ok).toBe(false);
+        expect(ergebnis.felder).toEqual({
+            to: 'Keine gültige Adresse.',
+            subject: 'Der Betreff fehlt.',
+            attachments: 'Die Datei ist zu groß.',
+        });
+        // Der Satz oben bleibt — er sagt, DASS etwas nicht stimmt.
+        expect(ergebnis.message).toBe('Die Angaben sind unvollständig.');
+    });
+
+    it('nimmt je Feld den ERSTEN Satz', async () => {
+        // Drei falsche Adressen ergeben drei Saetze unter `to.*`. Am Feld
+        // steht einer, und der erste gehoert zur ersten Stelle, an der man
+        // nachsieht.
+        const holen = vi.fn(async () =>
+            antwort(
+                {
+                    errors: {
+                        'to.0.email': ['Die erste Adresse stimmt nicht.'],
+                        'to.1.email': ['Die zweite Adresse stimmt nicht.'],
+                    },
+                },
+                false,
+                422,
+            ),
+        );
+
+        const ergebnis = await sendeNachricht('/mailbox/1/send', DATEN, [], { csrfToken: 'x', fetch: holen as never });
+
+        expect(ergebnis.felder).toEqual({ to: 'Die erste Adresse stimmt nicht.' });
+    });
+
+    it('setzt `felder` NICHT, wenn der Server keine schickt', async () => {
+        /*
+         * Ein leeres Objekt ist etwas anderes als „keine Angabe" — am
+         * Formular liest es sich wie „alle Felder in Ordnung", und dann steht
+         * der Satz oben ohne Grund da.
+         */
+        const holen = vi.fn(async () => antwort({ message: 'Das Postfach antwortet nicht.' }, false, 502));
+
+        const ergebnis = await sendeNachricht('/mailbox/1/send', DATEN, [], { csrfToken: 'x', fetch: holen as never });
+
+        expect(ergebnis.ok).toBe(false);
+        expect(ergebnis.felder).toBeUndefined();
+    });
+
+    it('uebersteht ein `errors`, das keine Liste enthaelt', async () => {
+        // Nicht jeder Server haengt Saetze in Listen. Ein blanker Satz ist
+        // genauso brauchbar, und daran abzustuerzen waere die schlechteste
+        // Art, einen Validierungsfehler zu melden.
+        const holen = vi.fn(async () => antwort({ errors: { subject: 'Der Betreff fehlt.', to: 42 } }, false, 422));
+
+        const ergebnis = await sendeNachricht('/mailbox/1/send', DATEN, [], { csrfToken: 'x', fetch: holen as never });
+
+        expect(ergebnis.felder).toEqual({ subject: 'Der Betreff fehlt.' });
+    });
+});

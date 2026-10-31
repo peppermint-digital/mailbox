@@ -165,6 +165,67 @@ export interface SendeErgebnis {
     message_id?: string;
     /** `null` heisst: gar nicht versucht, weil der Anbieter selbst ablegt. */
     copied_to_sent?: boolean | null;
+    /**
+     * Die Fehler AM FELD, wie das Formular sie erwartet: `{ to, subject, … }`.
+     *
+     * Fehlte bis zum 31.10.2026, und die Folge war sichtbar: Diese Funktion
+     * las aus einer 422 nur `message` und warf `errors` weg. CRM, Verwaltung
+     * und AI Brain konnten die Eigenschaft `errors` des Formulars darum gar
+     * nicht fuellen und zeigten stattdessen eine Meldung oben — also „etwas
+     * stimmt nicht" statt „diese Adresse stimmt nicht". Gefunden von `mail-2b`
+     * beim Vergleich der vier Verfassen-Seiten.
+     *
+     * Nicht gesetzt, wenn der Server keine schickt. Ein leeres Objekt waere
+     * etwas anderes als „keine Angabe" und liest sich am Formular wie „alle
+     * Felder in Ordnung".
+     */
+    felder?: Record<string, string>;
+}
+
+/**
+ * Die Feldfehler einer Antwort, auf die Feldnamen des Formulars gebracht.
+ *
+ * ## Warum hier etwas umbenannt wird
+ *
+ * Laravel meldet den Fehler an der Stelle, an der er steht: `to.0.email`,
+ * `attachments.2`, `cc.1.name`. Das Formular kennt `to`, `attachments`, `cc`.
+ * Wer die Schluessel durchreicht, wie sie kommen, bekommt ein `errors`, das
+ * fuer jedes Feld „kein Fehler" sagt — und dann sieht ein falscher erster
+ * Empfaenger genauso aus wie ein verschluckter Fehler.
+ *
+ * Also der erste Abschnitt vor dem Punkt. Das ist keine Liste von Sonderfaellen,
+ * die mit dem naechsten Feld laenger wird, sondern die Regel, nach der Laravel
+ * diese Schluessel baut.
+ *
+ * ## Je Feld der erste Satz
+ *
+ * Drei falsche Adressen ergeben drei Saetze unter `to.*`. Am Feld steht einer.
+ * Der erste ist die ehrlichste Wahl: Er gehoert zur ersten Stelle, an der man
+ * nachsieht. Sie aneinanderzuhaengen gaebe eine Zeile, die unter dem Feld nicht
+ * mehr lesbar ist.
+ */
+function feldfehler(roh: unknown): Record<string, string> | undefined {
+    if (roh === null || typeof roh !== 'object') {
+        return undefined;
+    }
+
+    const felder: Record<string, string> = {};
+
+    for (const [schluessel, wert] of Object.entries(roh as Record<string, unknown>)) {
+        const satz = Array.isArray(wert) ? wert.find((eintrag) => typeof eintrag === 'string') : wert;
+
+        if (typeof satz !== 'string' || satz === '') {
+            continue;
+        }
+
+        const feld = schluessel.split('.')[0] || schluessel;
+
+        if (!(feld in felder)) {
+            felder[feld] = satz;
+        }
+    }
+
+    return Object.keys(felder).length > 0 ? felder : undefined;
 }
 
 /**
@@ -283,6 +344,7 @@ export async function sendeNachricht(
         return {
             ok: false,
             message: satz ?? `Die Nachricht konnte nicht versendet werden (HTTP ${antwort.status}).`,
+            felder: feldfehler(inhalt.errors),
         };
     }
 

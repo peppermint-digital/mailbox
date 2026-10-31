@@ -98,3 +98,46 @@ describe('useEntwurfVerfassen', () => {
         unmount();
     });
 });
+
+describe('die Blindkopie (31.10.2026)', () => {
+    /*
+     * Eine Luecke und keine Entscheidung: `BearbeitetEntwuerfe` liefert `bcc`
+     * mit, `HandlesSending::send` nimmt es an — nur das Stueck dazwischen
+     * fehlte. Gefunden von `mail-2b` beim Vergleich der vier Verfassen-Seiten.
+     */
+    it('gibt ein BCC-Feld heraus, damit der Zustand NICHT im Produkt landet', () => {
+        const { gesehen, unmount } = probe(null);
+
+        expect(gesehen.aktuell!.blindkopie).toEqual([]);
+
+        act(() => gesehen.aktuell!.setBlindkopie([{ email: 'kopie@example.test' }]));
+
+        expect(gesehen.aktuell!.blindkopie).toEqual([{ email: 'kopie@example.test' }]);
+
+        unmount();
+    });
+
+    it('faengt bei einem Entwurf LEER an — im abgelegten Entwurf steht kein BCC', () => {
+        /*
+         * Nicht „noch nicht umgesetzt": Ein Entwurf im IMAP-Ordner traegt
+         * keinen `Bcc`-Kopf, weil der beim Senden entfernt wird. Der Server
+         * liefert darum `bcc => []`, und das ist die Wahrheit und keine
+         * Luecke. Der Test haelt es fest, damit niemand es „reparieren" geht.
+         */
+        const { gesehen, unmount } = probe(ENTWURF);
+
+        expect(gesehen.aktuell!.blindkopie).toEqual([]);
+
+        unmount();
+    });
+
+    it('nimmt ein BCC an, wenn der Entwurf doch eines mitbringt', () => {
+        // Falls ein Anbieter es doch ablegt: dann gehoert es ins Feld und
+        // nicht weggeworfen.
+        const { gesehen, unmount } = probe({ ...ENTWURF, bcc: [{ email: 'still@example.test' }] });
+
+        expect(gesehen.aktuell!.blindkopie).toEqual([{ email: 'still@example.test' }]);
+
+        unmount();
+    });
+});

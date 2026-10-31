@@ -53,6 +53,15 @@ export interface VerfasstenEntwurf {
     uid: number | string;
     to?: EmailAddress[];
     cc?: EmailAddress[];
+    /**
+     * Blindkopie — in einem abgelegten Entwurf steht sie NICHT.
+     *
+     * `BearbeitetEntwuerfe` liefert hier immer `[]`, und das ist richtig: Ein
+     * Entwurf im IMAP-Ordner traegt keinen `Bcc`-Kopf, weil der beim Senden
+     * entfernt wird. Das Feld steht trotzdem hier und nicht nur im Formular,
+     * damit es EINEN Ort fuer den Zustand gibt — siehe unten.
+     */
+    bcc?: EmailAddress[];
     subject?: string;
     body_html?: string;
     attachments?: { filename: string; size: number }[];
@@ -71,6 +80,21 @@ export interface EntwurfVerfassen {
     setAn: (wert: EmailAddress[]) => void;
     kopie: EmailAddress[];
     setKopie: (wert: EmailAddress[]) => void;
+    /**
+     * Die Blindkopie.
+     *
+     * Stand bis zum 31.10.2026 nicht hier, und das war eine Luecke und keine
+     * Entscheidung: `BearbeitetEntwuerfe` liefert `bcc` mit,
+     * `HandlesSending::send` nimmt es an — nur das Stueck dazwischen fehlte.
+     * Gefunden von `mail-2b` beim Vergleich der vier Verfassen-Seiten.
+     *
+     * Ein Produkt KOENNTE es mit eigenem `useState` halten. Dann liegt der
+     * Zustand des Formulars an zwei Stellen, und bei der naechsten Ergaenzung
+     * weiss niemand mehr, welche fuehrt — genau das, wogegen der Kommentar
+     * oben an dieser Datei argumentiert.
+     */
+    blindkopie: EmailAddress[];
+    setBlindkopie: (wert: EmailAddress[]) => void;
     betreff: string;
     setBetreff: (wert: string) => void;
     inhalt: string;
@@ -99,6 +123,7 @@ export function useEntwurfVerfassen(
     );
     const [an, setAn] = useState<EmailAddress[]>(entwurf?.to ?? vorbelegung?.an ?? []);
     const [kopie, setKopie] = useState<EmailAddress[]>(entwurf?.cc ?? []);
+    const [blindkopie, setBlindkopie] = useState<EmailAddress[]>(entwurf?.bcc ?? []);
     const [betreff, setBetreff] = useState(entwurf?.subject ?? '');
     const [inhalt, setInhalt] = useState(entwurf?.body_html ?? '');
 
@@ -109,6 +134,8 @@ export function useEntwurfVerfassen(
         setAn,
         kopie,
         setKopie,
+        blindkopie,
+        setBlindkopie,
         betreff,
         setBetreff,
         inhalt,
