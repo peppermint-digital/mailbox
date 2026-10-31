@@ -425,6 +425,21 @@ export const germanLabels = {
         insertTable: 'Tabelle einfügen',
         undo: 'Rückgängig (Strg+Z)',
         redo: 'Wiederholen (Strg+Y)',
+        /*
+         * Schreibassistent und Spracheingabe (31.10.2026). Sie erscheinen nur,
+         * wo ein Dienst dahintersteht — ohne ihn zeichnet der Editor die
+         * Knöpfe gar nicht erst.
+         */
+        assistent: 'Schreibassistent',
+        korrigieren: 'Rechtschreibung korrigieren',
+        umformulieren: 'Umformulieren',
+        formell: 'Formeller formulieren',
+        freundlich: 'Freundlicher formulieren',
+        kuerzer: 'Kürzer fassen',
+        assistentLaeuft: 'Der Assistent arbeitet …',
+        diktat: 'Spracheingabe',
+        diktatLaeuft: 'Aufnahme läuft — zum Beenden noch einmal tippen.',
+        diktatTippt: 'Wird abgetippt …',
     },
 
 } as const;

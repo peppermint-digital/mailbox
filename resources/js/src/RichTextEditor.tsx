@@ -1,4 +1,7 @@
 import { Color } from '@tiptap/extension-color';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
+import { useDiktat, type DiktatQuelle } from './useDiktat';
+import { useSchreibhilfe, type SchreibhilfeQuelle, type SchreibhilfeStil } from './useSchreibhilfe';
 import { Highlight } from '@tiptap/extension-highlight';
 import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
@@ -29,9 +32,11 @@ import {
     List,
     ListOrdered,
     Loader2,
+    Mic,
     Minus,
     Quote,
     Redo2,
+    Sparkles,
     Strikethrough,
     Table as TableIcon,
     Underline as UnderlineIcon,
@@ -97,6 +102,18 @@ export interface RichTextEditorLabels {
     insertTable: string;
     undo: string;
     redo: string;
+    /** Der Schreibassistent. Optional — ohne Quelle gibt es ihn ohnehin nicht. */
+    assistent?: string;
+    korrigieren?: string;
+    umformulieren?: string;
+    formell?: string;
+    freundlich?: string;
+    kuerzer?: string;
+    assistentLaeuft?: string;
+    /** Die Spracheingabe. */
+    diktat?: string;
+    diktatLaeuft?: string;
+    diktatTippt?: string;
 }
 
 export interface RichTextEditorProps {
@@ -117,13 +134,39 @@ export interface RichTextEditorProps {
      */
     onImageUpload?: (file: File) => Promise<string>;
     /**
+     * Der Schreibassistent. Fehlt er, gibt es den Knopf NICHT.
+     *
+     * Dieselbe Regel wie beim Anhaengen und bei den Mail-Knoepfen ohne
+     * Sendeweg: Ein Knopf ohne Wirkung sieht aus wie ein Defekt, nicht wie
+     * eine fehlende Funktion. Die Faehigkeit entscheidet, kein Schalter.
+     */
+    schreibhilfe?: SchreibhilfeQuelle | null;
+    /**
+     * Knotennamen, die der Assistent nicht anfassen darf — im Projekt-Manager
+     * `['signatureBlock']`. Das Produkt nennt seine; das Paket raet nicht.
+     */
+    schreibhilfeTabu?: string[];
+    /** Die Spracheingabe. Fehlt sie, gibt es den Knopf NICHT. */
+    diktat?: DiktatQuelle | null;
+    /**
      * The product's own buttons at the end of the toolbar.
      *
-     * Formatting is the same everywhere — bold is bold. What is NOT the same
-     * is what a product can additionally do with the text: the Manager has an
-     * assistant that rephrases and corrects, and dictation. Those hang here
-     * instead of forcing a choice between "every product gets them" and "the
-     * Manager keeps its own editor".
+     * Formatting is the same everywhere — bold is bold.
+     *
+     * ## Was hier bis zum 31.10.2026 stand, und warum es weg ist
+     *
+     * „What is NOT the same is what a product can additionally do with the
+     * text: the Manager has an assistant that rephrases and corrects, and
+     * dictation. Those hang here instead of forcing a choice between 'every
+     * product gets them' and 'the Manager keeps its own editor'."
+     *
+     * Die Wahl war falsch gestellt. Ein Schreibassistent und eine
+     * Spracheingabe sind keine Fachlichkeit des Projekt-Managers — sie gehoeren
+     * ueberall hin, und sie liegen jetzt oben als `schreibhilfe` und `diktat`
+     * im Paket. Dass drei Produkte sie nicht hatten, war kein Ergebnis einer
+     * Entscheidung, sondern davon, wo sie gewachsen sind.
+     *
+     * Dieser Platz bleibt fuer das, was WIRKLICH nur ein Produkt kann.
      *
      * Receives the editor so a button can act on the selection.
      */
@@ -404,6 +447,9 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
             showToolbar = true,
             autofocus = false,
             onImageUpload,
+            schreibhilfe,
+            schreibhilfeTabu,
+            diktat,
             extraActions,
             statusBar,
         },
@@ -586,6 +632,77 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
             setIsDragging(false);
         }, []);
 
+        /*
+         * Assistent und Spracheingabe haengen am Editor, aber sie sind keine
+         * Eigenschaft des Schreibens — deshalb Haken statt Code hier drin.
+         * Beide liefern `null` zurueck, wenn ihre Quelle fehlt, und dann
+         * zeichnet die Leiste unten gar nichts.
+         */
+        const hilfe = useSchreibhilfe(editor, schreibhilfe, { tabuKnoten: schreibhilfeTabu });
+        const stimme = useDiktat(editor, diktat);
+
+        const eigeneKnoepfe = useCallback(
+            (editorFuerKnopf: Editor) => (
+                <>
+                    {schreibhilfe && (
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <button
+                                    type="button"
+                                    data-slot="editor-schreibhilfe"
+                                    title={labels.assistent ?? 'Schreibassistent'}
+                                    aria-label={labels.assistent ?? 'Schreibassistent'}
+                                    disabled={hilfe.laeuft}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted disabled:opacity-50"
+                                >
+                                    {hilfe.laeuft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                                </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem onSelect={() => void hilfe.anwenden('correct')}>
+                                    {labels.korrigieren ?? 'Rechtschreibung korrigieren'}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => void hilfe.anwenden('rephrase', 'formal')}>
+                                    {labels.formell ?? 'Formeller formulieren'}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => void hilfe.anwenden('rephrase', 'friendly')}>
+                                    {labels.freundlich ?? 'Freundlicher formulieren'}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => void hilfe.anwenden('rephrase', 'shorter')}>
+                                    {labels.kuerzer ?? 'Kürzer fassen'}
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    )}
+
+                    {diktat && (
+                        <button
+                            type="button"
+                            data-slot="editor-diktat"
+                            title={labels.diktat ?? 'Spracheingabe'}
+                            aria-label={labels.diktat ?? 'Spracheingabe'}
+                            aria-pressed={stimme.nimmtAuf}
+                            disabled={stimme.tippt}
+                            onClick={() => void stimme.umschalten()}
+                            className={cn(
+                                'inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted disabled:opacity-50',
+                                stimme.nimmtAuf && 'bg-destructive/10 text-destructive',
+                            )}
+                        >
+                            {stimme.tippt ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
+                        </button>
+                    )}
+
+                    {extraActions?.(editorFuerKnopf)}
+                </>
+            ),
+            [schreibhilfe, diktat, hilfe, stimme, labels, extraActions],
+        );
+
+        /* Der Streifen sagt, was gerade laeuft oder schiefging — innerhalb des
+           Rahmens, weil es zum Feld gehoert und nicht zur Seite. */
+        const meldung = hilfe.fehler ?? stimme.fehler ?? (stimme.nimmtAuf ? (labels.diktatLaeuft ?? 'Aufnahme läuft …') : null);
+
         return (
             <div
                 ref={ref}
@@ -612,8 +729,13 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
                         labels={labels}
                         onInsertImage={imageEnabled ? openImagePicker : undefined}
                         uploading={isUploading}
-                        extraActions={extraActions}
+                        extraActions={schreibhilfe || diktat || extraActions ? eigeneKnoepfe : undefined}
                     />
+                )}
+                {meldung && (
+                    <div className="border-b px-3 py-1.5 text-xs text-muted-foreground" data-slot="editor-meldung">
+                        {meldung}
+                    </div>
                 )}
                 {statusBar}
                 <EditorContent
