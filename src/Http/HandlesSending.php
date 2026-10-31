@@ -43,6 +43,18 @@ use Peppermint\Mailbox\Sending\Outgoing;
  */
 trait HandlesSending
 {
+    /*
+     * Ein wiederaufgenommener Entwurf gehoert zum Senden und nicht daneben
+     * (31.10.2026, Bastians Meldung zu den Entwuerfen).
+     *
+     * Hier eingebunden und nicht im Produkt, damit JEDES Produkt, das diesen
+     * Zug schon benutzt, die Entwurfsbehandlung bekommt, ohne eine Zeile zu
+     * aendern. Der Projekt-Manager hatte sie als einziger — in seinem eigenen
+     * Controller, 120 Zeilen, mit zwei Lehren aus Bug #1155 darin, die in den
+     * anderen drei erst wieder haetten gelernt werden muessen.
+     */
+    use BearbeitetEntwuerfe;
+
     /**
      * Das Konto, ueber das gesendet werden soll — oder ein Abbruch.
      */
@@ -95,9 +107,19 @@ trait HandlesSending
             'references' => ['nullable', 'string'],
             'attachments' => ['nullable', 'array'],
             'attachments.*' => ['file'],
+
+            /*
+             * Ein wiederaufgenommener Entwurf. Beide oder keines — mit nur
+             * einem der beiden gibt es nichts zu holen und nichts abzuloesen.
+             */
+            'draft_folder' => ['nullable', 'string'],
+            'draft_uid' => ['nullable'],
         ]);
 
         $konto = $this->accountFor($account);
+
+        $entwurfsordner = $daten['draft_folder'] ?? null;
+        $entwurfsUid = $daten['draft_uid'] ?? null;
 
         $kopfzeilen = array_filter([
             'In-Reply-To' => $daten['in_reply_to'] ?? null,
@@ -112,10 +134,30 @@ trait HandlesSending
             bcc: array_values($daten['bcc'] ?? []),
             text: $daten['body_text'] ?? null,
             attachments: $this->hochgeladene($request),
+            /*
+             * VOR dem Versand geholt, nicht danach (Bug #1155): Bis die
+             * Nachricht draussen ist, ist der Entwurf die einzige Kopie seiner
+             * Dateien. Wer erst nach dem Senden holt, holt aus einem Ordner,
+             * den er gerade leert.
+             */
+            rawAttachments: $this->entwurfsAnhaenge($konto, $entwurfsordner, $entwurfsUid),
             headers: $kopfzeilen,
         );
 
-        return $this->versenden($konto, $nachricht, $daten);
+        $antwort = $this->versenden($konto, $nachricht, $daten);
+        $ergebnis = $antwort->getData(true);
+
+        /*
+         * Nur bei Erfolg, und erst JETZT. Stand das im selben `try` wie der
+         * Versand, landete ein Fehlschlag beim Abloesen im Fehlerzweig — und
+         * meldete dem Absender „Fehler beim Senden" fuer eine Nachricht, die
+         * hinausgegangen war. Er schickt sie dann ein zweites Mal.
+         */
+        if (($ergebnis['success'] ?? false) === true) {
+            $this->entwurfAbloesen($konto, $entwurfsordner, $entwurfsUid, $ergebnis['copied_to_sent'] ?? null);
+        }
+
+        return $antwort;
     }
 
     /**

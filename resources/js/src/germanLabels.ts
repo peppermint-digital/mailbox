@@ -330,6 +330,7 @@ export const germanLabels = {
         message: 'Nachricht',
         preview: 'Vorschau',
         attachments: 'Anhänge',
+        attachmentFromDraft: 'Liegt im Entwurf und geht beim Senden mit',
         signature: 'Signatur',
         noSignature: 'Keine',
         defaultSuffix: ' (Standard)',

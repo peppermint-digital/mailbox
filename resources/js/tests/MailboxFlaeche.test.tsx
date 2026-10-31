@@ -925,3 +925,104 @@ describe('der Gruppieren-Schalter (#1171)', () => {
         unmount();
     });
 });
+
+describe('einen Entwurf weiterbearbeiten (31.10.2026)', () => {
+    /**
+     * Gemeldet von Bastian: „In der Verwaltung lassen sich Entwürfe im
+     * Mail-Browser nicht weiterbearbeiten, im Manager schon. Wie oft sollen
+     * wir das noch durchkauen?"
+     *
+     * Die Ursache war nicht die Ordner-Erkennung — die findet `Entw&APw-rfe`
+     * seit jeher. `entwurfBearbeiten` war eine OPTIONALE Eigenschaft, und
+     * `git grep` über alle vier Produkte fand sie genau einmal, im Manager.
+     * Die Leseansicht zeigt den Knopf nur bei `isDraft && onEditDraft`, also
+     * blieb er in drei Produkten weg.
+     *
+     * Ein Platz, den drei von vier Produkten leer lassen, ist keine
+     * Erweiterung — er ist eine Lücke mit Namen. Deshalb gibt es jetzt eine
+     * Vorgabe, und deshalb steht sie hier als Zusicherung: damit sie nicht
+     * ein zweites Mal still verschwindet.
+     */
+    const ENTWURFSORDNER = 'Entw&APw-rfe';
+
+    function entwurfsSeite(teil: Record<string, unknown> = {}) {
+        return seite({
+            ordnerPfad: ENTWURFSORDNER,
+            ordner: { folders: [{ name: ENTWURFSORDNER, path: ENTWURFSORDNER }], targets: [], loading: false, loadTargetsOnce: vi.fn() },
+            offene: { message: nachricht({ uid: 42 }), loading: false, open: vi.fn(), close: vi.fn() },
+            ...teil,
+        } as never);
+    }
+
+    it('zeigt den Knopf OHNE dass ein Produkt etwas uebergibt', () => {
+        const { container, unmount } = flaeche({ seite: entwurfsSeite() });
+
+        expect(container.querySelector('[title="Weiter bearbeiten"]')).not.toBeNull();
+        unmount();
+    });
+
+    it('faehrt auf die Verfassen-Seite, mit Konto, Ordner und Kennung', () => {
+        const navigieren = vi.fn();
+        const { container, unmount } = flaeche({ seite: entwurfsSeite(), navigieren });
+
+        click(container.querySelector('[title="Weiter bearbeiten"]')!);
+
+        /*
+         * Genau diese drei Parameternamen benutzt der Projekt-Manager, seit es
+         * die Funktion dort gibt. Sie sind nicht neu erfunden — seine
+         * Verfassen-Seite laeuft damit unveraendert weiter.
+         */
+        const ziel = new URL(navigieren.mock.calls[0]![0] as string, 'http://x');
+
+        expect(ziel.pathname).toBe('/mailbox/compose');
+        expect(ziel.searchParams.get('account_id')).toBe('1');
+        expect(ziel.searchParams.get('draft_folder')).toBe(ENTWURFSORDNER);
+        expect(ziel.searchParams.get('draft_uid')).toBe('42');
+        unmount();
+    });
+
+    it('nimmt den Ordner der NACHRICHT, nicht den links gewaehlten', () => {
+        // Ein Entwurf, den man ueber die Suche findet, liegt nicht im Ordner,
+        // der links markiert ist. Derselbe Fehler wie bei den Aktionen (#7690).
+        const navigieren = vi.fn();
+        const { container, unmount } = flaeche({
+            seite: entwurfsSeite({
+                ordnerPfad: 'INBOX',
+                offene: { message: nachricht({ uid: 42 }), folder: ENTWURFSORDNER, loading: false, open: vi.fn(), close: vi.fn() },
+            }),
+            navigieren,
+        });
+
+        click(container.querySelector('[title="Weiter bearbeiten"]')!);
+
+        expect(new URL(navigieren.mock.calls[0]![0] as string, 'http://x').searchParams.get('draft_folder')).toBe(ENTWURFSORDNER);
+        unmount();
+    });
+
+    it('laesst dem Produkt den Vortritt, wenn es einen eigenen Weg hat', () => {
+        // Der Projekt-Manager faehrt auf seine eigene Seite. Die Vorgabe darf
+        // ihm das nicht wegnehmen.
+        const eigener = vi.fn();
+        const navigieren = vi.fn();
+        const { container, unmount } = flaeche({ seite: entwurfsSeite(), entwurfBearbeiten: eigener, navigieren });
+
+        click(container.querySelector('[title="Weiter bearbeiten"]')!);
+
+        expect(eigener).toHaveBeenCalled();
+        expect(navigieren).not.toHaveBeenCalled();
+        unmount();
+    });
+
+    it('zeigt den Knopf NICHT in einem Ordner, der kein Entwurfsordner ist', () => {
+        const { container, unmount } = flaeche({
+            seite: entwurfsSeite({
+                ordnerPfad: 'INBOX',
+                ordner: { folders: [{ name: 'INBOX', path: 'INBOX' }], targets: [], loading: false, loadTargetsOnce: vi.fn() },
+                offene: { message: nachricht({ uid: 42 }), loading: false, open: vi.fn(), close: vi.fn() },
+            }),
+        });
+
+        expect(container.querySelector('[title="Weiter bearbeiten"]')).toBeNull();
+        unmount();
+    });
+});

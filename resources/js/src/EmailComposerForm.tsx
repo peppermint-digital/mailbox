@@ -117,6 +117,13 @@ export interface EmailComposerFormLabels {
     message: string;
     preview: string;
     attachments: string;
+    /**
+     * Der Titel an einem Anhang, der aus dem Entwurf kommt.
+     *
+     * Optional, damit kein bestehender Aufrufer bricht — fehlt er, steht am
+     * Eintrag kein Titel, und der gestrichelte Rand erklaert ihn trotzdem.
+     */
+    attachmentFromDraft?: string;
     signature: string;
     noSignature: string;
     /** Marks the preselected signature, e.g. " (default)". */
@@ -160,6 +167,19 @@ export interface EmailComposerFormProps {
     onAccountIdChange?: (value: number | null) => void;
     attachments?: File[];
     onAttachmentsChange?: (value: File[]) => void;
+    /**
+     * Anhaenge, die schon im Postfach liegen — die eines wiederaufgenommenen
+     * Entwurfs (Bug #1155, zweite Haelfte).
+     *
+     * Nur zur Anzeige, Name und Groesse. Es sind ausdruecklich keine `File`:
+     * Die Bytes liegen im Postfach und sollen nicht durch die Seite reisen;
+     * beim Senden holt sie das Paket serverseitig aus dem Entwurf.
+     *
+     * Bis zum 31.10.2026 gab es das nicht, und die Dateien gingen beim Senden
+     * zwar mit, waren aber nirgends zu SEHEN. Bei einer Mail, die eine
+     * Rechnung ankuendigt, ist „dem Verhalten vertrauen" zu wenig.
+     */
+    vorhandeneAnhaenge?: { filename: string; size: number }[];
 
     accounts?: ComposerAccount[];
     signatureAccountId?: number | null;
@@ -337,6 +357,7 @@ export function EmailComposerForm({
     accountId = null,
     onAccountIdChange,
     attachments = [],
+    vorhandeneAnhaenge = [],
     onAttachmentsChange,
     accounts = [],
     signatureAccountId = null,
@@ -787,6 +808,30 @@ export function EmailComposerForm({
                         </Button>
                         <input ref={fileInput} type="file" multiple className="hidden" onChange={onFilesPicked} />
                     </div>
+                    {vorhandeneAnhaenge.length > 0 && (
+                        <div className="mt-2 space-y-1" data-slot="composer-vorhandene-anhaenge">
+                            {vorhandeneAnhaenge.map((datei, i) => (
+                                <div
+                                    key={`${datei.filename}-${i}`}
+                                    className="flex items-center justify-between rounded-md border border-dashed bg-muted/20 px-3 py-1.5 text-sm"
+                                    title={labels.attachmentFromDraft ?? undefined}
+                                >
+                                    <span className="truncate">
+                                        {datei.filename} <span className="text-xs text-muted-foreground">({formatBytes(datei.size)})</span>
+                                    </span>
+                                    {/*
+                                        Kein Entfernen-Kreuz: Die Datei liegt im
+                                        Entwurf, nicht hier. Ein Kreuz, das sie
+                                        nicht wegbekommt, waere eine Luege; wer
+                                        sie loswerden will, nimmt sie im Entwurf
+                                        heraus. Der gestrichelte Rand sagt dasselbe
+                                        ohne Worte: gehoert dazu, kommt aber nicht
+                                        von hier.
+                                    */}
+                                </div>
+                            ))}
+                        </div>
+                    )}
                     {attachments.length > 0 && (
                         <div className="mt-2 space-y-1">
                             {attachments.map((file, i) => (

@@ -37,8 +37,8 @@
  */
 import { createServer, type Server } from 'node:http';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, extname, join, resolve } from 'node:path';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -48,6 +48,22 @@ import { chromium, type Browser } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const ausfuehren = promisify(execFile);
+
+/*
+ * GANZ OBEN, vor allem anderen: Playwright legt den Pfad fuer sein
+ * Browserprofil beim LADEN des Moduls fest, nicht beim Starten. In `beforeAll`
+ * gesetzt kaeme die Variable zu spaet.
+ *
+ * KURZ muss er sein, und das ist kein Schoenheitswunsch: Chromium legt neben
+ * dem Profil einen Unix-Socket an, und der Pfad dafuer ist auf rund 108 Zeichen
+ * begrenzt. Der erste Versuch zeigte auf `node_modules/.cache` im Paket und
+ * starb mit „Socket path too long" — eine andere Meldung als die aus `/tmp`,
+ * aber derselbe Riegel: Chromium kommt nicht hoch, und die Messreihe wird
+ * uebersprungen statt gruen gemeldet.
+ */
+const ARBEIT = join(homedir(), '.cache/mailbox-test');
+mkdirSync(ARBEIT, { recursive: true });
+process.env.TMPDIR = ARBEIT;
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 const PAKET = resolve(HIER, '../../../..');
@@ -100,6 +116,27 @@ interface Messung {
     textAb: number | null;
 }
 
+/**
+ * Ein eigenes Temp-Verzeichnis auf der PLATTE, nicht in `/tmp`.
+ *
+ * Am 31.10.2026 scheiterten beide Browser-Messreihen mit
+ * „Target page, context or browser has been closed". Die Ursache lag nicht im
+ * Test: `/tmp` ist ein `tmpfs` und hatte keine INODES mehr frei (1.048.461 von
+ * 1.048.576 belegt, 32 GB Platz ungenutzt daneben). Chromium kann dann sein
+ * Profilverzeichnis nicht anlegen und stirbt beim Start.
+ *
+ * `df -h` zeigt so etwas NICHT — es meldet 33 % belegt. Nur `df -i` zeigt es.
+ *
+ * Darum legt diese Messreihe ihr Arbeitsverzeichnis unter `node_modules/.cache`
+ * und schiebt `TMPDIR` mit: Playwright baut sein Browserprofil ueber
+ * `os.tmpdir()`, und das liest die Variable bei jedem Aufruf. Damit haengt eine
+ * Zusicherung dieses Pakets nicht mehr daran, was irgendein anderer Vorgang in
+ * `/tmp` hinterlassen hat.
+ */
+function arbeitsverzeichnis(): string {
+    return ARBEIT;
+}
+
 function chromiumPfad(): string {
     const kandidaten = [
         process.env.MAILBOX_CHROMIUM,
@@ -128,7 +165,7 @@ function chromiumPfad(): string {
 }
 
 async function bauen(): Promise<string> {
-    const ziel = await mkdtemp(join(tmpdir(), 'mailbox-handy-'));
+    const ziel = await mkdtemp(join(arbeitsverzeichnis(), 'mailbox-handy-'));
 
     await build({
         entryPoints: [join(ATTRAPPE, 'handy.tsx')],

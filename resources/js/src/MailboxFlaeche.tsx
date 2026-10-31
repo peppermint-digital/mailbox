@@ -204,9 +204,23 @@ export interface MailboxFlaecheProps {
      * Ordner hier (`looksLikeFolder`), das Bearbeiten selbst gehoert dem
      * Produkt: Der Projekt-Manager fuehrt dafuer auf eine eigene Seite.
      *
-     * Ohne diesen Platz zeigte die Flaeche an einem Entwurf gar keinen Knopf
-     * — in CRM, Verwaltung und AI Brain ist das heute so, und der Manager
-     * haette es beim Umstieg verloren (#9116).
+     * ## Seit dem 31.10.2026 gibt es dafuer eine VORGABE
+     *
+     * Hier stand: „Ohne diesen Platz zeigte die Flaeche an einem Entwurf gar
+     * keinen Knopf — in CRM, Verwaltung und AI Brain ist das heute so." Das
+     * blieb elf Tage so stehen, und Bastian hat es gemeldet: „In der
+     * Verwaltung lassen sich Entwuerfe nicht weiterbearbeiten, im Manager
+     * schon. Wie oft sollen wir das noch durchkauen?"
+     *
+     * Ein Platz, den drei von vier Produkten leer lassen, ist keine
+     * Erweiterung — er ist eine Luecke mit Namen. Fehlt die Eigenschaft jetzt,
+     * faehrt die Flaeche selbst nach
+     * `{basis}/compose?account_id=…&draft_folder=…&draft_uid=…`.
+     *
+     * Die drei Parameternamen sind nicht neu erfunden: Der Projekt-Manager
+     * benutzt genau sie, seit es die Funktion dort gibt. Seine Seite laeuft
+     * damit unveraendert weiter, und diese Eigenschaft bleibt als
+     * Uebersteuerung fuer alle, die woandershin wollen.
      */
     entwurfBearbeiten?: () => void;
     werkzeugeVerbergen?: (werkzeug: MailWerkzeug) => boolean;
@@ -422,6 +436,36 @@ export function MailboxFlaeche({
          * noch nicht da, und „INBOX" stand genau dann in der Leiste.
          */
         return ordnerAnzeigename(zeile ?? { path: ordnerPfad }) || titel;
+    })();
+
+    /*
+     * Der Weg zum Weiterbearbeiten — vom Produkt, sonst von uns.
+     *
+     * `undefined`, solange es nichts zu bearbeiten gibt: Die Leseansicht
+     * zeigt den Knopf nur bei einem Rueckruf, und ein Knopf, der ins Leere
+     * faehrt, ist schlimmer als keiner.
+     */
+    const entwurfWeiterbearbeiten = (() => {
+        if (entwurfBearbeiten) {
+            return entwurfBearbeiten;
+        }
+
+        const kennung = (offene.message as { uid?: number | string } | null)?.uid;
+
+        if (!konto || kennung === undefined || kennung === null) {
+            return undefined;
+        }
+
+        const ordner = offene.folder ?? ordnerPfad;
+
+        return () =>
+            navigieren(
+                `${basis}/compose?${new URLSearchParams({
+                    account_id: String(konto.id),
+                    draft_folder: ordner,
+                    draft_uid: String(kennung),
+                }).toString()}`,
+            );
     })();
 
     const offeneAbsender = (() => {
@@ -822,7 +866,7 @@ export function MailboxFlaeche({
 
                                                 return looksLikeFolder({ path: pfad, name: ordnerZeile?.name, flags: ordnerZeile?.flags }, 'Drafts');
                                             })()}
-                                            onEditDraft={entwurfBearbeiten}
+                                            onEditDraft={entwurfWeiterbearbeiten}
                                             busy={{ archiving: nachrichtBeschaeftigt, deleting: nachrichtBeschaeftigt }}
                                             onReply={(alle) => {
                                                 setAntwortAnAlle(alle);
