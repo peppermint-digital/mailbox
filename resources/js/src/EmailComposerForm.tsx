@@ -675,7 +675,30 @@ export function EmailComposerForm({
                         value={accountId === null ? undefined : String(accountId)}
                         onValueChange={(v) => onAccountIdChange?.(v ? Number(v) : null)}
                     >
-                        <SelectTrigger>
+                        {/*
+                            `min-w-0` und `truncate`, sonst BRICHT der Absender
+                            aus seinem Kasten (31.10.2026, gemeldet von der
+                            Session ui-fixes ueber mail-rollout3).
+
+                            Gemeldet war „laeuft rechts aus dem Kasten".
+                            Gemessen bei 390 px ist es etwas anderes und
+                            schlimmer: Der Kasten laeuft NICHT ueber
+                            (scrollWidth 356 bei clientWidth 356), die Zeile
+                            „Einkauf Peppermint Digital
+                            <department.purchasing@peppermint-digital.de>"
+                            BRICHT UM — und weil der Ausloeser eine feste Hoehe
+                            hat, steht die zweite Zeile auf seinem Rahmen.
+
+                            Darum ist der gemeldete Befund hier auch nicht in
+                            der Messung aufgetaucht, die auf waagerechten
+                            Ueberlauf sieht. Gesehen hat es erst das Bild.
+
+                            {@see MailboxKontoAuswahl} hat dieselben drei
+                            Klassen seit dem 30.10.2026 — dort fiel es beim
+                            Herausloesen auf, hier stand die Auswahl schon
+                            vorher und wurde nicht mitgezogen.
+                        */}
+                        <SelectTrigger className="w-full min-w-0 [&>span]:min-w-0 [&>span]:truncate">
                             <SelectValue placeholder={labels.chooseAccount} />
                         </SelectTrigger>
                         <SelectContent>

@@ -327,10 +327,29 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, labels, onInsertI
                 title={labels.textColor}
             >
                 <Baseline className="h-4 w-4" style={{ color: (editor.getAttributes('textStyle').color as string) ?? undefined }} />
+                {/*
+                    `h-full w-full` zusaetzlich zu `inset-0`, und das ist kein
+                    Guertel-und-Hosentraeger (31.10.2026).
+
+                    Ein `input[type=color]` ist ein Widget mit EIGENER
+                    Groesse. `position: absolute` mit allen vier Kanten auf 0
+                    streckt normale Kaesten — bei einem Widget mit
+                    `width: auto` gewinnt die eigene Groesse. Gemessen in
+                    Chromium: 50 x 27 statt der 32 x 32 des Labels.
+
+                    Folge: Der unsichtbare Farbwaehler stand 18 px nach rechts
+                    ueber sein Label hinaus und lag mit 16 x 27 px auf dem
+                    Knopf „Markieren" daneben. Wer dort links tippte, bekam
+                    die Farbauswahl statt der Markierung — auf jeder
+                    Bildschirmbreite, nicht nur am Telefon.
+
+                    Gefunden von der Breiten-Messreihe, nicht beim Hinsehen:
+                    Das Feld ist durchsichtig, man SIEHT den Fehler nicht.
+                */}
                 <input
                     type="color"
                     aria-label={labels.textColor}
-                    className="absolute inset-0 cursor-pointer opacity-0"
+                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                     value={(editor.getAttributes('textStyle').color as string) ?? '#000000'}
                     onChange={(event) => editor.chain().focus().setColor(event.target.value).run()}
                 />

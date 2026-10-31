@@ -16,6 +16,7 @@
  * Kasten von Geraetegroesse. Der Test faehrt die Geraetebreiten ab und misst
  * in jedem Kasten.
  */
+import { useState } from 'react';
 import { useMailboxSidePanel } from '../../../src/MailboxSidePanel';
 import { germanLabels } from '../../../src/germanLabels';
 import { MailboxBrowser } from '../../../src/MailboxBrowser';
@@ -26,6 +27,7 @@ import { MailboxSidePanel } from '../../../src/MailboxSidePanel';
 import { MailFolderList, type MailFolder } from '../../../src/MailFolderList';
 import { MailMessageView, type MailMessageViewMessage } from '../../../src/MailMessageView';
 import { MailWerkzeugleiste } from '../../../src/MailWerkzeugleiste';
+import { leereSignaturQuelle, VerfassenFeld } from '../../../src/VerfassenFeld';
 import { Button } from '../../../src/ui/button';
 import { FolderInput, Trash2 } from 'lucide-react';
 import type { MailWerkzeug } from '../../../src/useMailWerkzeuge';
@@ -265,7 +267,58 @@ function Fassung({ kennung }: { kennung: string }) {
     );
 }
 
-for (const kennung of ['liste', 'schublade', 'lesen', 'assistent'] as const) {
+/**
+ * Die Verfassen-Seite, wie die Produkte sie bauen.
+ *
+ * Gemeldet am 31.10.2026 (Session ui-fixes, weitergegeben von mail-rollout3):
+ * Im Feld „Von" laeuft die Absenderzeile bei 390 px rechts aus dem Kasten.
+ * Weitergegeben ist nicht gemessen — deshalb steht sie hier in der Messreihe
+ * und nicht in einer Notiz.
+ *
+ * Die Adresse ist absichtlich lang: `info@crewtex.de` haette nie ueberlaufen.
+ * Ein Postfachname plus eine lange Adresse in spitzen Klammern ist das, was
+ * ein geteiltes Postfach wirklich liefert.
+ */
+function Verfassen() {
+    const [kontoId, setKontoId] = useState<number | null>(1);
+    const [an, setAn] = useState<{ email: string; name?: string }[]>([]);
+    const [betreff, setBetreff] = useState('');
+    const [inhalt, setInhalt] = useState('');
+
+    return (
+        <div className="h-full overflow-y-auto p-4">
+            <VerfassenFeld
+                /*
+                 * Eigene Quellen statt der Vorgaben: Die Vorgabe fragt
+                 * `/mailbox/recipients` ab, und in dieser Attrappe gibt es
+                 * keinen Server dahinter. Ein 404 wuerde den Riegel „die
+                 * Attrappe hat Fehler geworfen" ausloesen — zu Recht, nur
+                 * saegt er dann am falschen Ast. Gemessen wird der KASTEN,
+                 * nicht der Vorschlagsdienst.
+                 */
+                recipients={{ all: () => Promise.resolve([]), search: () => Promise.resolve([]) }}
+                signatureSource={leereSignaturQuelle}
+                accounts={[
+                    { id: 1, name: 'Einkauf Peppermint Digital', email: 'department.purchasing@peppermint-digital.de' },
+                    { id: 2, name: 'Info', email: 'info@crewtex.de' },
+                ]}
+                accountId={kontoId}
+                onAccountIdChange={setKontoId}
+                to={an}
+                onToChange={setAn}
+                subject={betreff}
+                onSubjectChange={setBetreff}
+                bodyHtml={inhalt}
+                onBodyHtmlChange={setInhalt}
+                vorhandeneAnhaenge={[{ filename: 'Rechnung-2026-0147.pdf', size: 128000 }]}
+                onSend={() => undefined}
+                onCancel={() => undefined}
+            />
+        </div>
+    );
+}
+
+for (const kennung of ['liste', 'schublade', 'lesen', 'assistent', 'verfassen'] as const) {
     const kasten = document.createElement('div');
     kasten.dataset.fassung = kennung;
     /*
@@ -285,7 +338,7 @@ for (const kennung of ['liste', 'schublade', 'lesen', 'assistent'] as const) {
     kasten.style.cssText =
         'position:relative;contain:layout;isolate:isolate;display:block;width:100%;height:844px;overflow:hidden;outline:1px solid #ccc;outline-offset:-1px'
     document.body.appendChild(kasten);
-    createRoot(kasten).render(<Fassung kennung={kennung} />);
+    createRoot(kasten).render(kennung === 'verfassen' ? <Verfassen /> : <Fassung kennung={kennung} />);
 }
 
 requestAnimationFrame(() => {

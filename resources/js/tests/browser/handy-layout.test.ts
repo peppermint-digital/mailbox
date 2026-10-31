@@ -74,7 +74,7 @@ const GERAETE = [320, 360, 375, 390, 393, 412, 414, 428, 430];
 const HOEHE = 844;
 
 /** Die vier Zustaende, die die Attrappe gleichzeitig zeichnet. */
-const FASSUNGEN = ['liste', 'schublade', 'lesen', 'assistent'] as const;
+const FASSUNGEN = ['liste', 'schublade', 'lesen', 'assistent', 'verfassen'] as const;
 type Fassung = (typeof FASSUNGEN)[number];
 
 /**
@@ -105,6 +105,7 @@ interface Messung {
     leisteHoehe: number;
     baenderOben: number;
     zuKlein: Kasten[];
+    inhaltRaus: { markierung: string; x: number; y: number }[];
     assistentSichtbar: boolean;
     schubladeSichtbar: boolean;
     kontoInSchublade: boolean;
@@ -357,6 +358,22 @@ beforeAll(async () => {
                     const ueberlappungen: [string, string][] = [];
                     const zuKlein: unknown[] = [];
 
+                    /*
+                     * Laeuft einem Bedienelement sein EIGENER Inhalt aus dem
+                     * Kasten? Das ist etwas anderes als die paarweise
+                     * Ueberlappung oben, und es hat am 31.10.2026 genau einen
+                     * Fehler durchgelassen: Der Absender im Feld „Von" brach
+                     * auf 390 px in zwei Zeilen um, und weil der Ausloeser
+                     * eine feste Hoehe hat, stand die zweite Zeile auf seinem
+                     * Rahmen. Nichts ueberlappte, nichts lief waagerecht ueber
+                     * — gesehen hat es nur das Bild.
+                     *
+                     * Elemente, die von sich aus scrollen (Textfelder, der
+                     * Editor), sind ausgenommen: Dort IST mehr Inhalt als
+                     * Kasten der Normalfall.
+                     */
+                    const inhaltRaus: unknown[] = [];
+
                     for (let i = 0; i < elemente.length; i++) {
                         const a = elemente[i]!;
                         const ra = a.getBoundingClientRect();
@@ -371,6 +388,16 @@ beforeAll(async () => {
                                 y: Math.round(ra.y - rahmen.y),
                                 breite: Math.round(ra.width),
                                 hoehe: Math.round(ra.height),
+                            });
+                        }
+
+                        const stil = getComputedStyle(a);
+                        const scrolltSelbst = /auto|scroll/.test(stil.overflow + stil.overflowY + stil.overflowX);
+                        if (!scrolltSelbst && (a.scrollHeight > a.clientHeight + 1 || a.scrollWidth > a.clientWidth + 1)) {
+                            inhaltRaus.push({
+                                markierung: name(a),
+                                x: a.scrollWidth - a.clientWidth,
+                                y: a.scrollHeight - a.clientHeight,
                             });
                         }
 
@@ -404,6 +431,7 @@ beforeAll(async () => {
                         fassung: kasten.dataset.fassung,
                         ueberlappungen,
                         zuKlein,
+                        inhaltRaus,
                         ueberlaufX: kasten.scrollWidth - kasten.clientWidth,
                         leisteHoehe: leiste ? Math.round(leiste.getBoundingClientRect().height) : 0,
                         /* Wie viele Baender stehen ueber den Flaechen? Frueher drei. */
@@ -471,7 +499,7 @@ describe('Handy-Layout der Mailflaeche', () => {
     it('hat ueberhaupt gemessen — der Riegel gegen einen falsch-gruenen Lauf', () => {
         expect(messungen).toHaveLength(GERAETE.length * FASSUNGEN.length);
 
-        for (const m of messungen) {
+        for (const m of messungen.filter((m) => m.fassung !== 'verfassen')) {
             expect(m.leisteHoehe, `bei ${m.breite} px (${m.fassung}) war die schmale Leiste nicht da`).toBeGreaterThan(0);
         }
     });
@@ -485,6 +513,20 @@ describe('Handy-Layout der Mailflaeche', () => {
         expect(schlimm.map((m) => `${m.breite}/${m.fassung}`), `Bedienelemente liegen uebereinander:\n${bericht}`).toEqual([]);
     });
 
+    it('laesst keinem Bedienelement seinen eigenen Inhalt aus dem Kasten laufen', () => {
+        /*
+         * Die Luecke, die der 31.10.2026 gezeigt hat: Die paarweise
+         * Ueberlappung sieht nur, ob zwei Kaesten uebereinanderliegen. Ein
+         * Kasten, aus dem sein eigener Text herausragt, faellt ihr nicht auf —
+         * und genau das war der Absender im Feld „Von".
+         */
+        const raus = messungen.flatMap((m) =>
+            m.inhaltRaus.map((e) => `${m.breite}/${m.fassung}: ${e.markierung} ragt ${e.x} x ${e.y} px heraus`),
+        );
+
+        expect(raus).toEqual([]);
+    });
+
     it('laesst nichts waagerecht aus dem Bild laufen', () => {
         const raus = messungen.filter((m) => m.ueberlaufX > 1);
 
@@ -492,7 +534,7 @@ describe('Handy-Layout der Mailflaeche', () => {
     });
 
     it('setzt EIN Band ueber die Flaechen, nicht drei', () => {
-        for (const m of messungen) {
+        for (const m of messungen.filter((m) => m.fassung !== 'verfassen')) {
             expect(m.baenderOben, `bei ${m.breite} px (${m.fassung})`).toBe(1);
             expect(m.leisteHoehe, `die Leiste ist bei ${m.breite} px (${m.fassung}) zu hoch`).toBeLessThanOrEqual(60);
         }
