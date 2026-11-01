@@ -182,6 +182,31 @@ export interface EmailComposerFormProps {
     vorhandeneAnhaenge?: { filename: string; size: number }[];
 
     accounts?: ComposerAccount[];
+    /**
+     * Welches Postfach die Signaturen bestimmt.
+     *
+     * **Ohne Angabe gilt `accountId`** — also das gewaehlte Absenderkonto. Das
+     * ist der Normalfall und seit dem 01.11.2026 die Vorgabe.
+     *
+     * Vorher stand hier `null`, und das war die Luecke, an der die ganze
+     * Signaturzeile auf der Verfassen-Seite haengenblieb: `VerfassenFeld` gibt
+     * diese Eigenschaft nicht weiter, also lud das Formular dort immer mit
+     * `undefined` — und die Quelle des Pakets antwortet darauf mit einer leeren
+     * Liste, weil `…/undefined/signatures` eine 404 waere. Ergebnis: Konto
+     * gewaehlt, Signaturen vorhanden, Zeile trotzdem weg. Gemessen am
+     * 01.11.2026 in Produktion (AI Brain, Postfach 3 mit einer Vorgabe-Signatur).
+     *
+     * Dass es die Eigenschaft weiterhin gibt, hat einen Grund: Beim Antworten
+     * und Weiterleiten ist das gemeinte Postfach das der NACHRICHT, und das
+     * muss nicht das Absenderkonto des Formulars sein
+     * ({@link InlineReplyPanel}, `ReplyComposer`, `ForwardComposer` geben es
+     * deshalb ausdruecklich mit).
+     *
+     * Und warum eine Vorgabe und nicht „jedes Produkt gibt es mit": Dieselbe
+     * Begruendung wie bei `allowBcc` eine Eigenschaft weiter unten — eine
+     * Faehigkeit, die jedes Produkt erst einschalten muss, fehlt in drei von
+     * vier, ohne dass es jemand entschieden hat.
+     */
     signatureAccountId?: number | null;
     /**
      * Die Blindkopie anbieten. **Vorgabe: ja**, seit dem 31.10.2026.
@@ -373,7 +398,7 @@ export function EmailComposerForm({
     vorhandeneAnhaenge = [],
     onAttachmentsChange,
     accounts = [],
-    signatureAccountId = null,
+    signatureAccountId,
     allowBcc = true,
     allowAttachments,
     sending = false,
@@ -440,11 +465,18 @@ export function EmailComposerForm({
         applySignatureRef.current = applySignature;
     });
 
+    /*
+     * Das Postfach, nach dessen Signaturen gefragt wird: das ausdruecklich
+     * genannte, sonst das gewaehlte Absenderkonto. Siehe
+     * {@link EmailComposerFormProps.signatureAccountId}.
+     */
+    const signaturKonto = signatureAccountId ?? accountId;
+
     useEffect(() => {
         let abgebrochen = false;
-        const schluessel = String(signatureAccountId ?? 'all');
+        const schluessel = String(signaturKonto ?? 'all');
 
-        void loadSignatures(signatureAccountId ?? undefined).then(() => {
+        void loadSignatures(signaturKonto ?? undefined).then(() => {
             if (!abgebrochen) {
                 setGeladenFuer(schluessel);
             }
@@ -453,7 +485,7 @@ export function EmailComposerForm({
         return () => {
             abgebrochen = true;
         };
-    }, [signatureAccountId, loadSignatures]);
+    }, [signaturKonto, loadSignatures]);
 
     /*
      * The default signature is applied in its OWN effect, not right after
