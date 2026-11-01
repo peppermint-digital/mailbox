@@ -186,6 +186,19 @@ attachments of the same mail share a name — the bar keys its list by file name
 so neither side knows which one was ticked, and picking one is the same bet the
 file name exists to avoid.
 
+A product that stores the mail itself (`verbatim()` fetches body and files in
+one go) wants the **position**, not the bytes — `$fund->stelle($name)` and
+`$fund->stellen($names)` hand it over, with the same refusals. That position
+counts every part of the message, embedded images included, which is why it
+comes out of the list rather than out of counting the visible rows.
+
+`finden()` takes a `MailAccount` **or** a `Mailbox`. The first is the short way
+for a product on the package's account store; the second is for one that has
+its own single place where a product row becomes a connection (the project
+manager's `ImapService::postfach()`), because two ways to the same mailbox are
+two places where transport and credentials get decided — and the test doubles
+hang off the product's way, not the package's.
+
 `mehrfach => true` turns a choice into a multiple choice — then a **list** of
 values arrives, even for a single tick, and an empty list when nothing is
 ticked. Without the flag a single value arrives. Reading both is exactly the

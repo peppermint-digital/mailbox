@@ -8,6 +8,7 @@ use Peppermint\Mailbox\Contracts\AccountStore;
 use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Exceptions\AnhangNichtVerwendbar;
 use Peppermint\Mailbox\Http\HandlesWerkzeuge;
+use Peppermint\Mailbox\Mailboxes;
 use Peppermint\Mailbox\Models\MailAccount;
 use Peppermint\Mailbox\Werkzeuge\Ergebnis;
 use Peppermint\Mailbox\Werkzeuge\FremdeWerkzeuge;
@@ -80,7 +81,6 @@ describe('die Mail finden', function () {
 
         $fund = (new VorgangsNachricht)->finden(
             fundVorgang(['folder' => 'INBOX', 'uid' => '7']),
-            fundKonto(),
             $postfach,
         );
 
@@ -107,7 +107,6 @@ describe('die Mail finden', function () {
 
         $fund = (new VorgangsNachricht)->finden(
             fundVorgang(['folder' => 'INBOX', 'uid' => '7']),
-            fundKonto(),
             $postfach,
         );
 
@@ -121,7 +120,7 @@ describe('die Mail finden', function () {
         $postfach->shouldReceive('findByToken')->once()->with('INBOX', 'a@example.test', 10)->andReturn([7]);
         $postfach->shouldReceive('message')->with('INBOX', 7)->andReturn(fundMail());
 
-        $fund = (new VorgangsNachricht)->finden(fundVorgang(), fundKonto(), $postfach);
+        $fund = (new VorgangsNachricht)->finden(fundVorgang(), $postfach);
 
         expect($fund)->not->toBeNull()->and($fund->kennung)->toBe(7);
     });
@@ -137,7 +136,7 @@ describe('die Mail finden', function () {
         $postfach->shouldReceive('message')->with('INBOX', 41)->andReturn(fundMail('<antwort@example.test>'));
         $postfach->shouldReceive('message')->with('INBOX', 42)->andReturn(fundMail());
 
-        $fund = (new VorgangsNachricht)->finden(fundVorgang(), fundKonto(), $postfach);
+        $fund = (new VorgangsNachricht)->finden(fundVorgang(), $postfach);
 
         expect($fund)->not->toBeNull()->and($fund->kennung)->toBe(42);
     });
@@ -149,7 +148,7 @@ describe('die Mail finden', function () {
         $postfach->shouldReceive('findByToken')->once()->with('Archiv/2026', 'a@example.test', 10)->andReturn([5]);
         $postfach->shouldReceive('message')->with('Archiv/2026', 5)->andReturn(fundMail());
 
-        $fund = (new VorgangsNachricht)->finden(fundVorgang(['folder' => 'Archiv/2026']), fundKonto(), $postfach);
+        $fund = (new VorgangsNachricht)->finden(fundVorgang(['folder' => 'Archiv/2026']), $postfach);
 
         expect($fund->ordner)->toBe('Archiv/2026');
     });
@@ -161,7 +160,6 @@ describe('die Mail finden', function () {
 
         $fund = (new VorgangsNachricht)->finden(
             fundVorgang(['folder' => 'INBOX', 'uid' => '7'], '<a@example.test>'),
-            fundKonto(),
             $postfach,
         );
 
@@ -172,7 +170,27 @@ describe('die Mail finden', function () {
         $postfach = Mockery::mock(Mailbox::class);
         $postfach->shouldReceive('findByToken')->andReturn([]);
 
-        expect((new VorgangsNachricht)->finden(fundVorgang(), fundKonto(), $postfach))->toBeNull();
+        expect((new VorgangsNachricht)->finden(fundVorgang(), $postfach))->toBeNull();
+    });
+
+    it('baut die Verbindung aus dem KONTO, wenn kein Postfach hereingegeben wird', function () {
+        /*
+         * Der kurze Weg fuer ein Produkt, das die Kontenablage des Pakets
+         * benutzt. Ohne diesen Test waere der `MailAccount`-Zweig ungemessen —
+         * und genau der laeuft in der Verwaltung.
+         */
+        $attrappe = Mockery::mock(Mailbox::class);
+        $attrappe->shouldReceive('message')->with('INBOX', '7')->andReturn(fundMail());
+        Mailboxes::fake(fn () => $attrappe);
+
+        $fund = (new VorgangsNachricht)->finden(
+            fundVorgang(['folder' => 'INBOX', 'uid' => '7']),
+            fundKonto(),
+        );
+
+        Mailboxes::fake(null);
+
+        expect($fund)->not->toBeNull()->and($fund->kennung)->toBe('7');
     });
 
     it('fragt gar nicht, wenn der Vorgang keine Message-ID hat', function () {
@@ -180,7 +198,7 @@ describe('die Mail finden', function () {
         $postfach->shouldNotReceive('message');
         $postfach->shouldNotReceive('findByToken');
 
-        expect((new VorgangsNachricht)->finden(fundVorgang(nachricht: ''), fundKonto(), $postfach))->toBeNull();
+        expect((new VorgangsNachricht)->finden(fundVorgang(nachricht: ''), $postfach))->toBeNull();
     });
 
     it('nimmt eine leere Kennung nicht als Stelle', function () {
@@ -192,7 +210,6 @@ describe('die Mail finden', function () {
 
         expect((new VorgangsNachricht)->finden(
             fundVorgang(['folder' => 'INBOX', 'uid' => '']),
-            fundKonto(),
             $postfach,
         ))->toBeNull();
     });
@@ -209,7 +226,6 @@ describe('der Anhang ueber seinen Namen', function () {
 
         return (new VorgangsNachricht)->finden(
             fundVorgang(['folder' => 'INBOX', 'uid' => '7']),
-            fundKonto(),
             $postfach,
         );
     }
@@ -284,6 +300,43 @@ describe('der Anhang ueber seinen Namen', function () {
 
         expect(fn () => fundMit([], $postfach)->anhang('rechnung.pdf'))
             ->toThrow(AnhangNichtVerwendbar::class, 'liess sich nicht holen');
+    });
+
+    it('gibt die STELLE heraus, fuer wen die Bytes nicht braucht', function () {
+        /*
+         * Der Projekt-Manager lagert die Mail selbst ein (`verbatim()` holt
+         * Rumpf und Dateien in einem Zug) und braucht von der Wahl nur die
+         * Position. Die Umrechnung bleibt trotzdem hier — sie ist die Falle
+         * dieser Aufgabe, und ihre einzige richtige Grundlage ist die
+         * Zaehlung der gerade geprueften Mail.
+         */
+        $postfach = Mockery::mock(Mailbox::class);
+        $postfach->shouldReceive('message')->andReturn(fundMail(anhaenge: [
+            ['index' => 2, 'filename' => 'rechnung.pdf'],
+            ['index' => 5, 'filename' => 'agb.pdf'],
+        ]));
+        // Die Bytes werden NICHT geholt: Wer die Stelle will, will nicht die Datei.
+        $postfach->shouldNotReceive('attachment');
+
+        $fund = fundMit([], $postfach);
+
+        expect($fund->stelle('agb.pdf'))->toBe(5)
+            ->and($fund->stellen(['agb.pdf', 'rechnung.pdf']))->toBe([5, 2]);
+    });
+
+    it('weigert sich auch bei der STELLE, wenn zwei gleich heissen', function () {
+        // Dieselbe Weigerung wie bei den Bytes — sonst haette der eine Weg
+        // einen Riegel und der andere nicht, und das liest sich wie erledigt.
+        $postfach = Mockery::mock(Mailbox::class);
+        $postfach->shouldReceive('message')->andReturn(fundMail(anhaenge: [
+            ['index' => 0, 'filename' => 'rechnung.pdf'],
+            ['index' => 1, 'filename' => 'rechnung.pdf'],
+        ]));
+
+        expect(fn () => fundMit([], $postfach)->stelle('rechnung.pdf'))
+            ->toThrow(AnhangNichtVerwendbar::class)
+            ->and(fn () => fundMit([], $postfach)->stellen(['rechnung.pdf']))
+            ->toThrow(AnhangNichtVerwendbar::class);
     });
 
     it('holt mehrere Anhaenge in der Reihenfolge der NAMEN', function () {

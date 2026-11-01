@@ -53,26 +53,7 @@ final class Nachrichtenfund
      */
     public function anhang(string $dateiname): array
     {
-        $treffer = $this->stellenFuer($dateiname);
-
-        if ($treffer === []) {
-            throw new AnhangNichtVerwendbar("Diese Mail hat keinen Anhang „{$dateiname}“.");
-        }
-
-        if (count($treffer) > 1) {
-            /*
-             * Zwei gleichnamige Anhaenge. Die Leiste hat sie beide als
-             * dieselbe Zeile angeboten (sie schluesselt nach Dateinamen) —
-             * also weiss niemand, welcher gemeint war, auch der Mensch davor
-             * nicht. Einen davon zu nehmen ist genau die Wette, gegen die
-             * der Name statt der Stelle geliefert wird.
-             */
-            throw new AnhangNichtVerwendbar(
-                "Zwei Anhaenge dieser Mail heissen „{$dateiname}“ — welcher gemeint ist, laesst sich nicht entscheiden."
-            );
-        }
-
-        $anhang = $this->postfach->attachment($this->ordner, $this->kennung, $treffer[0]);
+        $anhang = $this->postfach->attachment($this->ordner, $this->kennung, $this->stelle($dateiname));
 
         if ($anhang === null) {
             // Die Stelle stand in der Liste und gibt keine Bytes her. Das ist
@@ -100,6 +81,69 @@ final class Nachrichtenfund
     public function anhaenge(array $dateinamen): array
     {
         return array_values(array_map(fn (string $name): array => $this->anhang($name), $dateinamen));
+    }
+
+    /**
+     * Die STELLE eines Anhangs in dieser Mail — fuer wen die Bytes nicht
+     * braucht.
+     *
+     * ## Wer das braucht und warum es nicht beim Produkt gerechnet wird
+     *
+     * Ein Produkt, das die Mail ohnehin selbst einlagert, holt den Rumpf und
+     * die Dateien in EINEM Zug (`verbatim()`) und braucht von der Wahl nur die
+     * Position. Der Projekt-Manager ist dieser Fall: `storeEmailForTask()`
+     * nimmt eine Liste von Stellen.
+     *
+     * Die Umrechnung bleibt trotzdem hier. Sie ist die Falle dieser Aufgabe,
+     * und sie hat genau eine richtige Grundlage: die Zaehlung der Mail, die
+     * gerade geprueft wurde. Wer sie im Produkt wiederholt, tut es in der
+     * Reihenfolge, die er zufaellig gerade sieht.
+     *
+     * Die Zaehlung ist dabei NICHT die Position in der Liste: Eingebettete
+     * Bilder behalten ihre Nummer, obwohl sie nie auf dem Schirm stehen. Wer
+     * die sichtbaren durchzaehlt, greift beim ersten Logo in der Signatur
+     * daneben — und `verbatim()['files']` zaehlt genauso.
+     *
+     * @throws AnhangNichtVerwendbar wenn der Name fehlt oder mehrfach vorkommt
+     */
+    public function stelle(string $dateiname): int
+    {
+        $treffer = $this->stellenFuer($dateiname);
+
+        if ($treffer === []) {
+            throw new AnhangNichtVerwendbar("Diese Mail hat keinen Anhang „{$dateiname}“.");
+        }
+
+        if (count($treffer) > 1) {
+            /*
+             * Zwei gleichnamige Anhaenge. Die Leiste hat sie beide als
+             * dieselbe Zeile angeboten (sie schluesselt nach Dateinamen) —
+             * also weiss niemand, welcher gemeint war, auch der Mensch davor
+             * nicht. Einen davon zu nehmen ist genau die Wette, gegen die
+             * der Name statt der Stelle geliefert wird.
+             */
+            throw new AnhangNichtVerwendbar(
+                "Zwei Anhaenge dieser Mail heissen „{$dateiname}“ — welcher gemeint ist, laesst sich nicht entscheiden."
+            );
+        }
+
+        return $treffer[0];
+    }
+
+    /**
+     * Mehrere Stellen auf einmal — fuer ein Feld mit `mehrfach`.
+     *
+     * Scheitert einer der Namen, scheitert der ganze Aufruf: Eine Aufgabe mit
+     * zwei von drei Dateien daran sieht vollstaendig aus und ist es nicht.
+     *
+     * @param  list<string>  $dateinamen
+     * @return list<int>
+     *
+     * @throws AnhangNichtVerwendbar
+     */
+    public function stellen(array $dateinamen): array
+    {
+        return array_values(array_map(fn (string $name): int => $this->stelle($name), $dateinamen));
     }
 
     /**

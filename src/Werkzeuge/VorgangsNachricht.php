@@ -89,19 +89,33 @@ final class VorgangsNachricht
     private const ORDNER = ['INBOX'];
 
     /**
-     * Die Mail dieses Vorgangs im Postfach dieses Kontos — oder `null`.
+     * Die Mail dieses Vorgangs — oder `null`.
      *
      * `null` heisst „in diesem Postfach ist diese Mail nicht (mehr) zu
      * finden". Das ist eine Auskunft und kein Fehler: Ein Verb antwortet
      * darauf mit einem Satz, nicht mit einer Ausnahme.
+     *
+     * ## Konto ODER Postfach, und warum beides zugelassen ist
+     *
+     * Mit einem {@see MailAccount} baut diese Klasse die Verbindung selbst —
+     * der kurze Weg fuer ein Produkt, das die Kontenablage des Pakets
+     * benutzt.
+     *
+     * Ein Produkt mit eigener Kontotabelle hat aber oft eine EIGENE Stelle,
+     * an der aus einer Produktzeile eine Verbindung wird (im Projekt-Manager
+     * `ImapService::postfach()`, ausdruecklich „damit nicht daneben eine
+     * zweite Verbindung aufgebaut wird"). Das soll es hereingeben duerfen:
+     * Zwei Wege zum selben Postfach waeren zwei Stellen, an denen Transport
+     * und Zugangsdaten entschieden werden — und die Attrappen der Tests
+     * haengen am Produktweg, nicht am Paketweg.
      */
-    public function finden(Vorgang $vorgang, MailAccount $konto, ?Mailbox $postfach = null): ?Nachrichtenfund
+    public function finden(Vorgang $vorgang, MailAccount|Mailbox $wo): ?Nachrichtenfund
     {
         if ($vorgang->nachricht === '') {
             return null;
         }
 
-        $postfach ??= Mailboxes::for($konto);
+        $postfach = $wo instanceof Mailbox ? $wo : Mailboxes::for($wo);
 
         return $this->mitgeteilt($vorgang, $postfach) ?? $this->gesucht($vorgang, $postfach);
     }
