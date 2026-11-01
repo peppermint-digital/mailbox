@@ -1,6 +1,7 @@
+import { useMemo } from 'react';
 import { ForwardComposer, type ForwardComposerLabels, type ForwardComposerProps } from './ForwardComposer';
 import { germanLabels } from '../germanLabels';
-import { VerfassenFeld } from '../VerfassenFeld';
+import { VerfassenFeld, type VerfasserDienste, type VerfassenFeldProps } from '../VerfassenFeld';
 
 /**
  * Weiterleiten direkt im Postfach — mit den Dateien der Ursprungsnachricht (#8377).
@@ -27,22 +28,54 @@ export const weiterleitTexte: ForwardComposerLabels = {
     body: germanLabels.rumpf,
 };
 
-export type WeiterleitenFeldProps = Omit<ForwardComposerProps, 'labels' | 'composer' | 'notify' | 'endpoints'> & {
-    endpoints: { forward: string };
-    /**
-     * Wie eine Erfolgsmeldung aussieht, entscheidet das Produkt.
-     *
-     * Ohne Angabe wird nichts gemeldet — stiller als vorher, aber nicht falsch:
-     * Das Formular schließt sich, und die Liste wird neu geholt.
-     */
-    melden?: (nachricht: string) => void;
-};
+export type WeiterleitenFeldProps = Omit<ForwardComposerProps, 'labels' | 'composer' | 'notify' | 'endpoints'> &
+    VerfasserDienste & {
+        endpoints: { forward: string };
+        /**
+         * Wie eine Erfolgsmeldung aussieht, entscheidet das Produkt.
+         *
+         * Ohne Angabe wird nichts gemeldet — stiller als vorher, aber nicht falsch:
+         * Das Formular schließt sich, und die Liste wird neu geholt.
+         */
+        melden?: (nachricht: string) => void;
+    };
 
-export function WeiterleitenFeld({ melden, ...eigenschaften }: WeiterleitenFeldProps) {
+export function WeiterleitenFeld({
+    melden,
+    schreibhilfe,
+    schreibhilfeTabu,
+    diktat,
+    signatureSource,
+    recipients,
+    ...eigenschaften
+}: WeiterleitenFeldProps) {
+    /*
+     * Dieselbe Hülle wie in {@link InlineAntwort}, aus demselben Grund: Die
+     * Dienste des Produkts gehören auch in die Weiterleitung, und gemerkt
+     * wird an den Einzelwerten, damit ein neu gebautes Objekt im JSX des
+     * Produkts den Editor nicht bei jedem Zeichnen neu aufbaut.
+     */
+    const Verfasser = useMemo(
+        () =>
+            function Verfasser(durchgereicht: VerfassenFeldProps) {
+                return (
+                    <VerfassenFeld
+                        {...durchgereicht}
+                        schreibhilfe={schreibhilfe}
+                        schreibhilfeTabu={schreibhilfeTabu}
+                        diktat={diktat}
+                        signatureSource={signatureSource}
+                        recipients={recipients}
+                    />
+                );
+            },
+        [schreibhilfe, schreibhilfeTabu, diktat, signatureSource, recipients],
+    );
+
     return (
         <ForwardComposer
             {...eigenschaften}
-            composer={VerfassenFeld as never}
+            composer={Verfasser as never}
             labels={weiterleitTexte}
             notify={{ success: (nachricht) => melden?.(nachricht) }}
         />

@@ -222,6 +222,47 @@ function editorMit(dienste: {
     };
 }
 
+/**
+ * Die Dienste und Quellen, die ein Produkt an ein Verfassen-Feld hängt.
+ *
+ * ## Warum das ein eigener Typ ist (01.11.2026)
+ *
+ * `VerfassenFeld` nimmt sie seit dem 31.10.2026 — aber nur die Verfassen-SEITE
+ * verdrahtet es selbst. Antwort und Weiterleitung bekommen ihr Formular von
+ * {@link InlineAntwort} bzw. {@link WeiterleitenFeld}, und die beiden Hüllen
+ * setzten `composer={VerfassenFeld}` ohne jede Möglichkeit, etwas
+ * durchzureichen.
+ *
+ * Die Folge, gemessen am 01.11.2026 in Produktion: In AI Brain, CRM und
+ * Verwaltung hat der Editor beim Antworten **20 Knöpfe** — Schreibassistent
+ * und Spracheingabe fehlen. Auf der Verfassen-Seite derselben Systeme sind
+ * sie da. Im Projekt-Manager sind sie auch in der Antwort da, und zwar nur
+ * deshalb, weil er die Hülle des Pakets umgeht und sein eigenes Formular
+ * einhängt — also genau der Sonderweg, den dieses Paket abschafft.
+ *
+ * Ein Platz, den die eine Hülle hat und die zwei anderen nicht, ist keine
+ * Entscheidung, sondern ein vergessener Durchgang.
+ *
+ * Es gibt hier bewusst KEINE Vorgaben: Was ein Produkt nicht mitgibt, zeichnet
+ * der Editor nicht — ein Knopf ohne Dienst dahinter ist schlimmer als keiner.
+ */
+export interface VerfasserDienste {
+    /** Der Schreibassistent. Fehlt er, gibt es den Knopf nicht. */
+    schreibhilfe?: SchreibhilfeQuelle | null;
+    /** Knotennamen, die der Assistent nicht anfassen darf. */
+    schreibhilfeTabu?: string[];
+    /** Die Spracheingabe. Fehlt sie, gibt es den Knopf nicht. */
+    diktat?: DiktatQuelle | null;
+    /**
+     * Die Signaturen. Ohne Angabe hat das Formular keine und zeichnet die
+     * Zeile gar nicht — der Zustand von drei Produkten, bis die Signaturen
+     * umgezogen sind.
+     */
+    signatureSource?: SignatureSource;
+    /** Der Adressvorrat, falls das Produkt mehr kennt als das Adressbuch. */
+    recipients?: RecipientSource;
+}
+
 export type VerfassenFeldProps = Omit<EmailComposerFormProps, 'labels' | 'editor' | 'recipients' | 'signatureSource'> &
     /*
      * Adressquelle und Signaturen sind OPTIONAL, nicht weggenommen: Die Vorgabe

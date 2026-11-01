@@ -969,8 +969,30 @@ export function useMailboxSeite({
         }
     };
 
+    /*
+     * Der Verlauf fragt unter DEM Vorsatz, unter dem dieses Produkt seine
+     * Mailseiten fuehrt (01.11.2026, Befund von mail-gleich).
+     *
+     * Hier stand `conversationRoutes('/mailbox')` — fest verdrahtet, als
+     * einzige Stelle dieser Datei, die `basis` nicht benutzt. Fuer drei
+     * Produkte stimmte das zufaellig. Der Projekt-Manager fuehrt seine 56
+     * Mailrouten unter `/emails`; seine Oberflaeche fragte also eine Adresse
+     * ab, die es dort nicht gibt, bekam 404 — und der Umschalter
+     * „Gespraechsverlauf" erschien NIE.
+     *
+     * Gesehen hat das niemand, weil der Fehlschlag mit Absicht still ist
+     * ({@link useMailConversation}: „Kein Verlauf ist kein Fehler, ueber den
+     * jemand etwas lesen muesste"). Ein stiller Riegel gegen einen Fall, der
+     * nicht eintreten soll, verdeckt genau den Fall, in dem die Adresse
+     * falsch ist: Die Ansicht sieht vollstaendig aus, und es fehlt eine ganze
+     * Faehigkeit.
+     *
+     * Gemessen am 01.11.2026 in Produktion, dieselbe Kette in allen vier:
+     * `/mailbox/3/conversation-available` → 404 im Manager,
+     * `/emails/3/conversation-available` → `{"available":true}`.
+     */
     const verlauf = useMailConversation({
-        routes: conversationRoutes('/mailbox'),
+        routes: conversationRoutes(basis),
         accountId: konto?.id ?? null,
         thread: ((offene.message as { thread_id?: string | null } | null)?.thread_id ?? '') || '',
     });

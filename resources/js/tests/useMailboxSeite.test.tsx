@@ -279,6 +279,52 @@ describe('der Haken füllt, was er verspricht', () => {
         unmount();
     });
 
+    it('fragt den Gesprächsverlauf unter dem Vorsatz des Produkts (01.11.2026)', async () => {
+        /*
+         * Der Test über dieser Zeile prüft, dass KEINE Adresse ausserhalb des
+         * Vorsatzes liegt — und war trotzdem gruen, waehrend der
+         * Gespraechsverlauf im Projekt-Manager vollstaendig fehlte.
+         *
+         * Der Grund ist die Luecke zwischen „keine falsche Adresse gesehen"
+         * und „alle Adressen gesehen": Die Verlaufsabfrage geht erst los, wenn
+         * eine Nachricht MIT Kette offen ist. Ohne eine offene Nachricht kam
+         * sie in `gesehen` nie vor, und `conversationRoutes('/mailbox')` stand
+         * elf Tage fest verdrahtet da.
+         *
+         * Deshalb wird hier eine Nachricht geoeffnet, bevor gemessen wird. Was
+         * nicht laeuft, kann auch nicht falsch adressiert auffallen.
+         */
+        const { fetchStub, gesehen } = gegenstelle({
+            'message/9': {
+                success: true,
+                message: { uid: 9, subject: 'Mit Kette', thread_id: 'kette-1' },
+                folder: 'INBOX',
+            },
+            'conversation-available': { available: true },
+        });
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} basis="/emails" />);
+
+        await vi.waitFor(() => expect(zuletzt.offene).toBeDefined());
+
+        await act(async () => {
+            await (zuletzt.offene as { open: (m: unknown, f: string) => Promise<unknown> }).open(
+                { uid: 9, message_id: '<a@x>', thread_id: 'kette-1' },
+                'INBOX',
+            );
+        });
+
+        await vi.waitFor(() => expect(gesehen.some((pfad) => pfad.includes('conversation-available'))).toBe(true));
+
+        const verlaufsfragen = gesehen.filter((pfad) => pfad.includes('conversation'));
+
+        expect(verlaufsfragen.every((pfad) => pfad.startsWith('/emails/'))).toBe(true);
+        expect(verlaufsfragen.filter((pfad) => pfad.startsWith('/mailbox/'))).toEqual([]);
+
+        unmount();
+    });
+
     it('bleibt ohne Angabe auf /mailbox — die drei anderen Produkte merken nichts', async () => {
         /*
          * Die wichtigere Richtung. CRM, Verwaltung und AI Brain geben keinen

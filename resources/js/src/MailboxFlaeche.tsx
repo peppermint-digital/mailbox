@@ -4,6 +4,7 @@ import { looksLikeFolder, ordnerAnzeigename } from './folders';
 import { germanLabels } from './germanLabels';
 import type { InlineAntwortProps } from './InlineAntwort';
 import type { WeiterleitenFeldProps } from './inertia/WeiterleitenFeld';
+import type { VerfasserDienste } from './VerfassenFeld';
 import { MailAssignmentPicker } from './MailAssignmentPicker';
 import { MailboxBrowser } from './MailboxBrowser';
 import { MailboxChat, type MailboxChatProps } from './MailboxChat';
@@ -145,6 +146,23 @@ export interface MailboxFlaecheProps {
      */
     weiterleitenFeld?: ComponentType<WeiterleitenFeldProps>;
     /**
+     * Die Dienste des Produkts für das Formular in Antwort und Weiterleitung.
+     *
+     * Eine Zeile am Produkt statt einer Hülle je Weg: Die Fläche reicht sie an
+     * {@link InlineAntwort} und {@link WeiterleitenFeld} durch, die sie an das
+     * Verfassen-Feld hängen.
+     *
+     * Vorher endete hier alles, was ein Produkt an seinem Verfassen-Feld hat.
+     * Gemessen am 01.11.2026 in Produktion: Schreibassistent und Spracheingabe
+     * fehlten in AI Brain, CRM und Verwaltung beim Antworten und Weiterleiten
+     * vollständig, obwohl sie auf der Verfassen-Seite derselben Systeme da
+     * sind. Einzelheiten unter {@link VerfasserDienste}.
+     *
+     * Wer ein EIGENES Antwortfeld mitgibt, bekommt sie dort ebenfalls — ob es
+     * sie benutzt, entscheidet dieses Feld.
+     */
+    verfasserDienste?: VerfasserDienste;
+    /**
      * Zusatzknoepfe im Eingabefeld des Assistenten — etwa ein Mikrofon.
      *
      * `MailboxChat` nimmt `controls` seit jeher; die Flaeche hat es nur nicht
@@ -239,6 +257,7 @@ export function MailboxFlaeche({
     nachDerSeite,
     antwortFeld: AntwortFeld,
     weiterleitenFeld: WeiterleitenFeld,
+    verfasserDienste,
     chatZusatz,
     kettenMoeglich = false,
     suchVerzeichnis = null,
@@ -856,6 +875,7 @@ export function MailboxFlaeche({
                                             bodyText={nachricht.body_text ?? null}
                                             originalAttachments={nachricht.attachments ?? []}
                                             endpoints={{ forward: `${basis}/${konto.id}/forward` }}
+                                            {...verfasserDienste}
                                             melden={(text) => melden(text, true)}
                                             onSent={() => setWeiterleitenOffen(false)}
                                             onCancel={() => setWeiterleitenOffen(false)}
@@ -865,6 +885,7 @@ export function MailboxFlaeche({
                                             account={{ id: konto.id, name: konto.name, email: konto.email }}
                                             message={offene.message as never}
                                             replyAll={antwortAnAlle}
+                                            {...verfasserDienste}
                                             sending={sendetAntwort}
                                             onSend={(rumpf, an, kopie, betreff, anhaenge, zitatHtml) =>
                                                 void antwortSenden(rumpf, an, kopie, betreff, anhaenge, zitatHtml)

@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { InlineAntwort } from '../src/InlineAntwort';
+import { WeiterleitenFeld } from '../src/inertia/WeiterleitenFeld';
 import { RichTextEditor } from '../src/RichTextEditor';
 import { VerfassenFeld } from '../src/VerfassenFeld';
 import { germanLabels } from '../src/germanLabels';
@@ -119,6 +121,99 @@ describe('VerfassenFeld reicht die Dienste an seinen Vorgabe-Editor durch', () =
 
         expect(container.querySelector('[data-slot="eigener-editor"]')).not.toBeNull();
         expect(container.querySelector('[data-slot="editor-schreibhilfe"]')).toBeNull();
+        unmount();
+    });
+});
+
+describe('Antwort und Weiterleitung reichen die Dienste genauso durch (01.11.2026)', () => {
+    /**
+     * Der Befund, der diesen Block ausgelöst hat.
+     *
+     * Die zwei Hüllen des Postfachs setzten `composer={VerfassenFeld}` ohne
+     * jeden Durchgang. Der Block darüber sichert also seit dem 31.10.2026 eine
+     * Strecke zu, die nur die Verfassen-SEITE benutzt — und in der Antwort
+     * endete dieselbe Fähigkeit im Nichts.
+     *
+     * Gemessen am 01.11.2026 in Produktion, am Antwortfeld derselben Mail:
+     * AI Brain, CRM und Verwaltung je **20** Editor-Knöpfe ohne Assistent und
+     * Mikrofon; der Projekt-Manager hatte beide — weil er die Hülle umgeht und
+     * sein eigenes Formular einhängt.
+     *
+     * Dass es niemandem auffiel, liegt an der Form des Fehlschlags: Es fehlt
+     * ein Knopf. Es gibt keine Meldung, keinen Übersetzerfehler, keinen roten
+     * Test — die Antwort sieht vollständig aus.
+     */
+    const ANTWORT_PFLICHT = {
+        account: { id: 1, name: 'Büro', email: 'buero@example.test' },
+        message: { uid: 7, subject: 'Anfrage', from_address: 'kundin@example.test', date: '2026-11-01T08:00:00Z' },
+        replyAll: false,
+        sending: false,
+        onSend: () => {},
+        onCancel: () => {},
+    } as never;
+
+    const WEITERLEITEN_PFLICHT = {
+        account: { id: 1, name: 'Büro', email: 'buero@example.test' },
+        source: { type: 'imap', folder: 'INBOX', uid: 7 },
+        subject: 'Anfrage',
+        fromAddress: 'kundin@example.test',
+        date: '2026-11-01T08:00:00Z',
+        endpoints: { forward: '/mailbox/1/forward' },
+        onSent: () => {},
+        onCancel: () => {},
+    } as never;
+
+    it('zeigt beide Knöpfe im Antwortfeld, wenn das Produkt die Dienste mitgibt', () => {
+        const { container, unmount } = render(<InlineAntwort {...ANTWORT_PFLICHT} schreibhilfe={QUELLE} diktat={STIMME} />);
+
+        expect(container.querySelector('[data-slot="editor-schreibhilfe"]')).not.toBeNull();
+        expect(container.querySelector('[data-slot="editor-diktat"]')).not.toBeNull();
+        unmount();
+    });
+
+    it('zeigt im Antwortfeld ohne Dienste weiterhin keinen von beiden', () => {
+        // Die Gegenprobe: Ein Produkt ohne Assistenten bekommt keinen Knopf
+        // untergeschoben, nur weil die Strecke jetzt offen ist.
+        const { container, unmount } = render(<InlineAntwort {...ANTWORT_PFLICHT} />);
+
+        expect(container.querySelector('[data-slot="editor-schreibhilfe"]')).toBeNull();
+        expect(container.querySelector('[data-slot="editor-diktat"]')).toBeNull();
+        unmount();
+    });
+
+    it('zeigt beide Knöpfe beim Weiterleiten', () => {
+        const { container, unmount } = render(<WeiterleitenFeld {...WEITERLEITEN_PFLICHT} schreibhilfe={QUELLE} diktat={STIMME} />);
+
+        expect(container.querySelector('[data-slot="editor-schreibhilfe"]')).not.toBeNull();
+        expect(container.querySelector('[data-slot="editor-diktat"]')).not.toBeNull();
+        unmount();
+    });
+
+    it('zeigt beim Weiterleiten ohne Dienste keinen von beiden', () => {
+        const { container, unmount } = render(<WeiterleitenFeld {...WEITERLEITEN_PFLICHT} />);
+
+        expect(container.querySelector('[data-slot="editor-schreibhilfe"]')).toBeNull();
+        expect(container.querySelector('[data-slot="editor-diktat"]')).toBeNull();
+        unmount();
+    });
+
+    it('nimmt die Signaturen des Produkts mit in die Antwort', () => {
+        /*
+         * Derselbe Durchgang trägt die Signatur. Heute hat nur der
+         * Projekt-Manager welche — und nur in seiner eigenen Hülle. Nach dem
+         * Umzug der Signaturen nach AI Brain hängt hier die Zeile, die alle
+         * vier zeigen sollen; ohne diese Zusicherung bliebe sie in Antwort und
+         * Weiterleitung wieder weg.
+         */
+        const signaturen = {
+            signatures: [{ id: 1, name: 'Standard', body_html: '<p>-- <br>Büro</p>', is_default: true }],
+            load: async () => undefined,
+            defaultSignature: () => ({ id: 1, name: 'Standard', body_html: '<p>-- <br>Büro</p>', is_default: true }),
+        };
+
+        const { container, unmount } = render(<InlineAntwort {...ANTWORT_PFLICHT} signatureSource={signaturen as never} />);
+
+        expect(container.textContent).toContain(germanLabels.verfassen.signature);
         unmount();
     });
 });
