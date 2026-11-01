@@ -6,9 +6,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Peppermint\Mailbox\Contracts\AccountStore;
+use Peppermint\Mailbox\Contracts\Mailbox;
 use Peppermint\Mailbox\Threading\ThreadKey;
 use Peppermint\Mailbox\Werkzeuge\GesamtWerkzeuge;
 use Peppermint\Mailbox\Werkzeuge\Vorgang;
+use Peppermint\Mailbox\Werkzeuge\VorgangsNachricht;
 
 /**
  * Die Werkzeugleiste an einer Mail — eigene Verben und die der anderen
@@ -45,6 +47,26 @@ use Peppermint\Mailbox\Werkzeuge\Vorgang;
  */
 trait HandlesWerkzeuge
 {
+    /**
+     * Was ueber die offene Nachricht ZUSAETZLICH mitreisen darf (#9145).
+     *
+     * Eine Weissliste und keine offene Tuer: `validate()` gibt von einem
+     * verschachtelten Feld nur die aufgezaehlten Schluessel zurueck. Was ein
+     * Browser sonst noch hineinlegt, kommt also nicht in den Vorgang — und
+     * damit nicht in ein Verb, das es fuer geprueft halten koennte.
+     *
+     * `uid` ist absichtlich nicht `integer`: IMAP zaehlt mit Zahlen, JMAP mit
+     * Zeichenketten, und der Vertrag von {@see Mailbox}
+     * sagt `int|string`. Eine Regel, die hier Zahlen erzwingt, schliesst das
+     * zweite Protokoll aus, und zwar still.
+     */
+    private const ZUSATZREGELN = [
+        'extra' => ['nullable', 'array'],
+        'extra.folder' => ['nullable', 'string', 'max:255'],
+        'extra.uid' => ['nullable', 'string', 'max:255'],
+        'extra.from_name' => ['nullable', 'string', 'max:255'],
+    ];
+
     /**
      * Wer gerade fragt. Ueblicherweise `$request->user()`.
      *
@@ -107,6 +129,7 @@ trait HandlesWerkzeuge
             'references' => ['nullable', 'string'],
             'subject' => ['nullable', 'string', 'max:998'],
             'from' => ['nullable', 'string', 'max:998'],
+            ...self::ZUSATZREGELN,
         ]);
 
         $person = $this->werkzeugPerson();
@@ -140,6 +163,7 @@ trait HandlesWerkzeuge
             'subject' => ['nullable', 'string', 'max:998'],
             'from' => ['nullable', 'string', 'max:998'],
             'input' => ['nullable', 'array'],
+            ...self::ZUSATZREGELN,
         ]);
 
         $person = $this->werkzeugPerson();
@@ -200,6 +224,7 @@ trait HandlesWerkzeuge
             'references' => ['nullable', 'string'],
             'subject' => ['nullable', 'string', 'max:998'],
             'from' => ['nullable', 'string', 'max:998'],
+            ...self::ZUSATZREGELN,
         ]);
 
         $person = $this->werkzeugPerson();
@@ -245,6 +270,54 @@ trait HandlesWerkzeuge
             nachricht: (string) $daten['message_id'],
             betreff: $daten['subject'] ?? null,
             absender: $daten['from'] ?? null,
+            zusatz: $this->zusatz($daten),
         );
+    }
+
+    /**
+     * Was dieses System ueber die offene Nachricht noch weiss (#9145).
+     *
+     * ## Warum es diesen Platz ueberhaupt gibt
+     *
+     * {@see Vorgang::$zusatz} stand seit dem ersten Tag im Vertrag und wurde
+     * von NIEMANDEM gefuellt — nicht von hier, nicht von den MCP-Werkzeugen.
+     * Ein Verb, das daraus liest, bekam also immer eine leere Hand:
+     * „Ticket erstellen" schrieb seine Beschreibung aus `zusatz['body_text']`
+     * und legte deshalb seit dem 19.10.2026 Tickets ohne Beschreibung an,
+     * sobald es aus der Werkzeugleiste kam. Gefunden am 1.11.2026 — dieselbe
+     * Klasse Fehler wie „ein Feld in der Drahtform ohne Oberflaeche
+     * dahinter", nur in der anderen Richtung.
+     *
+     * ## Was hier mitreist und was NICHT
+     *
+     * `folder` und `uid` der offenen Mail. Damit kommt ein Verb an die Mail
+     * selbst heran — siehe {@see VorgangsNachricht},
+     * das sie holt und an der `Message-ID` prueft.
+     *
+     * **Der RUMPF reist nicht mit**, obwohl genau er gebraucht wird. Zwei
+     * Gruende, und beide sind handfest: `body_html` traegt eingebettete
+     * Bilder als `data:`-Adressen und ist regelmaessig ein Megabyte gross —
+     * das `tools`-Abruf ist ein GET mit Abfragezeichenfolge. Und eine
+     * mitgeteilte Angabe ist eine Behauptung: Wer den Rumpf aus der geholten
+     * und geprueften Mail nimmt, hat ihn geprueft.
+     *
+     * `in_reply_to` und `references` reisen mit, weil sie ohnehin schon
+     * ankommen (die Kette wird daraus gerechnet) und ein Verb, das selbst
+     * eine Verknuepfung anlegt, sie braucht. Sie kosten hier nichts.
+     *
+     * @param  array<string, mixed>  $daten
+     * @return array<string, mixed>
+     */
+    private function zusatz(array $daten): array
+    {
+        $zusatz = is_array($daten['extra'] ?? null) ? $daten['extra'] : [];
+
+        foreach (['in_reply_to', 'references'] as $kopf) {
+            if (($daten[$kopf] ?? null) !== null && ! isset($zusatz[$kopf])) {
+                $zusatz[$kopf] = $daten[$kopf];
+            }
+        }
+
+        return $zusatz;
     }
 }

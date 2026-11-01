@@ -113,6 +113,36 @@ export interface WerkzeugNachricht {
     references?: string | null;
     subject?: string | null;
     from_address?: string | null;
+    from_name?: string | null;
+    /**
+     * Wo die Mail liegt — Ordner und Kennung (#9145).
+     *
+     * ## Warum das mitreist, obwohl eine Kennung es NICHT darf
+     *
+     * Die Regel „die Adresse, nie die Nummer" gilt fuer KONTEN: Postfach 5
+     * ist in jedem System ein anderes. Ordner und IMAP-Kennung sind dagegen
+     * Eigenschaften des Postfachs selbst — dasselbe Postfach liegt fuer alle
+     * vier Systeme auf demselben Server, und dort hat die Mail dieselbe
+     * Kennung.
+     *
+     * Gebraucht wird es, weil drei Verben die Mail SELBST brauchen: „Als
+     * Eingangsrechnung" die Bytes eines Anhangs, „Aufgabe anhaengen" Rumpf
+     * und Anhaenge, „Ticket erstellen" den Rumpf fuer die Beschreibung. Eine
+     * `Message-ID` ist ueber IMAP nicht ohne Suche aufloesbar — und genau
+     * deshalb fuehrten diese Verben bis v0.203.0 nur hin.
+     *
+     * Es ist eine Behauptung und wird drueben geprueft: Das Zielsystem holt
+     * die Mail und vergleicht ihre `Message-ID`, bevor es etwas daraus nimmt.
+     * Deshalb ist eine falsche Angabe hier nicht gefaehrlich, sondern bloss
+     * unwirksam — der Rueckfall ist die Suche.
+     *
+     * Der RUMPF reist bewusst NICHT mit: `body_html` traegt eingebettete
+     * Bilder als `data:`-Adressen und ist regelmaessig ein Megabyte gross,
+     * und der Abruf der Verbliste ist ein GET. Wer den Rumpf braucht, holt
+     * die geprueefte Mail.
+     */
+    folder?: string | null;
+    uid?: number | string | null;
 }
 
 export interface MailWerkzeugeOptionen {
@@ -174,6 +204,44 @@ function kennzeichen(nachricht: WerkzeugNachricht): Record<string, string> {
     return felder;
 }
 
+/**
+ * Wo die Mail liegt — flach, damit es durch eine Adresszeile passt.
+ *
+ * `extra[folder]=…&extra[uid]=…`: Der Abruf der Verbliste ist ein GET, und
+ * Laravel liest diese Form als verschachteltes Feld. Der Server nimmt nur die
+ * Schluessel an, die er kennt (`ZUSATZREGELN`) — was ein Browser sonst
+ * hineinlegt, erreicht kein Verb.
+ *
+ * Die Kennung geht als ZEICHENKETTE hinaus, auch wenn IMAP mit Zahlen zaehlt:
+ * JMAP zaehlt mit Zeichenketten, und der Vertrag des Postfachs sagt
+ * `int|string`. Eine Zahl zu erzwingen schliesst das zweite Protokoll aus,
+ * und zwar still.
+ */
+function wohin(nachricht: WerkzeugNachricht): Record<string, string> {
+    const felder: Record<string, string> = {};
+
+    if (nachricht.folder) felder['extra[folder]'] = nachricht.folder;
+    if (nachricht.uid !== null && nachricht.uid !== undefined && nachricht.uid !== '') {
+        felder['extra[uid]'] = String(nachricht.uid);
+    }
+    if (nachricht.from_name) felder['extra[from_name]'] = nachricht.from_name;
+
+    return felder;
+}
+
+/** Dasselbe als verschachteltes Objekt — fuer die beiden POST-Wege. */
+function zusatz(nachricht: WerkzeugNachricht): { extra?: Record<string, string> } {
+    const extra: Record<string, string> = {};
+
+    if (nachricht.folder) extra.folder = nachricht.folder;
+    if (nachricht.uid !== null && nachricht.uid !== undefined && nachricht.uid !== '') {
+        extra.uid = String(nachricht.uid);
+    }
+    if (nachricht.from_name) extra.from_name = nachricht.from_name;
+
+    return Object.keys(extra).length > 0 ? { extra } : {};
+}
+
 export function useMailWerkzeuge(optionen: MailWerkzeugeOptionen) {
     const { endpoint, ausloesenEndpoint, auswahlEndpoint, nachricht, csrfToken } = optionen;
     const doFetch = optionen.fetch ?? globalThis.fetch;
@@ -210,7 +278,7 @@ export function useMailWerkzeuge(optionen: MailWerkzeugeOptionen) {
         setLaedt(true);
 
         try {
-            const url = `${endpoint}?${new URLSearchParams(kennzeichen(nachricht)).toString()}`;
+            const url = `${endpoint}?${new URLSearchParams({ ...kennzeichen(nachricht), ...wohin(nachricht) }).toString()}`;
             const response = await doFetch(url, {
                 headers: kopfzeilen(csrfToken),
                 credentials: 'same-origin',
@@ -249,7 +317,23 @@ export function useMailWerkzeuge(optionen: MailWerkzeugeOptionen) {
                 setLaedt(false);
             }
         }
-    }, [endpoint, csrfToken, doFetch, nachricht?.message_id, nachricht?.in_reply_to, nachricht?.references, nachricht?.subject, nachricht?.from_address]);
+    }, [
+        endpoint,
+        csrfToken,
+        doFetch,
+        nachricht?.message_id,
+        nachricht?.in_reply_to,
+        nachricht?.references,
+        nachricht?.subject,
+        nachricht?.from_address,
+        nachricht?.from_name,
+        // Ordner und Kennung gehoeren in die Abhaengigkeiten, obwohl sie sich
+        // fast immer zusammen mit der `message_id` aendern: Fast immer ist
+        // keine Zusicherung, und dieselbe Mail in einem anderen Ordner ist
+        // genau der Fall, in dem ein Verb an die falsche Stelle greift.
+        nachricht?.folder,
+        nachricht?.uid,
+    ]);
 
     useEffect(() => {
         void laden();
@@ -286,6 +370,7 @@ export function useMailWerkzeuge(optionen: MailWerkzeugeOptionen) {
                         // gemeint war, hat der Mensch beim Klick entschieden.
                         system: werkzeug.system,
                         ...kennzeichen(nachricht),
+                        ...zusatz(nachricht),
                         input: eingabe,
                     }),
                 });
@@ -366,6 +451,7 @@ export function useMailWerkzeuge(optionen: MailWerkzeugeOptionen) {
                         field: feld,
                         query: frage,
                         ...kennzeichen(nachricht),
+                        ...zusatz(nachricht),
                     }),
                 });
 

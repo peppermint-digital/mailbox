@@ -440,3 +440,143 @@ describe('die veraltete Antwort', () => {
         unmount();
     });
 });
+
+describe('wo die Mail liegt (#9145)', () => {
+    /*
+     * Drei Verben brauchen die Mail SELBST: „Als Eingangsrechnung" die Bytes
+     * eines Anhangs, „Aufgabe anhaengen" Rumpf und Anhaenge, „Ticket
+     * erstellen" den Rumpf. Eine `Message-ID` ist ueber IMAP nicht ohne Suche
+     * aufloesbar — deshalb reisen Ordner und Kennung mit.
+     *
+     * Geprueft wird hier nur, dass sie auf ALLEN DREI Wegen mitgehen. Der
+     * eine, der fehlt, ist der, an dem das Verb dann sucht statt zu greifen —
+     * und das sieht man nicht, es ist nur langsam.
+     */
+    const MIT_ORT = { ...NACHRICHT, folder: 'Archiv/2026', uid: 4711, from_name: 'Lieferant GmbH' };
+
+    function hakenMit(holen: typeof globalThis.fetch, nachricht: typeof MIT_ORT) {
+        return function Probe({ tun }: { tun: (w: ReturnType<typeof useMailWerkzeuge>) => void }) {
+            const w = useMailWerkzeuge({
+                endpoint: '/mailbox/42/tools',
+                ausloesenEndpoint: '/mailbox/42/tools/run',
+                auswahlEndpoint: '/mailbox/42/tools/options',
+                nachricht,
+                fetch: holen,
+            });
+
+            return <button onClick={() => tun(w)}>los</button>;
+        };
+    }
+
+    it('schickt Ordner und Kennung beim AUFLISTEN mit — in der Adresszeile', async () => {
+        const holen = vi.fn(async () => antwort({ tools: [], unreachable: [], failed: [] }));
+        const Probe = hakenMit(holen as never, MIT_ORT);
+        const { unmount } = render(<Probe tun={() => {}} />);
+
+        await new Promise((r) => setTimeout(r, 0));
+
+        const url = String(holen.mock.calls[0]![0]);
+
+        expect(url).toContain('extra%5Bfolder%5D=Archiv%2F2026');
+        expect(url).toContain('extra%5Buid%5D=4711');
+        unmount();
+    });
+
+    it('schickt sie beim AUSLOESEN mit — im Rumpf', async () => {
+        let gesendet: Record<string, unknown> = {};
+        const holen = vi.fn(async (url: string, init?: RequestInit) => {
+            if (String(url).includes('/run')) {
+                gesendet = JSON.parse(String(init?.body)) as Record<string, unknown>;
+
+                return antwort({ ok: true, message: 'verbucht', state: null });
+            }
+
+            return antwort({ tools: [], unreachable: [], failed: [] });
+        });
+        const Probe = hakenMit(holen as never, MIT_ORT);
+        const { container, unmount } = render(<Probe tun={(w) => void w.ausloesen(werkzeug({ key: 'beleg' }), { anhang: 'rechnung.pdf' })} />);
+
+        await new Promise((r) => setTimeout(r, 0));
+        container.querySelector('button')!.click();
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(gesendet.extra).toEqual({ folder: 'Archiv/2026', uid: '4711', from_name: 'Lieferant GmbH' });
+        unmount();
+    });
+
+    it('schickt sie auch bei der FELDSUCHE mit', async () => {
+        /*
+         * Welche Aufgaben in Frage kommen, entscheidet sich am Postfach und
+         * manchmal am Absender der Mail — ein Verb darf dafuer die Mail
+         * ansehen duerfen.
+         */
+        let gesendet: Record<string, unknown> = {};
+        const holen = vi.fn(async (url: string, init?: RequestInit) => {
+            if (String(url).includes('/options')) {
+                gesendet = JSON.parse(String(init?.body)) as Record<string, unknown>;
+
+                return antwort({ options: [] });
+            }
+
+            return antwort({ tools: [], unreachable: [], failed: [] });
+        });
+        const Probe = hakenMit(holen as never, MIT_ORT);
+        const { container, unmount } = render(<Probe tun={(w) => void w.auswahl(werkzeug({ key: 'aufgabe' }), 'aufgabe', 'Meier')} />);
+
+        await new Promise((r) => setTimeout(r, 0));
+        container.querySelector('button')!.click();
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(gesendet.extra).toEqual({ folder: 'Archiv/2026', uid: '4711', from_name: 'Lieferant GmbH' });
+        unmount();
+    });
+
+    it('schickt die Kennung als Zeichenkette — JMAP zaehlt nicht mit Zahlen', async () => {
+        let gesendet: Record<string, unknown> = {};
+        const holen = vi.fn(async (url: string, init?: RequestInit) => {
+            if (String(url).includes('/run')) {
+                gesendet = JSON.parse(String(init?.body)) as Record<string, unknown>;
+
+                return antwort({ ok: true, message: 'ok', state: null });
+            }
+
+            return antwort({ tools: [], unreachable: [], failed: [] });
+        });
+        const Probe = hakenMit(holen as never, { ...MIT_ORT, uid: 'Mdeadbeef' });
+        const { container, unmount } = render(<Probe tun={(w) => void w.ausloesen(werkzeug())} />);
+
+        await new Promise((r) => setTimeout(r, 0));
+        container.querySelector('button')!.click();
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect((gesendet.extra as Record<string, unknown>).uid).toBe('Mdeadbeef');
+        unmount();
+    });
+
+    it('laesst `extra` ganz weg, wenn die Seite den Ort nicht kennt', async () => {
+        /*
+         * Nicht `extra: {}`: Ein leeres Objekt sieht auf dem Server aus wie
+         * eine Angabe, die es nicht gibt. Der Rueckfall ist die Suche, und
+         * der soll greifen.
+         */
+        let gesendet: Record<string, unknown> = {};
+        const holen = vi.fn(async (url: string, init?: RequestInit) => {
+            if (String(url).includes('/run')) {
+                gesendet = JSON.parse(String(init?.body)) as Record<string, unknown>;
+
+                return antwort({ ok: true, message: 'ok', state: null });
+            }
+
+            return antwort({ tools: [], unreachable: [], failed: [] });
+        });
+        const Probe = hakenMit(holen as never, NACHRICHT as typeof MIT_ORT);
+        const { container, unmount } = render(<Probe tun={(w) => void w.ausloesen(werkzeug())} />);
+
+        await new Promise((r) => setTimeout(r, 0));
+        container.querySelector('button')!.click();
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(gesendet).not.toHaveProperty('extra');
+        unmount();
+    });
+});

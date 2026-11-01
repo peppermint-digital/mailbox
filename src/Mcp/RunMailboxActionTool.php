@@ -61,6 +61,18 @@ class RunMailboxActionTool extends Tool
             'message_id' => (string) ($request->get('message_id') ?? ''),
             'subject' => $request->get('subject'),
             'from' => $request->get('from'),
+            /*
+             * Was die fragende Seite ueber die offene Mail noch weiss —
+             * Ordner und Kennung. Drei Verben brauchen die Mail SELBST (die
+             * Bytes eines Anhangs, den Rumpf), und ein Vorgang benennt sie
+             * nur fachlich. Ohne diesen Platz fuehrten sie deshalb nur hin.
+             *
+             * Es ist eine BEHAUPTUNG, und sie wird geprueft:
+             * {@see \Peppermint\Mailbox\Werkzeuge\VorgangsNachricht} holt die
+             * Mail und vergleicht ihre `Message-ID` mit der des Vorgangs,
+             * bevor ein Verb etwas daraus nimmt.
+             */
+            'extra' => $request->get('extra'),
         ]);
 
         if (! $vorgang->vollstaendig()) {
@@ -106,6 +118,14 @@ class RunMailboxActionTool extends Tool
                 ->description('Sender, same purpose as the subject.'),
             'input' => $schema->object()
                 ->description('What the verb\'s own fields collected — whatever this system asked for.'),
+            'extra' => $schema->object([
+                'folder' => $schema->string()
+                    ->description('The folder the open mail is in.'),
+                'uid' => $schema->string()
+                    ->description('The handle of the open mail in that folder. A claim, not a fact: this system re-reads the mail and checks its Message-ID before using it.'),
+                'from_name' => $schema->string()
+                    ->description('Display name of the sender, descriptive only.'),
+            ])->description('What the asking system knows about the open mail beyond its identity. Lets a verb reach the mail itself — the attachment bytes, the body.'),
         ];
     }
 }

@@ -3,9 +3,11 @@
 namespace Peppermint\Mailbox\Mcp;
 
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Database\Eloquent\Model;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Tool;
+use Peppermint\Mailbox\Werkzeuge\BridgeWerkzeugquelle;
 use Peppermint\Mailbox\Werkzeuge\GesamtWerkzeuge;
 use Peppermint\Mailbox\Werkzeuge\Vorgang;
 use Peppermint\Mailbox\Werkzeuge\Werkzeug;
@@ -52,7 +54,21 @@ class ListMailboxActionsTool extends Tool
             'message_id' => (string) ($request->get('message_id') ?? ''),
             'subject' => $request->get('subject'),
             'from' => $request->get('from'),
+            // Was die fragende Seite ueber die offene Mail noch weiss —
+            // Ordner und Kennung. Ohne das kommt ein Verb drueben nicht an
+            // die Mail selbst heran; siehe {@see \Peppermint\Mailbox\Werkzeuge\VorgangsNachricht}.
+            'extra' => $request->get('extra'),
         ]);
+
+        // Eine Feldsuche, kein Auflisten: Beide laufen unter derselben
+        // Faehigkeit (`mailbox.actions`), weil Suchen LIEST — siehe
+        // {@see \Peppermint\Mailbox\Werkzeuge\LiefertAuswahl}. Unterschieden
+        // werden sie am mitgeschickten Feldnamen.
+        $feld = trim((string) ($request->get('field') ?? ''));
+
+        if ($feld !== '') {
+            return $this->treffer($request, $verzeichnis, $vorgang, $person, $feld);
+        }
 
         if ($person === null || ! $vorgang->vollstaendig()) {
             // Leer und ohne Fehler. Ein Aufruf ohne Person koennte nur
@@ -78,6 +94,64 @@ class ListMailboxActionsTool extends Tool
         ]);
     }
 
+    /**
+     * Die Treffer eines suchbaren Feldes — die Gegenstelle zu
+     * {@see BridgeWerkzeugquelle::auswaehlen()}.
+     *
+     * ## Warum das hier steht und nicht in einem eigenen Werkzeug
+     *
+     * Weil es dieselbe Faehigkeit ist. Ein drittes MCP-Werkzeug brauchte eine
+     * dritte Faehigkeit im Register, und das ist eine dritte Stelle, an der
+     * ein Produkt sie vergessen kann — das stille Ergebnis waere ein
+     * Auswaehler ohne Treffer, und der sieht aus wie „den Kontakt gibt es
+     * nicht". Dieselbe Begruendung wie bei der dritten HTTP-Route.
+     *
+     * ## Immer `options`, auch wenn nichts gefunden wird
+     *
+     * `Auspacken::auswahl()` packt nur aus, was nach Treffern AUSSIEHT, und
+     * wirft eine Verb-Liste weg. Wer hier im Suchfall mit Verben antwortete,
+     * waere fuer den Gateway ein Erfolg und fuer den Auswaehler Unsinn —
+     * genau der Fall, gegen den `Auspacken` gebaut ist. Also ein Schluessel,
+     * der die Art der Antwort nennt, und eine leere Liste als ehrliches
+     * „nichts".
+     *
+     * Die leere Liste ist auch die Antwort auf „keine handelnde Person" und
+     * auf einen unvollstaendigen Vorgang. Ein Fehler waere hier eine rote
+     * Meldung an einem Feld, in das jemand gerade tippt.
+     */
+    private function treffer(
+        Request $request,
+        Werkzeugverzeichnis $verzeichnis,
+        Vorgang $vorgang,
+        ?Model $person,
+        string $feld,
+    ): Response {
+        if ($person === null || ! $vorgang->vollstaendig()) {
+            return Response::json(['options' => []]);
+        }
+
+        $treffer = $verzeichnis->auswahl(
+            (string) ($request->get('action') ?? ''),
+            $feld,
+            // Die leere Frage ist der Normalfall: Der Auswaehler fragt beim
+            // Aufklappen einmal ohne Text.
+            (string) ($request->get('query') ?? ''),
+            $vorgang,
+            $person,
+        );
+
+        return Response::json([
+            // Dieselbe Drahtform wie die dritte HTTP-Route: `value`, `label`,
+            // `hint`. Die inneren Namen gehen NICHT hinaus — sonst schickt
+            // dieses System `wort` und das naechste liest `label`.
+            'options' => array_map(static fn (array $eintrag): array => array_filter([
+                'value' => $eintrag['wert'],
+                'label' => $eintrag['wort'],
+                'hint' => $eintrag['hinweis'] ?? null,
+            ], static fn ($wert) => $wert !== null), $treffer),
+        ]);
+    }
+
     public function schema(JsonSchema $schema): array
     {
         return [
@@ -93,6 +167,20 @@ class ListMailboxActionsTool extends Tool
                 ->description('Subject, so what gets created has a name instead of an id. Descriptive only — never build a link on it.'),
             'from' => $schema->string()
                 ->description('Sender, same purpose as the subject.'),
+            'action' => $schema->string()
+                ->description('Only for a field search: the key of the verb whose field is being searched.'),
+            'field' => $schema->string()
+                ->description('Set this to search one field of one verb instead of listing the verbs. The answer is then {options: [{value, label, hint?}]}.'),
+            'query' => $schema->string()
+                ->description('What the person typed. Empty is the normal case — the picker asks once on open.'),
+            'extra' => $schema->object([
+                'folder' => $schema->string()
+                    ->description('The folder the open mail is in.'),
+                'uid' => $schema->string()
+                    ->description('The handle of the open mail in that folder. A claim, not a fact: the answering system re-reads the mail and checks its Message-ID before using it.'),
+                'from_name' => $schema->string()
+                    ->description('Display name of the sender, descriptive only.'),
+            ])->description('What the asking system knows about the open mail beyond its identity. Lets a verb reach the mail itself — the attachment bytes, the body.'),
         ];
     }
 }

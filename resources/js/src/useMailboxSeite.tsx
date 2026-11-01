@@ -751,13 +751,32 @@ export function useMailboxSeite({
      * Der Gewinn ist der ZUSTAND, nicht der Knopf: Wer hier sieht, dass die
      * Mail in der Verwaltung schon Ticket #7 ist, legt kein zweites an.
      */
-    const werkzeugNachricht = offene.message as never as {
+    const offeneNachricht = offene.message as never as {
         message_id?: string | null;
         in_reply_to?: string | null;
         references?: string | null;
         subject?: string | null;
         from_address?: string | null;
+        from_name?: string | null;
+        uid?: number | string | null;
     } | null;
+
+    /*
+     * Dazu, WO die Mail liegt (#9145).
+     *
+     * Der Ordner steht nicht an der Nachricht — er ist der gerade offene, und
+     * den kennt diese Seite. Ohne beides kommt ein Verb nicht an die Mail
+     * selbst heran (Anhang-Bytes, Rumpf), und genau deshalb fuehrten „Als
+     * Eingangsrechnung", „Aufgabe anhaengen" und „Kontakt zuordnen" bis
+     * v0.203.0 nur ins andere System.
+     *
+     * Die Angabe ist eine Behauptung und wird drueben an der `Message-ID` der
+     * geholten Mail geprueft — siehe `WerkzeugNachricht`.
+     */
+    const werkzeugNachricht = useMemo(
+        () => (offeneNachricht ? { ...offeneNachricht, folder: ordnerPfad } : null),
+        [offeneNachricht, ordnerPfad],
+    );
 
     const werkzeuge = useMailWerkzeuge({
         endpoint: konto ? `${basis}/${konto.id}/tools` : null,

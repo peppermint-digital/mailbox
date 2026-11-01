@@ -55,6 +55,8 @@ one merged list). Deliberately the same, down to the naming: one pattern for
 | `Werkzeuge\Werkzeugverzeichnis` | what this system registered |
 | `Werkzeuge\GesamtWerkzeuge` | own verbs plus the other systems', merged into one toolbar |
 | `Werkzeuge\Vorgang` | **which mail** — by address, thread key and Message-ID |
+| `Werkzeuge\VorgangsNachricht` | that mail, fetched and **checked** — for a verb that needs the mail itself |
+| `Werkzeuge\Nachrichtenfund` | what it hands out: folder, handle, message — and the attachment **by name** |
 | `Http\HandlesWerkzeuge` | the two routes a product mounts |
 | `Mcp\ListMailboxActionsTool` / `RunMailboxActionTool` | the provider side, so a system can be asked |
 
@@ -160,6 +162,30 @@ not do it at all. What arrives is the **file name**, never the index: the index
 only holds while both sides see the same mail in the same order, and for a mail
 another system fetched that is an assumption, not a fact.
 
+Which leaves the verb with a name and a need for bytes. Do **not** count the
+attachments yourself — ask for the mail and let it hand the file out:
+
+```php
+$fund = app(VorgangsNachricht::class)->finden($vorgang, $konto);   // $konto: YOUR visibility rule
+
+if ($fund === null) {
+    return Ergebnis::gescheitert('Diese Mail ist im Postfach nicht mehr zu finden.');
+}
+
+try {
+    $anhang = $fund->anhang($daten['anhang']);        // one — or ->anhaenge([...]) for `mehrfach`
+} catch (AnhangNichtVerwendbar $e) {
+    return Ergebnis::gescheitert($e->getMessage());   // missing, ambiguous, or gone
+}
+```
+
+`finden()` is where the index arithmetic lives, in **one** place and in the
+order of the mail it just verified. Three products doing that conversion are
+three rules that agree today. And it refuses rather than guesses when two
+attachments of the same mail share a name — the bar keys its list by file name,
+so neither side knows which one was ticked, and picking one is the same bet the
+file name exists to avoid.
+
 `mehrfach => true` turns a choice into a multiple choice — then a **list** of
 values arrives, even for a single tick, and an empty list when nothing is
 ticked. Without the flag a single value arrives. Reading both is exactly the
@@ -232,11 +258,16 @@ Two details that are not decoration:
   `data-highlighted`. A screen reader needs the first; a measurement needs
   something it can see without comparing colours.
 
-Across a system border the search goes through the same gateway as the list,
-and a deployment that does not know the field search yet answers with its
-**verb list** — a success for the gateway and nonsense for the picker. So only
-what really looks like options is unpacked (`Auspacken::auswahl`), and anything
-else yields nothing. Offering a verb list as a choice would be the worse
+Across a system border the search goes through the same gateway as the list
+(`list-mailbox-actions-tool`, told apart by the `field` it carries — searching
+reads, so a third capability would only be a third place to forget). A
+deployment that does not know the field search yet answers with its **verb
+list** — a success for the gateway and nonsense for the picker. So only what
+really looks like options is unpacked (`Auspacken::auswahl`), and anything else
+yields nothing. Until v0.204.0 the provider side of this was **missing**: the
+MCP tool never read `field`, so every cross-system picker stayed empty while
+the documentation said it worked. If one is empty on rollout, that is still the
+first suspect — the target system is not on v0.204+ yet. Offering a verb list as a choice would be the worse
 answer: twenty buttons that select nothing.
 
 The transport contract for it is `SuchendeWerkzeugquelle`, which **extends**
@@ -250,6 +281,54 @@ hits from *foreign* verbs; the system's own verbs keep searching.
 and two buttons. It used to be `window.confirm`, which stops the whole tab,
 cannot be translated, and is the one thing this design is about: a question
 that is **not** in the bar.
+
+## Where the mail lies — and why that may travel
+
+A `Vorgang` names the mail the way every system recognises it: mailbox
+**address**, thread key, Message-ID. That rule is not negotiable; an account id
+across a system border works by accident while the numbers match and then
+delivers the wrong conversation, silently.
+
+It leaves a verb that needs the mail *itself* with nothing to hold, though —
+and three of the four verbs do: the receipt needs an attachment's bytes, the
+task stores body and attachments, the ticket writes the body into its
+description. A Message-ID is not resolvable over IMAP without a search. That,
+and not the mask, is why those verbs only ever **led** somewhere.
+
+So `Vorgang::$zusatz` carries what the **asking** system knows about the open
+mail beyond its identity — `folder` and `uid`, on the wire as `extra`:
+
+```
+GET  …/tools?message_id=…&extra[folder]=INBOX&extra[uid]=4711
+POST …/tools/run     { …, "extra": {"folder": "INBOX", "uid": "4711"} }
+POST …/tools/options { …, "extra": {"folder": "INBOX", "uid": "4711"} }
+```
+
+Folder and handle are not an account id: they are properties of the **mailbox**,
+and the same mailbox is the same mailbox on the same server for all four
+systems. `MailboxFlaeche` fills them in on its own.
+
+Three things make this safe rather than clever, and none is optional:
+
+- **It is a claim, and it is checked.** `VorgangsNachricht` re-reads the mail
+  and compares its Message-ID with the `Vorgang` before handing it over. A
+  wrong `uid` — another protocol's handle, a changed `UIDVALIDITY` — is then
+  merely ineffective instead of dangerous, and the fallback search takes over.
+- **Only known keys arrive.** `folder`, `uid`, `from_name`, nothing else. What
+  a browser puts next to them never reaches a verb, which might take it for
+  checked.
+- **The body does not travel.** `body_html` carries inline images as `data:`
+  URIs and is routinely a megabyte; the list request is a GET. Whoever needs
+  the body takes it from the mail that was fetched and verified — and has
+  therefore checked it.
+
+`zusatz` was in the contract from the first day and **nobody filled it**:
+neither the HTTP side nor the MCP tools read `extra`. „Ticket erstellen" read
+its description out of it and consequently created tickets without one from
+19.10.2026 on, whenever it came from the toolbar. Found 1.11.2026 — the same
+class of hole as „a field in the wire form with no interface behind it", only
+the other way round. Both times the fix was the same: name a reader for every
+key, or do not send it.
 
 ## A verb that only leads there
 
@@ -336,6 +415,10 @@ GET  mailbox/{account}/tools         → { tools: [...], unreachable: [...], fai
 POST mailbox/{account}/tools/run     → { ok, message, state, data }
 POST mailbox/{account}/tools/options → { options: [{value, label, hint?}] }
 ```
+
+All three also take `extra` — `folder`, `uid`, `from_name` of the open mail.
+See *Where the mail lies* above for what that is for and why it is checked
+rather than believed.
 
 A tool carries `system: null` when it is this system's own, and the key it is
 filed under otherwise. The interface sends back exactly what it got — the
