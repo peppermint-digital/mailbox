@@ -363,6 +363,17 @@ export const germanLabels = {
          */
         source: (quelle: string) => {
             switch (quelle) {
+                case 'recent':
+                    /*
+                     * „Zuletzt", nicht „Verlauf". Die Quelle gab es hier bis
+                     * zum 01.11.2026 nicht, und der Rueckfall nannte sie wie
+                     * jede unbekannte — der Projekt-Manager hatte dafuer ein
+                     * eigenes Wort und haette es beim Angleichen verloren.
+                     *
+                     * Genau die Falle, vor der der Kommentar unten warnt: Ein
+                     * Wort, das beim Zusammenlegen still umbenannt wird.
+                     */
+                    return 'Zuletzt';
                 case 'colleague':
                     return 'Kollege';
                 case 'adressbuch':
@@ -373,11 +384,26 @@ export const germanLabels = {
                     return 'Verlauf';
             }
         },
+        /*
+         * Wortgleich mit {@link germanLabels.rumpf} — und zwar seit dem
+         * 01.11.2026 mit Absicht.
+         *
+         * Hier stand „Kein Inhalt" und „Vorschau", drueben „Diese E-Mail hat
+         * keinen Inhalt." und „E-Mail Inhalt". Derselbe Nachrichtenrumpf,
+         * einmal in der Verfassen-Vorschau und einmal in Antwort und
+         * Weiterleitung — und er hiess verschieden. Niemand hatte das
+         * entschieden; die beiden Bloecke sind zu verschiedenen Zeiten
+         * entstanden.
+         *
+         * Aufgefallen beim Angleichen des Projekt-Managers: Er schreibt an
+         * beiden Stellen dasselbe, und zwei seiner Woerter haetten sich NUR
+         * wegen dieses Selbstwiderspruchs geaendert.
+         */
         body: {
-            empty: 'Kein Inhalt',
+            empty: 'Diese E-Mail hat keinen Inhalt.',
             remoteBlocked: 'Externe Bilder wurden zum Schutz vor Tracking blockiert.',
             loadImages: 'Bilder laden',
-            frameTitle: 'Vorschau',
+            frameTitle: 'E-Mail Inhalt',
         },
     },
 

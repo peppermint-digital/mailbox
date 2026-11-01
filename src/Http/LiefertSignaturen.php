@@ -29,11 +29,18 @@ use Peppermint\Mailbox\Models\MailAccount;
  *
  * ## Warum eine leere Liste mit `available: false` und nicht ein Fehler
  *
- * Ein Produkt ohne Signaturen ist der Normalfall (drei von vier haben keine),
- * und eine Fehlerseite dafuer waere falsch. Eine leere Liste allein ist aber
- * zweideutig: Sie heisst entweder „dieses Produkt fuehrt keine" oder „fuer
+ * Ein Produkt ohne Signaturen ist eine gueltige Lage, und eine Fehlerseite
+ * dafuer waere falsch. Eine leere Liste allein ist aber zweideutig: Sie heisst
+ * entweder „dieses Produkt fuehrt keine" oder „fuer
  * dieses Postfach keine" — und beim naechsten Mal „die Bindung ist vergessen
  * worden".
+ *
+ * Hier stand bis zum 01.11.2026 „der Normalfall (drei von vier haben keine)".
+ * Das war richtig, solange nur der Projekt-Manager Signaturen fuehrte, und ist
+ * es seit dem Signatur-Umzug nicht mehr: Alle vier Produkte binden einen
+ * Vorrat, `available: false` ist seitdem die Ausnahme. Der Satz daneben gilt
+ * unveraendert — ein Produkt, das keinen bindet, soll weiter eine ehrliche
+ * Antwort bekommen und keine Fehlerseite.
  *
  * Darum beides: `signatures` ist die Liste, `available` sagt, ob ueberhaupt
  * jemand gefragt wurde. Dieselbe Unterscheidung wie in der Werkzeugleiste
