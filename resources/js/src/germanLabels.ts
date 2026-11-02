@@ -331,8 +331,25 @@ export const germanLabels = {
     /** Die Woerter des Verfassen-Formulars. */
     verfassen: {
         to: 'An',
-        cc: 'Kopie',
-        bcc: 'Blindkopie',
+        /*
+         * „CC" und „BCC", nicht „Kopie" und „Blindkopie" — Bastians
+         * Entscheidung vom 02.11.2026 (#9319). So heissen die beiden Felder
+         * in Outlook und Gmail, und danach sucht jemand, der eine Mail
+         * schreibt.
+         *
+         * Hier stand bis dahin „Kopie"/„Blindkopie", und niemand hat es je
+         * gesehen: Das Formular schrieb „CC" und „BCC" an vier Stellen fest
+         * und las diese beiden Woerter nirgends. Die Liste sagte also das
+         * eine, die Oberflaeche zeigte das andere — und wer die Liste las,
+         * hielt sie fuer den Stand.
+         *
+         * Dass sich beim Umstellen SICHTBAR nichts aendern durfte, ist
+         * deshalb kein Zufall, sondern die Bedingung: Die vier Stellen lesen
+         * jetzt die Woerter, und die Woerter sind die, die vorher fest
+         * darinstanden.
+         */
+        cc: 'CC',
+        bcc: 'BCC',
         subject: 'Betreff',
         subjectPlaceholder: 'Worum geht es?',
         message: 'Nachricht',

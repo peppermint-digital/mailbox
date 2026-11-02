@@ -779,7 +779,7 @@ export function EmailComposerForm({
 
             <RecipientField
                 sourceLabel={labels.source}
-                label="An"
+                label={labels.to}
                 placeholder={labels.toPlaceholder}
                 recipients={to}
                 onRecipientsChange={(v) => setList('to', v)}
@@ -796,12 +796,12 @@ export function EmailComposerForm({
                     <div className="flex gap-2 text-xs">
                         {!ccVisible && (
                             <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => setShowCc(true)}>
-                                CC
+                                {labels.cc}
                             </button>
                         )}
                         {allowBcc && !bccVisible && (
                             <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => setShowBcc(true)}>
-                                BCC
+                                {labels.bcc}
                             </button>
                         )}
                     </div>
@@ -811,7 +811,7 @@ export function EmailComposerForm({
             {ccVisible && (
                 <RecipientField
                 sourceLabel={labels.source}
-                    label="CC"
+                    label={labels.cc}
                     placeholder={labels.ccPlaceholder}
                     recipients={cc}
                     onRecipientsChange={(v) => setList('cc', v)}
@@ -829,7 +829,7 @@ export function EmailComposerForm({
             {bccVisible && (
                 <RecipientField
                 sourceLabel={labels.source}
-                    label="BCC"
+                    label={labels.bcc}
                     placeholder={labels.bccPlaceholder}
                     recipients={bcc}
                     onRecipientsChange={(v) => setList('bcc', v)}
