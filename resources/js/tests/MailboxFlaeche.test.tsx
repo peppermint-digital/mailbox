@@ -154,6 +154,40 @@ function seite(teil: Partial<MailboxSeiteErgebnis> = {}): MailboxSeiteErgebnis {
 
 const KONTO = { id: 1, email: 'post@beispiel.de', name: 'Post' };
 
+describe('Anhaenge aus dem Ordner der geoeffneten Mail', () => {
+    it.each([
+        ['Archiv', 'INBOX', 'Archiv'],
+        ['Kunden/Angebote & Aufträge', 'INBOX', 'Kunden/Angebote & Aufträge'],
+        ['INBOX', 'Archiv', 'INBOX'],
+        [undefined, 'INBOX', 'INBOX'],
+    ])('verlinkt %s bei ausgewaehltem Ordner %s', (folder, ordnerPfad, erwartet) => {
+        const { container, unmount } = flaeche({
+            seite: seite({
+                basis: '/emails',
+                ordnerPfad,
+                offene: {
+                    message: nachricht({
+                        uid: 10143,
+                        attachments: [{ index: 1, filename: 'Zugangsdaten.pdf', mime_type: 'application/pdf', size: 58920 }],
+                    }),
+                    folder,
+                    loading: false,
+                    open: vi.fn(),
+                    close: vi.fn(),
+                } as never,
+            }),
+        });
+
+        const link = container.querySelector<HTMLAnchorElement>('a[href*="/attachment/"]');
+        expect(link).not.toBeNull();
+        const url = new URL(link!.href);
+        expect(url.pathname).toBe('/emails/1/message/10143/attachment/1/download');
+        expect(url.searchParams.get('folder')).toBe(erwartet);
+        unmount();
+    });
+});
+
+
 /**
  * Eine geöffnete Nachricht in der Form, die die Leseansicht wirklich liest.
  *

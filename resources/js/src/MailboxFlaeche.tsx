@@ -18,10 +18,9 @@ import { MailConversationPane } from './MailConversationPane';
 import { MailFolderList } from './MailFolderList';
 import { MailFolderManager } from './MailFolderManager';
 import { MailListToolbar, type SuchVerzeichnis } from './MailListToolbar';
-import { MailMessageList, type MailMessageListProps } from './MailMessageList';
+import { MailMessageList } from './MailMessageList';
 import { MailMessageView } from './MailMessageView';
 import { MailWerkzeugleiste } from './MailWerkzeugleiste';
-import { postJson } from './transport';
 import { Skeleton } from './ui/skeleton';
 import type { MailFolder } from './MailFolderList';
 import type { RowMessage } from './rows';
@@ -272,7 +271,6 @@ export function MailboxFlaeche({
          * ein Produkt ihn nur EINMAL angibt — beim Haken.
          */
         basis,
-        amGeoeffneten,
         /*
          * Die vier Aktionen an der geoeffneten Nachricht kommen seit #9116 aus
          * dem Haken. Sie standen hier im JSX und waren damit fuer die
@@ -291,7 +289,6 @@ export function MailboxFlaeche({
         auswahl,
         beschaeftigt,
         chatQuelle,
-        csrf,
         fehler,
         filterOffen,
         gruppierungUmschalten,
@@ -1016,7 +1013,7 @@ export function MailboxFlaeche({
                                             formatFileSize={(b) => `${Math.round(b / 1024)} KB`}
                                             attachmentUrl={(anhang) =>
                                                 konto
-                                                    ? `${basis}/${konto.id}/message/${(offene.message as { uid?: number | string } | null)?.uid ?? ''}/attachment/${anhang.index}/download?folder=${encodeURIComponent(ordnerPfad)}`
+                                                    ? `${basis}/${konto.id}/message/${(offene.message as { uid?: number | string } | null)?.uid ?? ''}/attachment/${anhang.index}/download?folder=${encodeURIComponent(offene.folder ?? ordnerPfad)}`
                                                     : '#'
                                             }
                                         />
