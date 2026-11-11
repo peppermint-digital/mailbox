@@ -52,7 +52,15 @@ export interface MailboxFolders {
      * Loads the sidebar and returns the folder that should be opened —
      * the caller loads its messages, so the two halves stay independent.
      */
-    load: (accountId: number | string, options?: { refresh?: boolean }) => Promise<string | null>;
+    /**
+     * Ordner laden und sagen, welcher geoeffnet werden soll.
+     *
+     * `bevorzugt` schlaegt die Vorauswahl — aber nur, wenn es den Ordner in
+     * der geladenen Liste gibt; sonst bleibt es bei
+     * {@link preferredFolder}. Damit laeuft ein Verweis auf einen Ordner,
+     * den es nicht mehr gibt, in den Posteingang statt in eine Fehlermeldung.
+     */
+    load: (accountId: number | string, options?: { refresh?: boolean; bevorzugt?: string | null }) => Promise<string | null>;
     /** Updates the list without reporting failures. */
     refreshQuietly: (accountId: number | string) => Promise<void>;
     /** Loads the move targets once and keeps them. */
@@ -76,7 +84,7 @@ export function useMailboxFolders({ source }: { source: FolderSource }): Mailbox
     const [failure, setFailure] = useState<MailboxFailure | null>(null);
 
     const load = useCallback(
-        async (accountId: number | string, options: { refresh?: boolean } = {}) => {
+        async (accountId: number | string, options: { refresh?: boolean; bevorzugt?: string | null } = {}) => {
             if (!accountId) {
                 return null;
             }
@@ -93,6 +101,27 @@ export function useMailboxFolders({ source }: { source: FolderSource }): Mailbox
                 }
 
                 setFolders(result);
+
+                /*
+                 * Ein gewuenschter Ordner schlaegt die Vorauswahl — aber nur,
+                 * wenn es ihn WIRKLICH gibt.
+                 *
+                 * Die Pruefung gehoert hierher und nicht zum Aufrufer: Die
+                 * Ordnerliste liegt hier, und sie steht in `folders` erst
+                 * nach dem naechsten Zeichnen. Ein Aufrufer koennte also nur
+                 * raten oder ein zweites Mal laden.
+                 *
+                 * Ohne die Pruefung fuehrte ein Verweis auf einen Ordner, den
+                 * es nicht mehr gibt (umbenannt, geloescht, anderes Postfach),
+                 * in eine Fehlermeldung statt in den Posteingang. Ein
+                 * verwaister Verweis soll die Seite nicht kaputtmachen,
+                 * sondern dort landen, wo man ohne ihn gelandet waere.
+                 */
+                const gewuenscht = (options.bevorzugt ?? '').trim();
+
+                if (gewuenscht !== '' && result.some((ordner) => ordner.path === gewuenscht)) {
+                    return gewuenscht;
+                }
 
                 return preferredFolder(result);
             } catch {

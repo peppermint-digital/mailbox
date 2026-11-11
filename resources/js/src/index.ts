@@ -29,6 +29,7 @@ export * from './MailAddressBook';
 export * from './useFolderActions';
 export * from './MailFolderManager';
 export * from './useMailboxKeyboard';
+export * from './useAnfangsNachricht';
 export * from './useAutoOpen';
 export * from './useMailAssignments';
 export * from './MailAssignmentPicker';

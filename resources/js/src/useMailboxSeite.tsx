@@ -8,6 +8,7 @@ import { useMailboxSidePanel } from './MailboxSidePanel';
 import { buildDisplayRows, type MessageHandle, type RowMessage, threadActionUids, threadOf } from './rows';
 import { postCounted, postJson } from './transport';
 import { useAktuelleKennung } from './useAktuelleKennung';
+import { useAnfangsNachricht } from './useAnfangsNachricht';
 import { useAutoOpen } from './useAutoOpen';
 import { useFolderActions } from './useFolderActions';
 import { conversationRoutes, useMailConversation } from './useMailConversation';
@@ -329,6 +330,37 @@ export interface MailboxSeiteOptionen {
      * gemeinten — der Klick waere umsonst.
      */
     anfangsKonto?: number | string | null;
+    /**
+     * Welchen Ordner ein Verweis meint — Gegenstueck zu {@link anfangsKonto}.
+     *
+     * Nur beim ersten Zeichnen und nur, wenn es den Ordner im geladenen
+     * Postfach wirklich gibt; sonst bleibt es bei der Vorauswahl. Ein
+     * Verweis auf einen Ordner, der umbenannt oder geloescht wurde, landet
+     * damit im Posteingang statt in einer Fehlermeldung.
+     */
+    anfangsOrdner?: string | null;
+    /**
+     * Welche NACHRICHT ein Verweis meint (UID im Anfangsordner).
+     *
+     * Ohne diese Angabe konnte ein Verweis von aussen nur das Postfach
+     * oeffnen — wer aus einem Beleg kam, musste die Mail selbst suchen.
+     *
+     * Die UID gilt nur innerhalb ihres Ordners und nur, solange die Mail
+     * dort liegt; liegt sie nicht mehr da, wird NICHTS geoeffnet und
+     * {@link onAnfangsNachrichtFehlt} gerufen. Begruendet an
+     * {@link useAnfangsNachricht}.
+     */
+    anfangsNachricht?: number | string | null;
+    /**
+     * Die verlangte Nachricht liegt nicht in diesem Ordner.
+     *
+     * Das Produkt soll es sagen koennen („diese Mail liegt nicht mehr
+     * hier"), statt dass jemand vor einer beliebigen Nachricht steht und sie
+     * fuer die gesuchte haelt.
+     *
+     * ⚠️ Eine Referenz, kein Teil der Abhaengigkeiten: siehe `onSuchAntwort`.
+     */
+    onAnfangsNachrichtFehlt?: () => void;
 }
 
 export function useMailboxSeite({
@@ -346,6 +378,9 @@ export function useMailboxSeite({
     eigeneAdresse = null,
     onSuchAntwort,
     anfangsKonto = null,
+    anfangsOrdner = null,
+    anfangsNachricht = null,
+    onAnfangsNachrichtFehlt,
 }: MailboxSeiteOptionen) {
     const texte = { ...MAILBOX_SEITE_TEXTE, ...labels };
 
@@ -408,7 +443,15 @@ export function useMailboxSeite({
             // Die Adresse ist eine Bequemlichkeit, kein Teil der Arbeit.
         }
     }, []);
-    const [ordnerPfad, setOrdnerPfad] = useState('INBOX');
+    /*
+     * Der Anfangsordner wird nur EINMAL gelesen — wie `anfangsKonto`.
+     *
+     * Als Referenz und nicht als Abhaengigkeit: Nach dem ersten Laden
+     * entscheidet der Mensch, und ein Verweis, der noch in der Adresszeile
+     * steht, darf ihn nicht bei jedem Postfachwechsel zurueckwerfen.
+     */
+    const anfangsOrdnerRef = useRef<string | null>(anfangsOrdner);
+    const [ordnerPfad, setOrdnerPfad] = useState(anfangsOrdner ?? 'INBOX');
     const [fehler, setFehler] = useState<string | null>(null);
 
     /**
@@ -469,12 +512,37 @@ export function useMailboxSeite({
      */
     const kontoWechselRef = useRef(onKontoWechsel);
     const gruppierungRef = useRef(onGruppierung);
+    const anfangsNachrichtFehltRef = useRef(onAnfangsNachrichtFehlt);
 
     useEffect(() => {
         suchAntwortRef.current = onSuchAntwort;
         kontoWechselRef.current = onKontoWechsel;
         gruppierungRef.current = onGruppierung;
+        anfangsNachrichtFehltRef.current = onAnfangsNachrichtFehlt;
     });
+
+    /*
+     * Steht eine verlangte Nachricht noch aus?
+     *
+     * Als ZUSTAND und nicht als Referenz: Davon haengt ab, ob sich die
+     * Vorauswahl ({@link useAutoOpen}) heraushaelt — und das muss ein neues
+     * Zeichnen ausloesen, sonst oeffnet sie in derselben Runde doch noch
+     * ihre eigene Wahl und die verlangte Nachricht kommt nie nach vorn.
+     */
+    const [anfangsNachrichtAusstehend, setAnfangsNachrichtAusstehend] = useState(
+        () => anfangsNachricht != null && anfangsNachricht !== '',
+    );
+
+    /*
+     * In WELCHEM Ordner der Verweis von aussen abgearbeitet wurde.
+     *
+     * Dort haelt sich die Vorauswahl dauerhaft heraus — nicht nur, solange
+     * die Nachricht aussteht. Sonst oeffnet sie, sobald eine verlangte Mail
+     * NICHT gefunden wurde, sofort eine andere; und eine andere Mail an der
+     * Stelle, an der man eine bestimmte erwartet hat, sieht wie ein Treffer
+     * aus. Das ist der Fehler, der schlimmer ist als „nicht gefunden".
+     */
+    const anfangsNachrichtKeyRef = useRef<string | null>(null);
 
     /*
      * Das Suchfeld, damit `/` hineinspringen kann (A15, #9116).
@@ -1243,11 +1311,41 @@ export function useMailboxSeite({
        oeffnen. Nicht die neueste ueberhaupt: Oeffnen zaehlt als Lesen, und
        in einem Gruppenpostfach saehe die Kollegin sie danach nicht mehr als
        neu. Entscheidung und Begruendung liegen im Paket. */
+    /* Die Nachricht, auf die ein Verweis von aussen zeigt — VOR der
+       Vorauswahl. Liegt sie nicht mehr in diesem Ordner, wird nichts
+       geoeffnet und das Produkt erfaehrt es; begruendet im Haken. */
+    useAnfangsNachricht<RowMessage>({
+        rows: zeilen,
+        key: `${konto?.id ?? ''}:${ordnerPfad}`,
+        uid: anfangsNachricht,
+        enabled: anfangsNachrichtAusstehend && !liste.loading && !suche.isSearchMode,
+        onOpen: (m) => {
+            anfangsNachrichtKeyRef.current = `${konto?.id ?? ''}:${ordnerPfad}`;
+            setAnfangsNachrichtAusstehend(false);
+            void offene.open(m, ordnerPfad);
+        },
+        onFehlt: () => {
+            anfangsNachrichtKeyRef.current = `${konto?.id ?? ''}:${ordnerPfad}`;
+            setAnfangsNachrichtAusstehend(false);
+            anfangsNachrichtFehltRef.current?.();
+        },
+    });
+
     useAutoOpen<RowMessage>({
         rows: zeilen,
         key: `${konto?.id ?? ''}:${ordnerPfad}`,
         openedUid: (offene.message as { uid?: number } | null)?.uid ?? null,
-        enabled: !liste.loading && !suche.isSearchMode,
+        /*
+         * Solange eine verlangte Nachricht aussteht, haelt sich die
+         * Vorauswahl heraus. Sonst oeffnet sie ihre eigene Wahl zuerst, und
+         * der Verweis von aussen traefe auf ein „es ist schon etwas offen" —
+         * er bliebe wirkungslos, und zwar lautlos.
+         */
+        enabled:
+            !liste.loading &&
+            !suche.isSearchMode &&
+            !anfangsNachrichtAusstehend &&
+            anfangsNachrichtKeyRef.current !== `${konto?.id ?? ''}:${ordnerPfad}`,
         onOpen: (m) => void offene.open(m, ordnerPfad),
     });
 
@@ -1422,7 +1520,12 @@ export function useMailboxSeite({
         ordner.clear();
 
         void (async () => {
-            const zuOeffnen = await ordner.load(konto.id);
+            const gewuenscht = anfangsOrdnerRef.current;
+            // Verbraucht: Beim naechsten Postfachwechsel gilt wieder die
+            // Vorauswahl dieses Postfachs, nicht der alte Verweis.
+            anfangsOrdnerRef.current = null;
+
+            const zuOeffnen = await ordner.load(konto.id, { bevorzugt: gewuenscht });
 
             if (zuOeffnen) {
                 setOrdnerPfad(zuOeffnen);

@@ -99,6 +99,9 @@ function Probe({
     eigeneAdresse,
     onSuchAntwort,
     anfangsKonto,
+    anfangsOrdner,
+    anfangsNachricht,
+    onAnfangsNachrichtFehlt,
 }: {
     melden: (text: string, gelungen: boolean) => void;
     basis?: string;
@@ -111,6 +114,9 @@ function Probe({
     eigeneAdresse?: Parameters<typeof useMailboxSeite>[0]['eigeneAdresse'];
     onSuchAntwort?: Parameters<typeof useMailboxSeite>[0]['onSuchAntwort'];
     anfangsKonto?: Parameters<typeof useMailboxSeite>[0]['anfangsKonto'];
+    anfangsOrdner?: Parameters<typeof useMailboxSeite>[0]['anfangsOrdner'];
+    anfangsNachricht?: Parameters<typeof useMailboxSeite>[0]['anfangsNachricht'];
+    onAnfangsNachrichtFehlt?: Parameters<typeof useMailboxSeite>[0]['onAnfangsNachrichtFehlt'];
 }) {
     const seite = useMailboxSeite({
         konten: [
@@ -129,6 +135,9 @@ function Probe({
         ...(eigeneAdresse === undefined ? {} : { eigeneAdresse }),
         ...(onSuchAntwort === undefined ? {} : { onSuchAntwort }),
         ...(anfangsKonto === undefined ? {} : { anfangsKonto }),
+        ...(anfangsOrdner === undefined ? {} : { anfangsOrdner }),
+        ...(anfangsNachricht === undefined ? {} : { anfangsNachricht }),
+        ...(onAnfangsNachrichtFehlt === undefined ? {} : { onAnfangsNachrichtFehlt }),
     });
 
     zuletzt = seite as unknown as Geprobt;
@@ -1673,6 +1682,137 @@ describe('eine eigene Oeffnen-Quelle passt ohne Zwang hinein (A18, #9116)', () =
         expect((zuletzt.offene as { message: EigeneNachricht | null }).message?.uid).toBeNull();
         expect((zuletzt.offene as { folder: string | null }).folder).toBeNull();
 
+        unmount();
+    });
+});
+
+describe('welcher Ordner und welche Nachricht ein Verweis meint (#9832)', () => {
+    /**
+     * In der Verwaltung steht an jedem Beleg die Herkunftsmail mit Konto,
+     * Ordner und UID. Bis hierher konnte ein Verweis darauf nur das Postfach
+     * oeffnen — welche Nachricht gemeint war, musste der Mensch selbst
+     * suchen.
+     */
+    it('oeffnet den Ordner aus dem Verweis', async () => {
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} anfangsOrdner="Archive" />);
+
+        await vi.waitFor(() => expect(zuletzt.ordnerPfad).toBe('Archive'));
+        unmount();
+    });
+
+    /**
+     * Ein Ordner, den es nicht mehr gibt (umbenannt, geloescht, anderes
+     * Postfach), ist ein alter Verweis und kein Fehler des Benutzers. Er
+     * landet dort, wo man ohne ihn gelandet waere.
+     */
+    it('nimmt die Vorauswahl, wenn es den Ordner nicht gibt — und meldet nichts', async () => {
+        const { fetchStub } = gegenstelle();
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} anfangsOrdner="Gibt/Es/Nicht" />);
+
+        await vi.waitFor(() => expect(zuletzt.ordnerPfad).toBe('INBOX'));
+        expect(zuletzt.fehler).toBeNull();
+        unmount();
+    });
+
+    /*
+     * Geprueft wird, welche Nachricht ANGEFORDERT wird, nicht welche danach
+     * im Zustand steht: Die Gegenstelle dieses Tests antwortet auf
+     * unbekannte Wege mit `{ success: true }` und kann eine geoeffnete
+     * Nachricht gar nicht abbilden. Eine Zusicherung auf `offene.message`
+     * waere hier also keine Messung, sondern ein Test der Attrappe — sie
+     * scheitert auch ohne diese Aenderung (nachgemessen am 11.11.2026 an der
+     * Vorauswahl, die dasselbe tut).
+     */
+    const angefordert = (gesehen: string[], uid: number) =>
+        gesehen.some((pfad) => new RegExp(`/message/${uid}(?:[/?]|$)`).test(pfad));
+
+    /*
+     * Eine Nachricht, die als GELESEN durchkommt.
+     *
+     * Die Grundattrappe oben schickt `seen: true`, die Zeilen lesen aber
+     * `is_read` — damit gilt ihre eine Nachricht als ungelesen, und die
+     * Vorauswahl ruehrt sich nicht. Gemessen am 11.11.2026: Ohne diese
+     * Ueberschreibung besteht der Test „die Vorauswahl arbeitet" NICHT, und
+     * der Test „sie haelt sich heraus" bestuende dann aus dem falschen
+     * Grund — naemlich weil sie ohnehin nie arbeitet.
+     */
+    const gelesene = (uid = 7) => ({
+        messages: {
+            success: true,
+            messages: [
+                {
+                    uid,
+                    subject: 'Anfrage zum Ferienpass',
+                    from_address: 'anna@example.test',
+                    from_name: 'Anna Meier',
+                    date: '2026-10-20T08:00:00+02:00',
+                    is_read: true,
+                    is_flagged: false,
+                    has_attachments: false,
+                    message_id: '<a@example.test>',
+                    thread_id: 'kette-1',
+                },
+            ],
+            total: 1,
+            page: 1,
+            per_page: 25,
+        },
+    });
+
+    it('oeffnet die Nachricht aus dem Verweis', async () => {
+        const { fetchStub, gesehen } = gegenstelle(gelesene());
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} anfangsNachricht={7} />);
+
+        await vi.waitFor(() => expect(angefordert(gesehen, 7)).toBe(true));
+        unmount();
+    });
+
+    /**
+     * Eine IMAP-UID gilt nur, solange die Mail in ihrem Ordner liegt. Ist sie
+     * weg, darf NICHTS geoeffnet werden — auch nicht durch die Vorauswahl,
+     * die sonst beim Betreten eines Ordners einspringt. Eine andere Mail an
+     * der Stelle, an der man eine bestimmte erwartet hat, sieht wie ein
+     * Treffer aus; das ist der gefaehrlichere Fehler als „nicht gefunden".
+     */
+    it('oeffnet nichts und sagt Bescheid, wenn die Nachricht nicht mehr da ist', async () => {
+        const { fetchStub, gesehen } = gegenstelle(gelesene());
+        vi.stubGlobal('fetch', fetchStub);
+
+        const fehlt = vi.fn();
+        const { unmount } = render(
+            <Probe melden={() => {}} anfangsNachricht={99999} onAnfangsNachrichtFehlt={fehlt} />,
+        );
+
+        await vi.waitFor(() => expect(fehlt).toHaveBeenCalledTimes(1));
+
+        // Und die Vorauswahl springt NICHT ein, obwohl die eine Nachricht im
+        // Ordner gelesen ist und sie sie sonst oeffnen wuerde.
+        await act(async () => {
+            await new Promise((fertig) => setTimeout(fertig, 20));
+        });
+
+        expect(gesehen.some((pfad) => /\/message\/\d+/.test(pfad))).toBe(false);
+        unmount();
+    });
+
+    /**
+     * Ohne Verweis bleibt alles, wie es war — die Vorauswahl oeffnet die
+     * gelesene Nachricht.
+     */
+    it('laesst die Vorauswahl arbeiten, wenn kein Verweis da ist', async () => {
+        const { fetchStub, gesehen } = gegenstelle(gelesene());
+        vi.stubGlobal('fetch', fetchStub);
+
+        const { unmount } = render(<Probe melden={() => {}} />);
+
+        await vi.waitFor(() => expect(angefordert(gesehen, 7)).toBe(true));
         unmount();
     });
 });
