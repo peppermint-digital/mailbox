@@ -49,6 +49,15 @@ export interface SearchCriteria {
     unseen: boolean;
     /** Über alle Ordner statt nur im geöffneten. */
     allFolders: boolean;
+    /**
+     * Die Message-ID, wörtlich (#9832, Stufe 3).
+     *
+     * Der einzige Schlüssel, der eine Mail über einen Umzug hinweg
+     * wiederfindet: Eine UID gilt nur in ihrem Ordner und nur, solange die
+     * Mail dort liegt. Kein Feld der Maske — niemand tippt eine Message-ID;
+     * sie kommt aus einem Verweis.
+     */
+    messageId: string;
 }
 
 /** Was der Server zurückgibt. Alles ausser `messages` und `total` ist freiwillig. */
@@ -111,6 +120,7 @@ const LEER: SearchCriteria = {
     unseen: false,
     // Die Vorgabe mit Absicht — siehe oben.
     allFolders: true,
+    messageId: '',
 };
 
 export function useMailboxSearch<M extends RowMessage>({
@@ -136,7 +146,11 @@ export function useMailboxSearch<M extends RowMessage>({
         criteria.from.trim() !== '' ||
         criteria.subject.trim() !== '' ||
         criteria.since !== '' ||
-        criteria.unseen;
+        criteria.unseen ||
+        // Eine Message-ID ist für sich eine vollwertige Suche — und zwar die
+        // genaueste von allen. Die Zwei-Zeichen-Grenze des Volltexts gilt
+        // für sie nicht.
+        criteria.messageId.trim() !== '';
 
     const search = useCallback(
         async ({ fresh = false }: { fresh?: boolean } = {}) => {
@@ -156,6 +170,7 @@ export function useMailboxSearch<M extends RowMessage>({
                     query: criteria.query.trim().length >= 2 ? criteria.query.trim() : '',
                     from: criteria.from.trim(),
                     subject: criteria.subject.trim(),
+                    messageId: criteria.messageId.trim(),
                     folder,
                     fresh,
                 });

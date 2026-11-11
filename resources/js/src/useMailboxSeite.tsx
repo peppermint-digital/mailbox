@@ -582,6 +582,7 @@ export function useMailboxSeite({
                         if (p.subject) teile.set('subject', p.subject);
                         if (p.since) teile.set('since', p.since);
                         if (p.unseen) teile.set('unseen', '1');
+                        if (p.messageId) teile.set('message_id', p.messageId);
                         // Über alle Ordner ist die Vorgabe des Hakens — der
                         // Endpunkt erfährt es über `scope`.
                         if (p.allFolders) teile.set('scope', 'all');

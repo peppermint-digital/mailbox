@@ -157,6 +157,13 @@ function suchOrdner(string $pfad, array $flags = [], array $nachrichten = [], bo
                     return $this;
                 }
 
+                public function header(string $kopf, string $wert): static
+                {
+                    $this->ordner->gesucht['header'] = [$kopf, $wert];
+
+                    return $this;
+                }
+
                 public function withHeaders(): static
                 {
                     $this->ordner->gesucht['mit'][] = 'kopf';
@@ -276,6 +283,32 @@ describe('die Suchanfrage', function () {
         expect($c->since)->toBeInstanceOf(DateTimeImmutable::class);
     });
 
+    it('nimmt eine Message-ID als vollwertige Suche', function () {
+        // Vorher war sie keine: Eine Anfrage, die NUR die Message-ID nennt,
+        // haette als „leer" gegolten und waere abgewiesen worden.
+        expect(Criteria::fromArray(['message_id' => '<a@b.test>'])->isEmpty())->toBeFalse();
+    });
+
+    it('fuehrt die Message-ID ohne spitze Klammern, egal wie sie hereinkommt', function () {
+        foreach (['<a@b.test>', 'a@b.test', '  <a@b.test>  '] as $form) {
+            expect(Criteria::fromArray(['message_id' => $form])->messageId)->toBe('a@b.test');
+        }
+    });
+
+    it('laesst die Gross- und Kleinschreibung der Message-ID in Ruhe', function () {
+        // RFC 5322: der lokale Teil ist empfindlich. Wer kleinschreibt, sucht
+        // womoeglich eine andere Mail — und findet nichts, was wie ein
+        // sauberes „gibt es nicht" aussieht.
+        expect(Criteria::fromArray(['message_id' => '<AbC@Example.TEST>'])->messageId)->toBe('AbC@Example.TEST');
+    });
+
+    it('uebersetzt die Message-ID in einen JMAP-Kopfzeilen-Filter', function () {
+        $filter = Criteria::fromArray(['message_id' => 'a@b.test'])->toJmapFilter();
+
+        // JMAP hat kein eigenes Feld dafuer; `header` ist der Weg.
+        expect($filter['header'])->toBe(['Message-ID', '<a@b.test>']);
+    });
+
     it('uebersetzt sich in einen JMAP-Filter', function () {
         $filter = Criteria::fromArray([
             'text' => 'Angebot', 'from' => 'kunde@example.test',
@@ -303,6 +336,22 @@ describe('Suche in einem Ordner (IMAP)', function () {
         expect($ordner->gesucht)->toMatchArray([
             'text' => 'Angebot', 'from' => 'kunde@x', 'subject' => 'A', 'since' => '2026-09-01', 'unseen' => true, 'limit' => 25,
         ]);
+    });
+
+    /**
+     * Die Message-ID ist der einzige Schluessel, der eine Mail ueber einen
+     * Umzug hinweg wiederfindet (#9832, Stufe 3). Eine UID gilt nur innerhalb
+     * ihres Ordners und nur, solange die Mail dort liegt.
+     */
+    it('sucht nach der Message-ID im Kopf, in spitzen Klammern', function () {
+        $ordner = suchOrdner('INBOX', ['\\Inbox'], [suchNachricht(1, 'Angebot', '2026-09-01T10:00:00+00:00')]);
+
+        suchKlient(suchPostfach([$ordner]))->search('INBOX', Criteria::fromArray([
+            'message_id' => 'abc123@example.test',
+        ]), 25);
+
+        // Im Kopf STEHT sie in spitzen Klammern — IMAP sucht woertlich.
+        expect($ordner->gesucht['header'])->toBe(['Message-ID', '<abc123@example.test>']);
     });
 
     it('sortiert nach Datum, nicht nach uid', function () {

@@ -82,6 +82,33 @@ describe('was ueberhaupt eine Suche ist', () => {
         expect(hook.result.current.canSearch).toBe(true);
     });
 
+    /**
+     * Die Message-ID ist fuer sich eine vollwertige Suche — und zwar die
+     * genaueste von allen (#9832, Stufe 3). Die Zwei-Zeichen-Grenze des
+     * Volltexts gilt fuer sie nicht; sie wird auch nicht getippt, sondern
+     * kommt aus einem Verweis.
+     */
+    it('laesst eine Message-ID allein durch', () => {
+        const { hook } = haken();
+
+        act(() => hook.result.current.set('messageId', '<a@b.test>'));
+
+        expect(hook.result.current.canSearch).toBe(true);
+    });
+
+    it('schickt die Message-ID an die Quelle', async () => {
+        const { hook, gesucht } = haken();
+
+        act(() => hook.result.current.set('messageId', '  <a@b.test>  '));
+
+        await act(async () => {
+            await hook.result.current.search();
+        });
+
+        expect(gesucht).toHaveLength(1);
+        expect((gesucht[0] as { messageId?: string }).messageId).toBe('<a@b.test>');
+    });
+
     it('sucht gar nicht erst, wenn nichts einschraenkt', async () => {
         const { hook, gesucht } = haken();
 

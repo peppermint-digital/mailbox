@@ -33,6 +33,7 @@ final class Criteria
         public readonly ?string $subject = null,
         public readonly ?DateTimeImmutable $since = null,
         public readonly bool $unseen = false,
+        public readonly ?string $messageId = null,
     ) {}
 
     /**
@@ -41,7 +42,8 @@ final class Criteria
      *     from?: string|null,
      *     subject?: string|null,
      *     since?: string|\DateTimeInterface|null,
-     *     unseen?: bool|string|int|null
+     *     unseen?: bool|string|int|null,
+     *     message_id?: string|null
      * } $criteria
      */
     public static function fromArray(array $criteria): self
@@ -62,6 +64,7 @@ final class Criteria
             subject: self::text($criteria['subject'] ?? null),
             since: $seit,
             unseen: filter_var($criteria['unseen'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            messageId: self::messageId($criteria['message_id'] ?? null),
         );
     }
 
@@ -74,6 +77,7 @@ final class Criteria
             && $this->from === null
             && $this->subject === null
             && $this->since === null
+            && $this->messageId === null
             && ! $this->unseen;
     }
 
@@ -105,6 +109,13 @@ final class Criteria
             // UTC with a Z, which is what the standard asks for — a local
             // offset is accepted by some servers and silently ignored by others.
             $filter['after'] = $this->since->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');
+        }
+
+        if ($this->messageId !== null) {
+            // JMAP kennt kein eigenes Feld dafuer; `header` ist der Weg, und
+            // der Name ist nach RFC 8621 ohne Ruecksicht auf Gross- und
+            // Kleinschreibung.
+            $filter['header'] = ['Message-ID', '<'.$this->messageId.'>'];
         }
 
         if ($this->unseen) {
@@ -139,9 +150,43 @@ final class Criteria
             $query->since($this->since);
         }
 
+        if ($this->messageId !== null) {
+            // IMAP sucht Kopfzeilen woertlich, und im Kopf STEHT die
+            // Message-ID in spitzen Klammern. Ohne sie findet eine
+            // Teilzeichenkettensuche zwar meistens auch — aber „meistens"
+            // ist bei einem eindeutigen Schluessel die falsche Zusage.
+            $query->header('Message-ID', '<'.$this->messageId.'>');
+        }
+
         if ($this->unseen) {
             $query->unseen();
         }
+    }
+
+    /**
+     * Die Message-ID, wie sie im Kopf steht — ohne spitze Klammern gefuehrt.
+     *
+     * Sie kommt aus jeder Richtung anders: `<a@b>` aus dem Kopf einer Mail,
+     * `a@b` aus einer Datenbankspalte, mit Leerzeichen aus einer Adresszeile.
+     * Hier wird sie EINMAL auf die nackte Form gebracht; die spitzen Klammern
+     * setzen die beiden Transporte selbst, weil nur sie wissen, in welcher
+     * Form ihr Server sie erwartet.
+     *
+     * Kleingeschrieben wird NICHT: Eine Message-ID ist nach RFC 5322 im
+     * lokalen Teil gross- und kleinschreibungsempfindlich. Wer sie
+     * kleinschreibt, sucht womoeglich eine andere Mail — und findet dann
+     * nichts, was wie ein sauberes „gibt es nicht" aussieht.
+     */
+    private static function messageId(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim(trim($value), '<>');
+        $value = trim($value);
+
+        return $value === '' ? null : $value;
     }
 
     private static function text(mixed $value): ?string
