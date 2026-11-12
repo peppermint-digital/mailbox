@@ -36,6 +36,17 @@ use Illuminate\Support\Facades\Log;
  */
 class Werkzeugverzeichnis
 {
+    /**
+     * Die Feldart, deren Auswahl das PAKET liefert.
+     *
+     * Als Konstante, weil zwei Stellen sie kennen muessen: {@see LiefertFelder}
+     * sichert sie in seiner Tabelle zu, und {@see self::istAnhangsfeld()}
+     * erkennt sie. Ein Literal an beiden Stellen waere die Stelle, an der ein
+     * Tippfehler die Auswahl still wieder leer macht — und leer sah bis zum
+     * 12.11.2026 aus wie „diese Mail hat keine Anhaenge".
+     */
+    public const ART_ANHANG = 'anhang';
+
     /** @var array<int, class-string<Vorgangswerkzeug>|Vorgangswerkzeug> */
     private array $werkzeuge = [];
 
@@ -265,6 +276,32 @@ class Werkzeugverzeichnis
                     continue;
                 }
 
+                /*
+                 * Die Feldart `anhang` beantwortet das PAKET (#9856).
+                 *
+                 * Sie gehoert nicht in den Suchvertrag des Produkts, und bis
+                 * zum 12.11.2026 landete sie genau dort: Ein Verb mit einem
+                 * `anhang`-Feld bekam die Warnung „suchbares Feld, aber kein
+                 * Suchvertrag" und der Fragende eine leere Liste. Fuer die
+                 * eigene Leiste fiel das nie auf — die hat die Mail offen und
+                 * zeichnet die Anhaenge selbst. Ein anderes System hatte
+                 * damit einen Pflichtknopf, den es nicht ausfuellen konnte
+                 * (Verwaltung, Bug #1446: zehn Belege blieben liegen).
+                 *
+                 * VOR der Suchvertrag-Pruefung, weil die Art die Frage
+                 * entscheidet und nicht der Vertrag: Ein Verb, das BEIDES hat
+                 * — ein `anhang`-Feld und ein suchbares Feld daneben — soll
+                 * fuer das eine das Paket antworten lassen und fuer das
+                 * andere selbst.
+                 */
+                if ($this->istAnhangsfeld($werkzeug, $feld, $vorgang, $person)) {
+                    if (! $werkzeug->anwendbar($vorgang, $person)) {
+                        return [];
+                    }
+
+                    return $this->anhaenge($werkzeug, $feld, $suche, $vorgang, $person);
+                }
+
                 if (! $werkzeug instanceof LiefertAuswahl) {
                     /*
                      * Das Verb gibt es, aber es sucht nicht. Das ist kein
@@ -307,6 +344,144 @@ class Werkzeugverzeichnis
         }
 
         return [];
+    }
+
+    /**
+     * Fuehrt dieses Verb ein Feld dieses Namens mit der Art `anhang`?
+     *
+     * Gefragt wird an {@see LiefertFelder::felder()} und nicht an einer
+     * eigenen Liste: Die Art steht dort, wo das Verb sie erklaert hat. Eine
+     * zweite Stelle, die „welche Felder sind Anhangsfelder" beantwortet, waere
+     * genau die Kopie, die beim naechsten Feld zurueckbleibt.
+     *
+     * Ein Verb ohne Felder ({@see LiefertFelder} nicht umgesetzt) hat auch
+     * kein Anhangsfeld — dann gilt der gewohnte Weg.
+     */
+    private function istAnhangsfeld(Vorgangswerkzeug $werkzeug, string $feld, Vorgang $vorgang, Model $person): bool
+    {
+        if (! $werkzeug instanceof LiefertFelder) {
+            return false;
+        }
+
+        foreach ($werkzeug->felder($vorgang, $person) as $eines) {
+            if (! is_array($eines)) {
+                continue;
+            }
+
+            if ((string) ($eines['name'] ?? '') === $feld) {
+                return (string) ($eines['art'] ?? '') === self::ART_ANHANG;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Die Anhaenge DIESER Mail als Auswahl.
+     *
+     * ## Warum der Dateiname der Wert ist und nicht die Stelle
+     *
+     * Weil {@see LiefertFelder} es so zusichert und
+     * {@see Nachrichtenfund::stelle()} den Grund nennt: Die Stelle stimmt nur,
+     * solange beide Seiten dieselbe Mail in derselben Reihenfolge sehen. Bei
+     * einer Mail, die ein anderes System geholt hat, ist das eine Annahme —
+     * und wird sie falsch, wird der falsche Anhang verbucht.
+     *
+     * ## Warum eingebettete Bilder nicht dabei sind
+     *
+     * Sie stehen in `attachments` gar nicht: {@see Imap\MessageFormatter}
+     * sortiert sie als `inline` aus. Das Logo aus der Signatur taucht hier
+     * also nicht als waehlbarer Beleg auf, und das ist richtig — es waere der
+     * erste Treffer in jeder Liste.
+     *
+     * Die Groesse steht als `hinweis` daneben. Sie ist das Einzige, woran ein
+     * Mensch zwei gleichnamige Anhaenge unterscheiden kann, und sie verraet
+     * ausserdem eine halbe Datei, bevor jemand sie verbucht.
+     *
+     * @return array<int, array{wert: string, wort: string, hinweis?: string}>
+     */
+    private function anhaenge(Vorgangswerkzeug $werkzeug, string $feld, string $suche, Vorgang $vorgang, Model $person): array
+    {
+        if (! $werkzeug instanceof OeffnetSeineMail) {
+            /*
+             * Das Verb fuehrt ein Anhangsfeld, kann seine Mail aber nicht
+             * oeffnen. Dann ist die Liste nicht zu haben — und das ist ein
+             * Mangel des Verbs und keine Eigenschaft der Mail. Laut, damit es
+             * auffaellt: Ohne die Liste ist der Pflichtknopf von aussen nicht
+             * ausfuellbar, und genau dieser Zustand hat in der Verwaltung zehn
+             * Belege liegen lassen (Bug #1446).
+             */
+            Log::warning('Mail-Werkzeug hat ein Anhangsfeld, kann seine Mail aber nicht oeffnen.', [
+                'tool' => $werkzeug::class,
+                'field' => $feld,
+                'hinweis' => 'Vertrag '.OeffnetSeineMail::class.' umsetzen.',
+            ]);
+
+            return [];
+        }
+
+        $fund = $werkzeug->nachricht($vorgang, $person);
+
+        if ($fund === null) {
+            // Mail nicht (mehr) da oder Postfach nicht sichtbar. Eine leere
+            // Liste, wie bei jeder anderen Absage — der Grund gehoert ins
+            // Protokoll des Produkts.
+            return [];
+        }
+
+        $liste = $fund->nachricht['attachments'] ?? [];
+        $frage = mb_strtolower(trim($suche));
+        $treffer = [];
+
+        foreach (is_array($liste) ? $liste : [] as $anhang) {
+            if (! is_array($anhang)) {
+                continue;
+            }
+
+            $name = (string) ($anhang['filename'] ?? '');
+
+            if ($name === '') {
+                continue;
+            }
+
+            // Die leere Frage ist der Normalfall (der Auswaehler fragt beim
+            // Aufklappen einmal ohne Text) und zeigt dann alles: Eine Mail
+            // hat zwei, drei Anhaenge, keine zweitausend.
+            if ($frage !== '' && ! str_contains(mb_strtolower($name), $frage)) {
+                continue;
+            }
+
+            $treffer[] = array_filter([
+                'wert' => $name,
+                'wort' => $name,
+                'hinweis' => self::groesse($anhang['size'] ?? null),
+            ], static fn ($wert): bool => $wert !== null);
+        }
+
+        return $treffer;
+    }
+
+    /**
+     * Die Groesse als Satz — oder `null`, wenn keine mitkam.
+     *
+     * Kein `0 B` fuer eine fehlende Angabe: Das waere eine Aussage, und zwar
+     * eine falsche. Fehlt die Zahl, steht kein Hinweis da.
+     */
+    private static function groesse(mixed $bytes): ?string
+    {
+        if (! is_int($bytes) && ! (is_string($bytes) && ctype_digit($bytes))) {
+            return null;
+        }
+
+        $zahl = (int) $bytes;
+
+        if ($zahl <= 0) {
+            return null;
+        }
+
+        return $zahl >= 1024
+            ? number_format($zahl / 1024, 0, ',', '.').' KB'
+            : $zahl.' B';
     }
 
     /**

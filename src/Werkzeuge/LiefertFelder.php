@@ -53,6 +53,26 @@ use Illuminate\Database\Eloquent\Model;
  * Also: `['name' => 'anhang', 'wort' => 'Anhang', 'art' => 'anhang']` und
  * KEIN `auswahl`. Was dort stehen wuerde, wird ignoriert.
  *
+ * ## Die EINE Bedingung an `anhang` (#9856, 12.11.2026)
+ *
+ * Diese Zusage galt bis dahin nur fuer die eigene Leiste — die hat die Mail
+ * offen und braucht niemanden zu fragen. Einem anderen System gegenueber war
+ * sie unwahr: Dort landete die Feldart im Suchvertrag des Produkts, und der
+ * soll fuer sie gar nicht existieren. Ergebnis: eine leere Auswahl an einer
+ * PFLICHTangabe, also ein Verb, das von aussen nicht ausloesbar ist. In der
+ * Verwaltung sind daran zehn Belege liegengeblieben (Bug #1446).
+ *
+ * Jetzt beantwortet {@see Werkzeugverzeichnis::auswahl()} die Art selbst — und
+ * dafuer muss es an die Mail kommen. Das Postfach aufzuloesen ist aber eine
+ * RECHTEFRAGE und bleibt beim Produkt (siehe {@see VorgangsNachricht}).
+ * Deshalb gilt:
+ *
+ * **Ein Verb mit einem `anhang`-Feld setzt {@see OeffnetSeineMail} um.**
+ *
+ * Ohne diesen Vertrag bleibt die Auswahl leer, und das Paket schreibt eine
+ * Warnung ins Log. Teuer ist es nicht: Ein solches Verb muss die Mail ohnehin
+ * oeffnen koennen, sonst hat es keine Bytes zum Verbuchen.
+ *
  * Geliefert wird der Dateiname. Nicht der Index: Der stimmt nur, solange
  * beide Seiten dieselbe Mail in derselben Reihenfolge sehen, und bei einer
  * Mail aus einem fremden System ist das eine Annahme, keine Tatsache.
