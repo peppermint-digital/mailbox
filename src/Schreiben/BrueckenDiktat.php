@@ -24,6 +24,48 @@ use RuntimeException;
  *
  * Weder hier noch drueben. Was gesprochen wurde, gehoert dem Menschen, der es
  * gesprochen hat.
+ *
+ * ## Das `Http::` in {@see abtippen()} bleibt — eine begruendete Ausnahme
+ *
+ * Wer den Komm-Layer aufraeumt, kommt hier vorbei und sieht einen direkten
+ * Netzaufruf. Der Satz steht deshalb hier und nicht nur im Wiki: Der Leser
+ * kommt am Code vorbei, nicht am Artikel.
+ *
+ * **Und diese Stelle ist NICHT die Aussenwelt** — sie redet mit der NABE
+ * (`{brain}/api/v1/transcribe`), nur eben nicht ueber MCP. Wer sie mit
+ * {@see \Peppermint\Mailbox\Jmap\JmapClient} (ein fremder Mailserver) in
+ * einen Topf wirft, hat zwei verschiedene Begruendungen zu einer gemacht. Die
+ * drei Lagen des Verbunds:
+ *
+ * | Gegenstelle | Weg |
+ * |---|---|
+ * | ein anderes PRODUKT | `AiBrain::gateway('<vorgang>', …, $slug)` |
+ * | die NABE | `AiBrain::call('<werkzeug>')` — der Nabe-Zweig, siehe {@see \Peppermint\Mailbox\Werkzeuge\BridgeWerkzeugquelle} |
+ * | die AUSSENWELT | direkt |
+ *
+ * Nach dieser Tafel waere hier der Nabe-Zweig faellig. Dass er es nicht ist,
+ * hat einen Grund, der an der NUTZLAST liegt und nicht am Geschmack:
+ *
+ * **Hier reist eine Audiodatei, und zwar als `multipart/form-data`
+ * (`->attach('audio', …)`).** Ein MCP-Werkzeug nimmt JSON-Argumente — eine
+ * Aufnahme muesste also base64-kodiert durch eine JSON-RPC-Nutzlast, um ein
+ * Drittel groesser und vollstaendig im Arbeitsspeicher beider Seiten. Fuer
+ * einen Datenstrom, der nur durchlaeuft und nichts hinterlaesst, ist das der
+ * falsche Weg.
+ *
+ * `gateway()` waere ausserdem gar kein Weg: Es leitet an ein angebundenes
+ * PRODUKT weiter, und die Nabe ist keines — dieselbe Messung, die in
+ * `MailboxServiceProvider::mitteRufen()` ausgeschrieben steht.
+ *
+ * Die handelnde Person reist trotzdem mit, und das ist der Teil, der nicht
+ * fehlen darf: `AiBrain::actingUserHeaders()` setzt sie, also wird hier kein
+ * Riegel umgangen — nur ein Transport gewaehlt, der Dateien tragen kann.
+ *
+ * **Die Prueffrage fuer den Naechsten:** Traegt der Vorgang eine Datei? Dann
+ * ist MCP nicht der Weg, auch wenn die Gegenstelle die Nabe ist. Alles andere
+ * an die Nabe geht ueber `call()`.
+ *
+ * Gemessen und festgehalten am 12.11.2026, Aufgabe #9882.
  */
 class BrueckenDiktat implements Diktat
 {

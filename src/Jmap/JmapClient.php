@@ -48,6 +48,42 @@ use RuntimeException;
  * to PEEK, JMAP changes a keyword only when asked to. The whole class of bug
  * where opening a mail in one product marks it read in another does not exist
  * here.
+ *
+ * ## The `Http::` calls here are CORRECT and stay — this is the outside world
+ *
+ * Whoever tidies up the comm layer will come past {@see defaultSender()}, see
+ * a bare HTTP call, and read it as a leftover from before the federation. The
+ * sentence sits here and not only in the wiki, because the reader comes past
+ * the code, not past the article.
+ *
+ * **The boundary is not „direct call vs. named operation" — it is WHO sits at
+ * the other end:**
+ *
+ * | Other end | Route |
+ * |---|---|
+ * | another Peppermint PRODUCT | `AiBrain::gateway('<operation>', …, $slug)` |
+ * | the HUB itself (AI Brain) | `AiBrain::call('<tool>')` — the hub branch, see {@see \Peppermint\Mailbox\Werkzeuge\BridgeWerkzeugquelle} |
+ * | **the outside world** (here) | **direct, as here** |
+ *
+ * This class talks to a MAIL SERVER — our own Stalwart, or Office 365, or
+ * Google. The comm layer is the route between OUR systems (product contract,
+ * rule 2). A mail server is in no capability register, answers to no operation
+ * name and holds no grant in `comm_layer.gateway_grants`. A rewrite would have
+ * no target at all: the gateway resolves every target through a
+ * `ConnectedProduct` with an `mcp_url`, and a mail server is none. The call
+ * would fail as `not_offered` — and a folder listing that comes back empty for
+ * that reason looks exactly like „this folder has no mail".
+ *
+ * **The test question for whoever stands here next:** is the other end listed
+ * in `config('ai-brain.comm_layer.capability_map')`? No → it does not belong
+ * in the comm layer, and not out of convenience: there is no route to it there.
+ *
+ * The same decision, for the same reason, in two sibling places:
+ * `peppermint/calendar` `src/Subscriptions/IcsFeed.php` (foreign ICS feeds)
+ * and — a DIFFERENT case, do not lump it in — `peppermint/notifications`
+ * `src/Push/PushKeys.php`, which talks to the hub and stays outside the comm
+ * layer deliberately; the reason is written down there.
+ * Measured and recorded on 2026-11-12, task #9882.
  */
 class JmapClient implements Mailbox
 {
