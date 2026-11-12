@@ -1782,7 +1782,19 @@ describe('welcher Ordner und welche Nachricht ein Verweis meint (#9832)', () => 
      * Treffer aus; das ist der gefaehrlichere Fehler als „nicht gefunden".
      */
     it('oeffnet nichts und sagt Bescheid, wenn die Nachricht nicht mehr da ist', async () => {
-        const { fetchStub, gesehen } = gegenstelle(gelesene());
+        /*
+         * Die Gegenstelle muss hier ABLEHNEN koennen.
+         *
+         * Seit die verlangte Nachricht nicht nur in den Zeilen gesucht,
+         * sondern notfalls gezielt nachgeladen wird, entscheidet der SERVER,
+         * ob es sie gibt. Die Grundattrappe antwortet auf unbekannte Wege mit
+         * `{ success: true }` — damit haette jedes Nachladen „geklappt" und
+         * der Test bewiese das Gegenteil von dem, was er prueft.
+         */
+        const { fetchStub, gesehen } = gegenstelle({
+            ...gelesene(),
+            'message/99999': { success: false, message: 'Diese Nachricht gibt es nicht.' },
+        });
         vi.stubGlobal('fetch', fetchStub);
 
         const fehlt = vi.fn();
@@ -1798,7 +1810,34 @@ describe('welcher Ordner und welche Nachricht ein Verweis meint (#9832)', () => 
             await new Promise((fertig) => setTimeout(fertig, 20));
         });
 
-        expect(gesehen.some((pfad) => /\/message\/\d+/.test(pfad))).toBe(false);
+        /*
+         * Angefragt wird GENAU die verlangte Nachricht — und keine andere.
+         *
+         * Hier stand bis zum 12.11.2026 „es wird ueberhaupt keine Nachricht
+         * angefragt". Das beschrieb den alten Stand, in dem nur die
+         * geladenen Zeilen durchsucht wurden; genau daran scheiterte in
+         * Produktion jeder Verweis auf eine aeltere Mail. Dass nachgefragt
+         * wird, ist jetzt die Absicht. Die Zusage, auf die es ankommt, ist
+         * eine andere: Es darf nichts FREMDES aufgehen — auch nicht die
+         * gelesene Nachricht 7, die die Vorauswahl sonst oeffnen wuerde.
+         */
+        const angefragte = gesehen.filter((pfad) => /\/message\/\d+/.test(pfad));
+
+        expect(angefragte.every((pfad) => angefordert([pfad], 99999))).toBe(true);
+        expect(angefordert(gesehen, 7)).toBe(false);
+
+        /*
+         * Und die Meldung STEHT — in der Fehlerzeile der Seite, nicht nur
+         * als Rueckruf ans Produkt.
+         *
+         * Genau daran ist es am 12.11.2026 in Produktion gescheitert: Der
+         * Rueckruf allein war nicht zu sehen, und der Verweis lief lautlos
+         * ins Leere. Eine Zeile, die stehen bleibt, laesst sich nicht
+         * uebersehen und nicht verpassen.
+         */
+        expect(zuletzt.fehler).toBe(
+            'Diese E-Mail liegt nicht mehr in diesem Ordner — sie wurde verschoben oder gelöscht.',
+        );
         unmount();
     });
 

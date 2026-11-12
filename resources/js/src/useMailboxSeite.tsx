@@ -76,11 +76,20 @@ export interface MailboxSeiteKonto {
 export interface MailboxSeiteTexte {
     antwortGesendet: string;
     antwortGescheitert: string;
+    /**
+     * Die verlangte Nachricht gibt es nicht (mehr).
+     *
+     * Steht in der Fehlerzeile der Seite und bleibt dort, bis etwas klappt —
+     * anders als eine Rueckmeldung, die vorbeizieht. Begruendet an der
+     * Stelle, die sie setzt.
+     */
+    anfangsNachrichtFehlt: string;
 }
 
 export const MAILBOX_SEITE_TEXTE: MailboxSeiteTexte = {
     antwortGesendet: 'Antwort gesendet.',
     antwortGescheitert: 'Die Antwort konnte nicht versendet werden.',
+    anfangsNachrichtFehlt: 'Diese E-Mail liegt nicht mehr in diesem Ordner — sie wurde verschoben oder gelöscht.',
 };
 
 /**
@@ -1320,6 +1329,23 @@ export function useMailboxSeite({
         key: `${konto?.id ?? ''}:${ordnerPfad}`,
         uid: anfangsNachricht,
         enabled: anfangsNachrichtAusstehend && !liste.loading && !suche.isSearchMode,
+        /*
+         * Steht die Kennung nicht in den geladenen Zeilen, wird sie GEZIELT
+         * geholt — ueber denselben Weg, der auch sonst eine Mail oeffnet.
+         *
+         * `{ uid }` genuegt: `open()` braucht nur eine brauchbare Kennung
+         * ({@link canOpenMessage}), den Rest holt es vom Server. Schlaegt das
+         * fehl, gibt `open()` null zurueck, und erst DANN gilt die Nachricht
+         * als nicht vorhanden.
+         *
+         * Ohne diesen Weg blieb jede Mail unerreichbar, die nicht auf der
+         * ersten Seite liegt — in Produktion am 12.11.2026 gemessen.
+         */
+        nachladen: async (gesucht) => {
+            const ergebnis = await offene.open({ uid: gesucht } as never, ordnerPfad);
+
+            return ergebnis !== null;
+        },
         onOpen: (m) => {
             anfangsNachrichtKeyRef.current = `${konto?.id ?? ''}:${ordnerPfad}`;
             setAnfangsNachrichtAusstehend(false);
@@ -1328,6 +1354,23 @@ export function useMailboxSeite({
         onFehlt: () => {
             anfangsNachrichtKeyRef.current = `${konto?.id ?? ''}:${ordnerPfad}`;
             setAnfangsNachrichtAusstehend(false);
+
+            /*
+             * Die Meldung gehoert in die FEHLERZEILE der Seite, nicht nur in
+             * die Rueckmeldung des Produkts.
+             *
+             * Am 12.11.2026 in Produktion gemessen: Der Rueckruf allein
+             * reichte nicht — es war nichts zu sehen, 24 Sekunden im
+             * Sekundentakt geprueft, und der Verweis scheiterte damit
+             * LAUTLOS. Ob der Hinweis des Produkts nicht ausgeloest oder nur
+             * nicht gezeigt wurde, liess sich von aussen nicht entscheiden;
+             * eine Zeile, die stehen bleibt, braucht diese Unterscheidung
+             * gar nicht erst.
+             *
+             * Das Produkt bekommt den Rueckruf trotzdem — es soll zusaetzlich
+             * reagieren koennen, nicht STATT dessen.
+             */
+            setFehler(texte.anfangsNachrichtFehlt);
             anfangsNachrichtFehltRef.current?.();
         },
     });

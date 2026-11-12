@@ -95,6 +95,90 @@ describe('useAnfangsNachricht', () => {
     });
 
     /**
+     * Der Weg, der am 12.11.2026 gefehlt hat: Die Liste zeigt eine SEITE, das
+     * Postfach hat viele. Eine Kennung, die nicht in den Zeilen steht, ist
+     * deshalb noch lange nicht weg.
+     */
+    it('laedt gezielt nach, wenn die Kennung nicht in den Zeilen steht', async () => {
+        const geoeffnet = vi.fn();
+        const fehlt = vi.fn();
+        const nachladen = vi.fn().mockResolvedValue(true);
+
+        const { unmount } = haenge({
+            rows: [zeile(msg(1)), zeile(msg(2))],
+            key: 'k:INBOX',
+            uid: 53695,
+            onOpen: geoeffnet,
+            nachladen,
+            onFehlt: fehlt,
+        });
+
+        await vi.waitFor(() => expect(nachladen).toHaveBeenCalledWith(53695));
+        // Nichts aus den Zeilen geoeffnet, und KEINE Fehlmeldung: Die Mail
+        // wurde gefunden, nur eben nicht in der Liste.
+        expect(geoeffnet).not.toHaveBeenCalled();
+        expect(fehlt).not.toHaveBeenCalled();
+        unmount();
+    });
+
+    it('meldet erst dann „fehlt", wenn auch das Nachladen nichts findet', async () => {
+        const fehlt = vi.fn();
+        const nachladen = vi.fn().mockResolvedValue(false);
+
+        const { unmount } = haenge({
+            rows: [zeile(msg(1))],
+            key: 'k:INBOX',
+            uid: 999,
+            onOpen: vi.fn(),
+            nachladen,
+            onFehlt: fehlt,
+        });
+
+        await vi.waitFor(() => expect(fehlt).toHaveBeenCalledTimes(1));
+        expect(nachladen).toHaveBeenCalledTimes(1);
+        unmount();
+    });
+
+    it('meldet „fehlt" auch, wenn das Nachladen selbst scheitert', async () => {
+        const fehlt = vi.fn();
+        const nachladen = vi.fn().mockRejectedValue(new Error('Netz weg'));
+
+        const { unmount } = haenge({
+            rows: [zeile(msg(1))],
+            key: 'k:INBOX',
+            uid: 999,
+            onOpen: vi.fn(),
+            nachladen,
+            onFehlt: fehlt,
+        });
+
+        await vi.waitFor(() => expect(fehlt).toHaveBeenCalledTimes(1));
+        unmount();
+    });
+
+    /**
+     * Der schnelle Weg bleibt der erste: Steht die Kennung in den Zeilen,
+     * wird NICHT nachgeladen. Sonst kostete jeder Verweis eine Anfrage, die
+     * niemand braucht.
+     */
+    it('fragt nicht nach, wenn die Zeilen schon reichen', () => {
+        const nachladen = vi.fn();
+        const geoeffnet = vi.fn();
+
+        const { unmount } = haenge({
+            rows: [zeile(msg(2))],
+            key: 'k:INBOX',
+            uid: 2,
+            onOpen: geoeffnet,
+            nachladen,
+        });
+
+        expect(geoeffnet).toHaveBeenCalledTimes(1);
+        expect(nachladen).not.toHaveBeenCalled();
+        unmount();
+    });
+
+    /**
      * Der gefaehrlichere Fehler waere, IRGENDEINE Nachricht zu oeffnen: Das
      * saehe wie ein Treffer aus. Eine UID gilt nur, solange die Mail in
      * ihrem Ordner liegt.

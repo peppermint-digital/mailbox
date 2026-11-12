@@ -33,17 +33,45 @@ import type { DisplayRow, RowMessage } from './rows';
  * Verweis auf genau diese Mail folgt, will sie sehen — auch wenn sie damit
  * gelesen ist.
  *
- * ## Was passiert, wenn es die Nachricht nicht mehr gibt
+ * ## Zwei Wege, und warum es zwei sein muessen
  *
- * Eine IMAP-UID gilt nur innerhalb eines Ordners und nur, solange die Mail
- * dort liegt. Nach einem Umzug ins Archiv zeigt sie auf die Mail, die
- * nachgerutscht ist — der gefaehrlichere Fehler als „nicht gefunden", weil er
- * wie ein Treffer aussieht.
+ * 1. **In den geladenen Zeilen.** Der schnelle Weg, ohne eine einzige
+ *    Anfrage — er trifft, was gerade auf dem Schirm ist.
+ * 2. **Gezielt nachladen.** Steht die Kennung dort nicht, heisst das NICHT,
+ *    dass es die Mail nicht gibt: Die Liste zeigt eine Seite, das Postfach
+ *    hat viele.
  *
- * Deshalb wird ausschliesslich in den geladenen Zeilen gesucht, und wenn die
- * UID dort nicht steht, passiert NICHTS — ausser dass {@link onFehlt} gerufen
- * wird. Das Produkt kann es dann sagen („diese Mail liegt nicht mehr hier"),
- * statt dass jemand eine fremde Nachricht fuer die gesuchte haelt.
+ * Der zweite Weg hat gefehlt, und das ist am 12.11.2026 in Produktion
+ * aufgefallen: Ein Verweis auf eine Mail von vorgestern fuehrte in den
+ * richtigen Ordner und oeffnete NICHTS — lautlos. Gemessen an zwei Faellen
+ * im selben Postfach: Kennung auf Seite 1 ging auf, Kennung auf einer
+ * spaeteren Seite nicht. Das trifft genau die Mails, die man an einem Beleg
+ * nachschlaegt, naemlich die aelteren.
+ *
+ * ## Was passiert, wenn es die Nachricht wirklich nicht gibt
+ *
+ * Eine IMAP-UID gilt nur INNERHALB eines Ordners. Ist die Mail dort nicht
+ * mehr, liefert der Server nichts — eine UID wird nicht neu vergeben,
+ * solange die `uidvalidity` des Ordners gleich bleibt (dieselbe Zusicherung,
+ * auf der die Archiv-Erfassung dieses Pakets aufbaut).
+ *
+ * Hier stand zuerst, die UID zeige nach einem Umzug „auf die Mail, die
+ * nachgerutscht ist". Das ist die Falle der SEQUENZNUMMERN und nicht die der
+ * UIDs; korrigiert am 12.11.2026, nachdem eine andere Sitzung den Satz
+ * uebernehmen wollte. Zwei Lagen bleiben trotzdem gefaehrlich, und gegen
+ * beide ist hier gesichert:
+ *
+ * - **Falscher Ordner.** Dieselbe Zahl bedeutet in einem anderen Ordner eine
+ *   andere Mail. Deshalb wird ausschliesslich im Ordner des Verweises
+ *   nachgefragt, nie im gerade offenen.
+ * - **Geaenderte `uidvalidity`.** Dann sind ALLE Kennungen dieses Ordners
+ *   bedeutungslos, nicht nur eine. Davor schuetzt kein Abgleich im Browser;
+ *   es ist der Grund, warum die Message-ID der haltbarere Anker waere.
+ *
+ * Geoeffnet wird deshalb nur, was der Server auf genau diese Kennung in
+ * genau diesem Ordner herausgibt. Schlaegt das fehl, passiert nichts ausser
+ * {@link onFehlt} — niemand soll eine fremde Nachricht fuer die gesuchte
+ * halten.
  */
 export interface AnfangsNachrichtOptions<M extends RowMessage> {
     rows: DisplayRow<M>[];
@@ -58,7 +86,16 @@ export interface AnfangsNachrichtOptions<M extends RowMessage> {
     /** Die verlangte UID — `null` heisst: niemand hat etwas verlangt. */
     uid?: number | string | null;
     onOpen: (message: M) => void;
-    /** Die verlangte Nachricht liegt nicht in diesem Ordner. */
+    /**
+     * Die Kennung steht nicht in den geladenen Zeilen — gezielt nachfragen.
+     *
+     * Gibt `true` zurueck, wenn die Nachricht geoeffnet wurde. Ohne diesen
+     * Weg bliebe jede Mail unerreichbar, die nicht auf der ersten Seite
+     * liegt; mit ihm kostet er genau eine Anfrage, und nur dann, wenn die
+     * Zeilen nicht schon reichen.
+     */
+    nachladen?: (uid: number | string) => Promise<boolean>;
+    /** Die verlangte Nachricht gibt es nicht (mehr) — weder in den Zeilen noch am Server. */
     onFehlt?: () => void;
     /** Solange false, passiert nichts — etwa waehrend die Liste noch laedt. */
     enabled?: boolean;
@@ -69,6 +106,7 @@ export function useAnfangsNachricht<M extends RowMessage>({
     key,
     uid = null,
     onOpen,
+    nachladen,
     onFehlt,
     enabled = true,
 }: AnfangsNachrichtOptions<M>): void {
@@ -93,6 +131,9 @@ export function useAnfangsNachricht<M extends RowMessage>({
         // Falle wie bei `anfangsKonto`.
         const treffer = navigableRows(rows).find((r) => String(r.msg.uid) === String(uid));
 
+        // VOR dem Nachladen gesetzt, nicht danach: Der Haken laeuft bei jedem
+        // Zeichnen erneut, und ein `await` in der Mitte wuerde sonst eine
+        // zweite Anfrage anstossen, bevor die erste zurueck ist.
         erledigt.current = key;
 
         if (treffer) {
@@ -101,6 +142,18 @@ export function useAnfangsNachricht<M extends RowMessage>({
             return;
         }
 
-        onFehlt?.();
-    }, [rows, key, uid, onOpen, onFehlt, enabled]);
+        if (!nachladen) {
+            onFehlt?.();
+
+            return;
+        }
+
+        void (async () => {
+            const geoeffnet = await nachladen(uid).catch(() => false);
+
+            if (!geoeffnet) {
+                onFehlt?.();
+            }
+        })();
+    }, [rows, key, uid, onOpen, nachladen, onFehlt, enabled]);
 }
