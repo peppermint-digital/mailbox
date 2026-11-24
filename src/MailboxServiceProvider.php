@@ -145,6 +145,12 @@ class MailboxServiceProvider extends ServiceProvider
         if (config('mailbox.header_index', true)) {
             $this->loadMigrationsFrom(__DIR__.'/../database/migrations/intern');
         }
+
+        // Eigener Ordner aus demselben Grund wie `intern`: Laravel liest einen
+        // Migrationspfad nicht rekursiv.
+        if (config('mailbox.signatures_table', true)) {
+            $this->loadMigrationsFrom(__DIR__.'/../database/migrations/signaturen');
+        }
     }
 
     /**

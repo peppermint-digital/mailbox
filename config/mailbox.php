@@ -126,6 +126,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Die eigene Signaturtabelle
+    |--------------------------------------------------------------------------
+    |
+    | Legt `mail_signatures` an, fuer ein Produkt, das seine Signaturen selbst
+    | fuehrt und `Stores\LokalerSignaturvorrat` bindet. Haengt wie das
+    | Kopfzeilen-Verzeichnis NICHT an `run_migrations`: Kein Produkt hat eine
+    | gewachsene Tabelle dafuer, die das Paket ueberdecken koennte.
+    |
+    | Steht die Tabelle schon (AI Brain fuehrt sie unter demselben Namen und
+    | in derselben Form), tut die Migration nichts.
+    |
+    */
+    'signatures_table' => (bool) env('MAILBOX_SIGNATURES_TABLE', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Adoption — so a grown product can join
     |--------------------------------------------------------------------------
     |
@@ -147,6 +163,10 @@ return [
 
         // „Nicht jetzt — erinnere mich wieder ab dann." Pro Person.
         'snoozes' => 'mail_snoozes',
+
+        // Die Signaturen, je Person und wahlweise je Postfach — fuer
+        // Produkte, die sie selbst fuehren (`Stores\LokalerSignaturvorrat`).
+        'signatures' => 'mail_signatures',
 
         /*
         | Die Ablage: Nachricht, Orte, Gespraechstext.

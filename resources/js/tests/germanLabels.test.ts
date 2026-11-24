@@ -71,7 +71,7 @@ function pruefeWoerter(gruppe: Record<string, unknown>, pfad = ''): void {
 }
 
 describe('germanLabels', () => {
-    it('bringt alle siebzehn Gruppen mit', () => {
+    it('bringt alle achtzehn Gruppen mit', () => {
         // Faellt eine weg, verliert ein Produkt lautlos seine Woerter und
         // zeigt `undefined` — oder gar nichts.
         //
@@ -96,6 +96,9 @@ describe('germanLabels', () => {
             // Produkten wirken, ohne dass eines eine Zeile aendert.
             'rahmen',
             'rumpf',
+            // Seit dem 24.11.2026 (#10195): die Pflege der eigenen Signaturen,
+            // fuer Produkte, die sie selbst fuehren.
+            'signaturPflege',
             'toolbar',
             'verfassen',
             'view',

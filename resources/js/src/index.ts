@@ -69,3 +69,5 @@ export * from './useMailboxSeite';
 export * from './useMailWerkzeuge';
 export * from './MailWerkzeugleiste';
 export * from './useAktuelleKennung';
+export * from './SignaturPflege';
+export { default as SignaturPflege } from './SignaturPflege';

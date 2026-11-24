@@ -189,6 +189,25 @@ On the browser side `signaturQuelleFuer(basis)` is the default source, next to
 `empfaengerQuelleFuer`. Pass it instead of `leereSignaturQuelle`, and keep the
 latter for a product that deliberately has none.
 
+A product that **keeps its own signatures** (since v0.215.0) binds the local
+supply and gives the maintenance trait four routes:
+
+```php
+app()->bind(Signaturvorrat::class, fn () => new LokalerSignaturvorrat);
+
+// in the mailbox controller: use PflegtSignaturen;
+Route::get('emails/signaturen', [EmailController::class, 'signaturListe']);
+Route::post('emails/signaturen', [EmailController::class, 'signaturAnlegen']);
+Route::patch('emails/signaturen/{signatur}', [EmailController::class, 'signaturAendern']);
+Route::delete('emails/signaturen/{signatur}', [EmailController::class, 'signaturLoeschen']);
+```
+
+The table `mail_signatures` comes from the package (`signatures_table`, on by
+default; it leaves an existing table of that name alone — AI Brain keeps one in
+the same shape). The page is `<SignaturPflege basis="/emails/signaturen" />`.
+Everyone maintains only their own; a mailbox is offered only when
+`SichtbareKonten` shows it to that person, and a foreign signature answers 404.
+
 **Forwarding** comes with `HandlesSending` as a second route, and it is the one
 place where a product may need to say something. The payload carries
 `source_type`:

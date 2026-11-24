@@ -449,6 +449,33 @@ export const germanLabels = {
         unknownError: 'Unbekannter Fehler.',
     },
 
+    /** Die Pflege der eigenen Signaturen (`SignaturPflege`). */
+    signaturPflege: {
+        title: 'E-Mail-Signaturen',
+        description: 'Deine Signaturen für alle Postfächer oder für ein bestimmtes. Beim Verfassen wird die Vorgabe des Postfachs eingesetzt, sonst die allgemeine.',
+        add: 'Neue Signatur',
+        empty: 'Noch keine Signatur angelegt.',
+        loading: 'Signaturen werden geladen …',
+        loadFailed: 'Die Signaturen konnten nicht geladen werden.',
+        name: 'Name',
+        namePlaceholder: 'z. B. Standard',
+        account: 'Gilt für',
+        allAccounts: 'Alle Postfächer',
+        unknownAccount: 'Postfach nicht mehr sichtbar',
+        body: 'Signatur',
+        isDefault: 'Als Vorgabe einsetzen',
+        defaultBadge: 'Vorgabe',
+        save: 'Speichern',
+        saving: 'Wird gespeichert …',
+        cancel: 'Abbrechen',
+        edit: 'Bearbeiten',
+        delete: 'Löschen',
+        deleteTitle: 'Signatur löschen?',
+        deleteText: (name: string) => `„${name}" wird gelöscht. Das lässt sich nicht rückgängig machen.`,
+        saveFailed: 'Die Signatur konnte nicht gespeichert werden.',
+        deleteFailed: 'Die Signatur konnte nicht gelöscht werden.',
+    },
+
     /** Die Woerter des Editors. */
     editor: {
         bold: 'Fett (Strg+B)',
