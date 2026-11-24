@@ -386,7 +386,13 @@ export function PostfachAnlegen({
 
                             {pruefung && (
                                 <p role="status" className={pruefung.ok ? 'text-sm text-emerald-600 dark:text-emerald-400' : 'text-sm text-destructive'}>
-                                    {pruefung.ok ? labels.testOk : labels.testFailed}: {pruefung.message}
+                                    {/* Der Satz des Servers traegt bei Erfolg sein Urteil schon
+                                        („Verbindung steht, 5 Ordner gefunden.") — davor ein
+                                        zweites „Verbindung steht:" las sich doppelt. Ein Fehlschlag
+                                        ist dagegen der Wortlaut des Servers und braucht das Urteil. */}
+                                    {pruefung.ok
+                                        ? pruefung.message || labels.testOk
+                                        : `${labels.testFailed}: ${pruefung.message}`}
                                 </p>
                             )}
                             {fehler.allgemein && <p className="text-sm text-destructive">{fehler.allgemein}</p>}

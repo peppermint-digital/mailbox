@@ -122,7 +122,9 @@ describe('PostfachAnlegen', () => {
             click(knopf(container, 'Verbindung testen'));
         });
         expect(holen.mock.calls[0][0]).toBe('/settings/email-accounts/pruefen');
-        expect(document.body.textContent).toContain('Verbindung steht: Verbindung steht, 5 Ordner gefunden.');
+        // Der Satz des Servers traegt sein Urteil schon — kein zweites davor
+        // (im DevStack: „Verbindung steht: Verbindung steht, 1 Ordner gefunden.").
+        expect(document.querySelector('[role="status"]')?.textContent).toBe('Verbindung steht, 5 Ordner gefunden.');
 
         await act(async () => {
             click(knopf(container, 'Anlegen'));
@@ -152,13 +154,13 @@ it('laesst ein altes "Verbindung steht" nicht neben einem neuen Fehlschlag stehe
     await act(async () => {
         click(knopf(container, 'Verbindung testen'));
     });
-    expect(document.body.textContent).toContain('Verbindung steht:');
+    expect(document.querySelector('[role="status"]')?.textContent).toBe('Verbindung steht, 5 Ordner gefunden.');
 
     await act(async () => {
         click(knopf(container, 'Verbindung testen'));
     });
     expect(document.body.textContent).toContain('Das Postfach konnte nicht angelegt werden.');
-    expect(document.body.textContent).not.toContain('Verbindung steht:');
+    expect(document.querySelector('[role="status"]')).toBeNull();
     unmount();
 });
 
