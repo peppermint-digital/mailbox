@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Peppermint\Mailbox\Stores\LocalAccountStore;
 
 /**
  * A mailbox — the core every consuming product shares.
@@ -62,6 +63,18 @@ class MailAccount extends Model
      * all", this one says "it is, but the connection came from elsewhere".
      */
     protected bool $centrallyMerged = false;
+
+    /**
+     * Wer dieses Postfach sehen darf, wenn die Anwendung es SELBST fuehrt.
+     *
+     * Bewusst kein Attribut: Ein Konto aus der eigenen Tabelle wird
+     * zurueckgeschrieben (Token-Erneuerung, Gesundheit), und ein Attribut ohne
+     * Spalte liesse jedes `save()` scheitern. Gefuellt von
+     * {@see LocalAccountStore}.
+     *
+     * @var array{besitzer: ?string, leser: list<string>, hatListe: bool}|null
+     */
+    protected ?array $ortsSichtbarkeit = null;
 
     protected $hidden = ['password', 'oauth_client_secret', 'oauth_access_token', 'oauth_refresh_token'];
 
@@ -227,6 +240,10 @@ class MailAccount extends Model
      */
     public function sichtbarFuer(?string $email): bool
     {
+        if ($this->ortsSichtbarkeit !== null) {
+            return $this->ortsSichtbarFuer($email);
+        }
+
         if (! $this->istPersoenlich()) {
             $leseliste = $this->leseliste();
 
@@ -279,6 +296,10 @@ class MailAccount extends Model
      */
     public function sichtbarkeitVerbindlich(): bool
     {
+        if ($this->ortsSichtbarkeit !== null) {
+            return true;
+        }
+
         return (bool) $this->field('sichtbarkeit_verbindlich');
     }
 
@@ -324,6 +345,25 @@ class MailAccount extends Model
         }
 
         return Carbon::parse($expires)->subMinutes($minutes)->isPast();
+    }
+
+    /**
+     * Muss vor dem naechsten Verbinden ein Zugriffstoken gepraegt werden?
+     *
+     * Anders als {@see isTokenExpiringSoon()} auch dann, wenn noch nie eines da
+     * war: Ein Konto aus der eigenen Tabelle haelt oft nur das
+     * Erneuerungs-Token, und ohne Ablaufzeit hiess es bisher „nicht bald
+     * abgelaufen" — es wurde nie erneuert und scheiterte am leeren Token.
+     */
+    public function brauchtFrischesToken(int $minutes = 5): bool
+    {
+        if (! $this->usesOAuth()) {
+            return false;
+        }
+
+        $token = $this->field('oauth_access_token');
+
+        return ! is_string($token) || $token === '' || $this->isTokenExpiringSoon($minutes);
     }
 
     /** Did this account come from the central store? */
@@ -459,6 +499,52 @@ class MailAccount extends Model
             config('mailbox.sharing.account_key', 'mail_account_id'),
             config('mailbox.sharing.user_key', 'user_id'),
         ];
+    }
+
+    /**
+     * Haelt fest, wer dieses Postfach sehen darf — aus der eigenen Tabelle.
+     *
+     * Der Brain-Speicher bringt Besitzer und Leseliste als Adressen mit; die
+     * eigene Tabelle kennt nur Nummern. Ohne diese Uebersetzung galt ein
+     * persoenliches Postfach als „Besitzer unbekannt" und damit als sichtbar
+     * fuer alle.
+     *
+     * `$besitzer` ist die Adresse zu `user_id` — null, wenn es die Person
+     * nicht mehr gibt. Ein Postfach mit Besitzer-Nummer, aber ohne Besitzer,
+     * sieht dann niemand: Eine Luecke ist kein Freibrief.
+     *
+     * `$hatListe` traegt, ob es Zuteilungen GIBT — auch wenn keine davon mehr
+     * auf eine bestehende Person zeigt. Sonst oeffnete das Loeschen der
+     * letzten zugeteilten Person ein Gruppenpostfach fuer alle.
+     *
+     * @param  list<string>  $leser
+     */
+    public function mitOrtsSichtbarkeit(?string $besitzer, array $leser, bool $hatListe): self
+    {
+        $this->ortsSichtbarkeit = [
+            'besitzer' => $besitzer === null ? null : mb_strtolower(trim($besitzer)),
+            'leser' => array_values(array_map(fn (string $a): string => mb_strtolower(trim($a)), $leser)),
+            'hatListe' => $hatListe,
+        ];
+
+        return $this;
+    }
+
+    private function ortsSichtbarFuer(?string $email): bool
+    {
+        $wer = $email === null ? null : mb_strtolower(trim($email));
+
+        if (! $this->istPersoenlich()) {
+            if (! $this->ortsSichtbarkeit['hatListe']) {
+                return true;
+            }
+
+            return $wer !== null && in_array($wer, $this->ortsSichtbarkeit['leser'], true);
+        }
+
+        $besitzer = $this->ortsSichtbarkeit['besitzer'];
+
+        return $wer !== null && $besitzer !== null && $wer === $besitzer;
     }
 
     /**
