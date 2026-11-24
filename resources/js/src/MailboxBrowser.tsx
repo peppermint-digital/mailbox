@@ -251,7 +251,7 @@ export function MailboxBrowser({
                     </div>
 
                     <div
-                        className={`${pane === 'view' ? 'flex' : 'hidden'} flex-1 flex-col overflow-hidden max-md:w-full md:flex`}
+                        className={`${pane === 'view' ? 'flex' : 'hidden'} flex-1 flex-col overflow-hidden max-md:w-full md:flex md:min-w-[22rem]`}
                         data-slot="mailbox-view"
                     >
                         {view}

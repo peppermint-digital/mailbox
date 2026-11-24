@@ -470,14 +470,14 @@ export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat'
                         value={input}
                         disabled={sending}
                         placeholder="Nachricht an den Mailbox-Agenten…"
-                        className="flex-1 rounded-md border px-3 py-2 text-sm"
+                        className="min-w-0 flex-1 rounded-md border px-3 py-2 text-sm"
                         onChange={(e) => setInput(e.target.value)}
                     />
                     {controls?.({ insert, sending })}
                     <button
                         type="submit"
                         disabled={sending || !input.trim()}
-                        className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50"
+                        className="shrink-0 rounded-md bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50"
                     >
                         Senden
                     </button>

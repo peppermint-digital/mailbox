@@ -133,7 +133,12 @@ export interface MailboxSidePanelProps {
 
 export function MailboxSidePanel({ title, children, onClose, width = 'w-96', closeLabel = 'Ausblenden' }: MailboxSidePanelProps) {
     return (
-        <div className={`flex ${width} min-w-0 shrink-0 flex-col overflow-hidden border-l`} data-slot="mailbox-side-panel">
+        /* `shrink` statt `shrink-0` (#10163): Bei 1280 px mit Ordnern, Liste und
+           offenem Assistenten blieben der Lesespalte rund 120 px, und die
+           Werkzeugleiste schnitt ihre Beschriftungen ab. Die Lesespalte hat
+           jetzt eine Mindestbreite (`MailboxBrowser`); gibt der Schirm sie
+           nicht her, gibt die Seitenspalte nach — nicht die Mail. */
+        <div className={`flex ${width} min-w-0 shrink flex-col overflow-hidden border-l`} data-slot="mailbox-side-panel">
             <div className="flex items-center justify-between border-b px-3 py-2">
                 <span className="text-sm font-semibold">{title}</span>
                 {onClose && (
