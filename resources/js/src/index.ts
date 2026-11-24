@@ -71,3 +71,5 @@ export * from './MailWerkzeugleiste';
 export * from './useAktuelleKennung';
 export * from './SignaturPflege';
 export { default as SignaturPflege } from './SignaturPflege';
+export * from './PostfachAnlegen';
+export { default as PostfachAnlegen } from './PostfachAnlegen';

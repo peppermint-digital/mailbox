@@ -251,6 +251,10 @@ return [
             'client_id' => env('MAILBOX_GOOGLE_CLIENT_ID'),
             'client_secret' => env('MAILBOX_GOOGLE_CLIENT_SECRET'),
         ],
+        // Wohin der Anbieter nach der Anmeldung zurueckschickt — genau so beim
+        // Anbieter eingetragen. Gebraucht vom Anlegeweg (`Http\LegtKontenAn`),
+        // fuer beide Anbieter dieselbe Adresse.
+        'redirect_uri' => env('MAILBOX_OAUTH_REDIRECT_URI'),
     ],
 
     'run_migrations' => env('MAILBOX_RUN_MIGRATIONS', true),

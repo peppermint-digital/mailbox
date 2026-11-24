@@ -208,6 +208,37 @@ the same shape). The page is `<SignaturPflege basis="/emails/signaturen" />`.
 Everyone maintains only their own; a mailbox is offered only when
 `SichtbareKonten` shows it to that person, and a foreign signature answers 404.
 
+A product that **keeps its own mailboxes** (`MAILBOX_STORE=local`, since
+v0.216.0) can let people add them. The rules live in the `LegtKontenAn` trait,
+the dialog is `<PostfachAnlegen>`:
+
+```php
+// in the settings controller: use LegtKontenAn;
+Route::post('settings/email-accounts', [EmailAccountController::class, 'kontoAnlegen']);
+Route::post('settings/email-accounts/pruefen', [EmailAccountController::class, 'kontoPruefen']);
+Route::get('settings/email-accounts/oauth/callback', [EmailAccountController::class, 'kontoRueckweg']); // before the next one
+Route::get('settings/email-accounts/oauth/{anbieter}', [EmailAccountController::class, 'kontoVerbinden']);
+```
+
+Set `mailbox.oauth.redirect_uri` to the callback exactly as registered with
+Microsoft/Google; `mailbox.oauth.<anbieter>` is the application's own app.
+Override `kontoDarfTeilen()` (who may add a shared mailbox and its reader list —
+nobody by default), `kontoZiel()` (where the OAuth round trip ends) and, for
+product-only columns, `kontoAngelegt()`.
+
+- Everyone adds their **own** mailbox; a shared one only with `kontoDarfTeilen()`.
+- A password mailbox is saved only after the connection test passes (IMAP or
+  JMAP, plus SMTP when given), and an address that already exists is refused.
+- The OAuth callback never creates a twin: with `konto` in the request it updates
+  exactly that row — and only if the signed-in address matches — otherwise a row
+  with the same address, and only otherwise a new one. It clears the app fields
+  on the row, because the new token belongs to the application's app.
+- With `store=brain` all four answer 409.
+
+On the page: `<PostfachAnlegen basis="/settings/email-accounts" anbieter={…}
+darfTeilen={…} personen={…} />` and, for an OAuth mailbox that needs a new
+sign-in, `<PostfachNeuVerbinden basis=… konto={id} anbieter=… />`.
+
 **Forwarding** comes with `HandlesSending` as a second route, and it is the one
 place where a product may need to say something. The payload carries
 `source_type`:

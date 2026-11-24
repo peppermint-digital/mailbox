@@ -90,6 +90,9 @@ describe('germanLabels', () => {
             // waehrend die Tasten hier gebunden wurden.
             'kuerzel',
             'list',
+            // Seit dem 24.11.2026 (#10189): ein Postfach anlegen oder neu
+            // verbinden, fuer Produkte, die ihre Postfaecher selbst fuehren.
+            'postfachAnlegen',
             // Seit #1079: die Umschaltung des Rahmens, die es nur auf schmalen
             // Bildschirmen gibt. Als EINZIGE Gruppe auch die Vorgabe des
             // Bauteils selbst — der mobile Rahmen sollte in allen vier
