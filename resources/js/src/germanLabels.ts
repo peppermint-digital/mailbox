@@ -480,7 +480,7 @@ export const germanLabels = {
     postfachAnlegen: {
         add: 'Postfach hinzufügen',
         title: 'Postfach hinzufügen',
-        chooseDescription: 'Mit Microsoft oder Google anmelden — oder ein Postfach mit Kennwort einrichten.',
+        chooseDescription: 'Beim Anbieter anmelden — oder ein Postfach mit Kennwort einrichten.',
         passwordDescription: 'Gespeichert wird erst, wenn die Verbindung steht.',
         name: 'Name',
         namePlaceholder: 'z. B. Info',

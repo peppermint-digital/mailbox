@@ -132,6 +132,36 @@ describe('PostfachAnlegen', () => {
     });
 });
 
+it('laesst ein altes "Verbindung steht" nicht neben einem neuen Fehlschlag stehen', async () => {
+    /*
+     * Im DevStack gesehen (24.11.2026): Ein zweiter Test brach ab, die Maske
+     * meldete den Fehler — und zeigte darueber weiter das gruene Ergebnis des
+     * ersten. Wer nur den gruenen Satz liest, haelt die Pruefung fuer bestanden.
+     */
+    let runde = 0;
+    const holen = vi.fn(async () => {
+        runde += 1;
+        if (runde === 1) {
+            return antwort(200, { ok: true, message: 'Verbindung steht, 5 Ordner gefunden.' });
+        }
+        throw new Error('abgebrochen');
+    });
+    const { container, unmount } = render(<PostfachAnlegen basis="/b" fetch={holen as unknown as typeof fetch} csrfToken={() => 'tok'} />);
+
+    zumKennwortFormular(container);
+    await act(async () => {
+        click(knopf(container, 'Verbindung testen'));
+    });
+    expect(document.body.textContent).toContain('Verbindung steht:');
+
+    await act(async () => {
+        click(knopf(container, 'Verbindung testen'));
+    });
+    expect(document.body.textContent).toContain('Das Postfach konnte nicht angelegt werden.');
+    expect(document.body.textContent).not.toContain('Verbindung steht:');
+    unmount();
+});
+
 describe('PostfachNeuVerbinden', () => {
     it('traegt die Kennung des Postfachs mit', () => {
         const navigieren = vi.fn();

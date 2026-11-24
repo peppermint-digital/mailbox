@@ -172,6 +172,9 @@ export function PostfachAnlegen({
     async function senden(ziel: 'pruefen' | 'anlegen') {
         setArbeitet(ziel);
         setFehler({});
+        // Ein altes Ergebnis darf nicht neben dem neuen stehen bleiben — ein
+        // gruenes „Verbindung steht" ueber einem Fehlschlag liest sich als bestanden.
+        setPruefung(null);
 
         try {
             const antwort = await holen(ziel === 'pruefen' ? `${basis.replace(/\/+$/, '')}/pruefen` : basis, {
