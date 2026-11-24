@@ -1669,7 +1669,7 @@ class MailboxClient implements Mailbox
         // like a wrong password from the outside.
         $konto = $this->konto();
 
-        if ($this->refresher && $konto->usesOAuth() && $konto->isTokenExpiringSoon()) {
+        if ($this->refresher && $konto->brauchtFrischesToken()) {
             $this->refresher->ensureFresh($konto);
         }
 

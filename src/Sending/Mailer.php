@@ -3,6 +3,7 @@
 namespace Peppermint\Mailbox\Sending;
 
 use Illuminate\Support\Str;
+use Peppermint\Mailbox\Contracts\TokenRefresher;
 use Peppermint\Mailbox\Http\HandlesSending;
 use Peppermint\Mailbox\Mailboxes;
 use Peppermint\Mailbox\Models\MailAccount;
@@ -254,6 +255,13 @@ class Mailer
 
     private function oauthTransport(MailAccount $konto): TransportInterface
     {
+        // Derselbe Schritt wie vor dem Abruf: Ein Konto aus der eigenen
+        // Tabelle haelt oft nur das Erneuerungs-Token. Fuer ein Konto aus der
+        // Mitte tut der Standard-Erneuerer nichts.
+        if ($konto->brauchtFrischesToken() && app()->bound(TokenRefresher::class)) {
+            app(TokenRefresher::class)->ensureFresh($konto);
+        }
+
         $token = (string) $konto->field('oauth_access_token');
 
         if ($token === '') {

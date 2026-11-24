@@ -75,6 +75,7 @@ final class Mailboxes
         }
 
         $ablage = self::ablage();
+        $refresher ??= self::erneuerer();
 
         if ($account->usesJmap()) {
             return new JmapClient(account: $account, refresher: $refresher, ablage: $ablage);
@@ -96,6 +97,30 @@ final class Mailboxes
      * Clients selbst baut. Ein `app()` ohne Behaelter waere dort ein Fehler
      * an einer Stelle, die mit Postfaechern nichts zu tun hat.
      */
+    /**
+     * Der angebundene Token-Erneuerer, wenn der Aufrufer keinen mitgibt.
+     *
+     * Ohne ihn erneuerte nur, wer daran dachte, einen zu uebergeben — und das
+     * hat ausser Tests nie jemand getan. Fuer ein Konto aus der Mitte ist der
+     * Standard-Erneuerer wirkungslos; dort praegt die Mitte.
+     */
+    private static function erneuerer(): ?TokenRefresher
+    {
+        if (! function_exists('app')) {
+            return null;
+        }
+
+        try {
+            $container = app();
+
+            return $container->bound(TokenRefresher::class)
+                ? $container->make(TokenRefresher::class)
+                : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
     private static function ablage(): ?AccountStore
     {
         if (! function_exists('app')) {

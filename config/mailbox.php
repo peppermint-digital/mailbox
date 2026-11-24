@@ -210,6 +210,29 @@ return [
         'disk' => env('MAILBOX_ARCHIVE_DISK', 'local'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | OAuth — die App-Registrierung der Anwendung
+    |--------------------------------------------------------------------------
+    |
+    | Gebraucht nur, wenn die Anwendung ihre Konten SELBST fuehrt und ein
+    | Konto keine eigene App-Angabe traegt. Ein Erneuerungs-Token gehoert zu
+    | der App, die es geholt hat: Ein uebernommenes Postfach bringt seine
+    | Angaben am Konto mit, und die gehen vor.
+    |
+    */
+    'oauth' => [
+        'microsoft' => [
+            'client_id' => env('MAILBOX_MICROSOFT_CLIENT_ID'),
+            'client_secret' => env('MAILBOX_MICROSOFT_CLIENT_SECRET'),
+            'tenant_id' => env('MAILBOX_MICROSOFT_TENANT_ID', 'common'),
+        ],
+        'google' => [
+            'client_id' => env('MAILBOX_GOOGLE_CLIENT_ID'),
+            'client_secret' => env('MAILBOX_GOOGLE_CLIENT_SECRET'),
+        ],
+    ],
+
     'run_migrations' => env('MAILBOX_RUN_MIGRATIONS', true),
 
     /*

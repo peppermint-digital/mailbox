@@ -6,12 +6,14 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
+use Peppermint\Mailbox\Accounts\OAuthErneuerung;
 use Peppermint\Mailbox\Accounts\SichtbareKonten;
 use Peppermint\Mailbox\Brain\MailboxChat;
 use Peppermint\Mailbox\Console\InstallCommand;
 use Peppermint\Mailbox\Console\ZustandUmziehenCommand;
 use Peppermint\Mailbox\Contracts\AccountStore;
 use Peppermint\Mailbox\Contracts\Schlummerspeicher;
+use Peppermint\Mailbox\Contracts\TokenRefresher;
 use Peppermint\Mailbox\Contracts\Verlaufsspeicher;
 use Peppermint\Mailbox\Contracts\Zuweisungsspeicher;
 use Peppermint\Mailbox\Events\VerlaufVergessen;
@@ -44,6 +46,9 @@ class MailboxServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__.'/../config/mailbox.php', 'mailbox');
 
         $this->app->singleton(AccountStore::class, fn (): AccountStore => $this->store());
+
+        // `bindIf`: Eine Anwendung mit eigener Erneuerung behaelt sie.
+        $this->app->bindIf(TokenRefresher::class, OAuthErneuerung::class);
 
         /*
          * Welche Postfaecher eine Person sehen darf — EINE Stelle (#8439).

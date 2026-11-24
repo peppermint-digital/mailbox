@@ -20,6 +20,7 @@ use Peppermint\Mailbox\Imap\SystemFolders;
 use Peppermint\Mailbox\Models\MailAccount;
 use Peppermint\Mailbox\Search\Criteria;
 use Peppermint\Mailbox\Threading\ThreadPage;
+use Peppermint\Mailbox\Werkzeuge\BridgeWerkzeugquelle;
 use RuntimeException;
 
 /**
@@ -62,7 +63,7 @@ use RuntimeException;
  * | Other end | Route |
  * |---|---|
  * | another Peppermint PRODUCT | `AiBrain::gateway('<operation>', …, $slug)` |
- * | the HUB itself (AI Brain) | `AiBrain::call('<tool>')` — the hub branch, see {@see \Peppermint\Mailbox\Werkzeuge\BridgeWerkzeugquelle} |
+ * | the HUB itself (AI Brain) | `AiBrain::call('<tool>')` — the hub branch, see {@see BridgeWerkzeugquelle} |
  * | **the outside world** (here) | **direct, as here** |
  *
  * This class talks to a MAIL SERVER — our own Stalwart, or Office 365, or
@@ -1356,7 +1357,7 @@ class JmapClient implements Mailbox
 
         $konto = $this->konto();
 
-        if ($this->refresher && $konto->usesOAuth() && $konto->isTokenExpiringSoon()) {
+        if ($this->refresher && $konto->brauchtFrischesToken()) {
             $this->refresher->ensureFresh($konto);
         }
 
