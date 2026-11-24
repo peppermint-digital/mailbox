@@ -43,7 +43,7 @@ class ConnectionSettings
             // them apart. A bare `host` is accepted for settings that do not.
             'host' => (string) ($account->field('imap_host') ?: $account->field('host')),
             'port' => (int) ($account->field('imap_port') ?: $account->field('port')),
-            'encryption' => (string) ($account->field('imap_encryption') ?: $account->field('encryption')),
+            'encryption' => self::transport((string) ($account->field('imap_encryption') ?: $account->field('encryption'))),
             'validate_cert' => true,
             'timeout' => $timeout,
         ];
@@ -93,5 +93,23 @@ class ConnectionSettings
         }
 
         return $felder === [] ? 'no OAuth fields at all' : implode(', ', $felder);
+    }
+
+    /**
+     * Die Verschluesselungsangabe in der Sprache der Verbindung.
+     *
+     * ImapEngine kennt `ssl`, `tls`, `starttls` und `tcp`. AI Brain schreibt
+     * fuer ein Postfach ohne SSL `none`, die Maske des Managers bietet „Keine"
+     * (`none`) an — beides endete in „Unhandled match case 'none'" (#10163).
+     * Ohne Angabe gilt die sichere Vorgabe `ssl`, wie bei ImapEngine selbst.
+     */
+    private static function transport(string $angabe): string
+    {
+        return match (mb_strtolower(trim($angabe))) {
+            'none', 'tcp', 'plain' => 'tcp',
+            'tls' => 'tls',
+            'starttls' => 'starttls',
+            default => 'ssl',
+        };
     }
 }

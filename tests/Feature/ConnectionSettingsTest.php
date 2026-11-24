@@ -187,3 +187,25 @@ describe('ein OAuth-Postfach ohne Token', function () {
         expect(ConnectionSettings::for(konto())->values['password'])->toBe('geheim');
     });
 });
+
+it('uebersetzt „keine Verschluesselung" in den Transport, den die Verbindung kennt', function (?string $angabe, string $transport) {
+    /*
+     * AI Brain schreibt `none` fuer ein Postfach ohne SSL, die Maske des
+     * Managers bietet „Keine" (`none`) an. ImapEngine kennt nur ssl, tls,
+     * starttls und tcp — `none` endete in „Unhandled match case 'none'"
+     * (gemessen 24.11.2026 im DevStack, #10163).
+     */
+    $konto = MailAccount::fromRemote(['email' => 'a@b.test', 'imap_host' => 'imap.b.test', 'imap_port' => 143,
+        'imap_encryption' => $angabe, 'username' => 'a', 'password' => 'p', 'auth_type' => 'password']);
+
+    expect(ConnectionSettings::for($konto)->values['encryption'])->toBe($transport);
+})->with([
+    'none' => ['none', 'tcp'],
+    'NONE' => ['NONE', 'tcp'],
+    // Ohne Angabe die sichere Vorgabe, wie ImapEngine selbst — nicht
+    // Klartext, der ein Kennwort unverschluesselt hinausschickte.
+    'leer' => ['', 'ssl'],
+    'ssl' => ['ssl', 'ssl'],
+    'tls' => ['tls', 'tls'],
+    'starttls' => ['starttls', 'starttls'],
+]);
