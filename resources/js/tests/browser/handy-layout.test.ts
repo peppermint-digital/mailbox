@@ -265,6 +265,7 @@ interface BildlaufMessung {
     leisteVorher: number;
     leisteNachher: number;
     randLinks: number;
+    gibtWeiter: string;
 }
 
 let bildlaufMessung: BildlaufMessung | null = null;
@@ -549,6 +550,7 @@ beforeAll(async () => {
             leisteVorher,
             leisteNachher: leiste(),
             randLinks: Math.round(rahmen.getBoundingClientRect().left - kasten.getBoundingClientRect().left),
+            gibtWeiter: getComputedStyle(kasten).overscrollBehaviorY,
         };
 
         kasten.scrollTop = 0;
@@ -647,6 +649,8 @@ describe('Ein Bildlauf beim Lesen auf dem Telefon', () => {
         expect(m.leisteNachher).toBe(m.leisteVorher);
         // Randlos bis auf den schmalen Abstand.
         expect(m.randLinks).toBeLessThanOrEqual(12);
+        // Am Ende des Kastens federt nicht die ganze Seite mit.
+        expect(m.gibtWeiter).toBe('contain');
     });
 });
 

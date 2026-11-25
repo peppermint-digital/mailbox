@@ -220,9 +220,17 @@ export function MailMessageView({
 
                 Am Schreibtisch ist der Kasten ein Durchgang ohne eigene
                 Wirkung: Dort scrollt weiter nur der Text.
+
+                `overscroll-y-contain`: Am Anfang und am Ende des Kastens gibt
+                ein Telefon die Wischbewegung sonst an die SEITE weiter, und
+                die ganze Seite federt mit — Knopfleiste eingeschlossen.
+                Gemeldet von Bastian am 25.11.2026, kurz nach v0.219.0: „die
+                gesamte Seite ist jetzt scrollbar". In Chromes Emulation nicht
+                zu sehen (die Seite war dort genau 844 von 844 px hoch), auf
+                einem echten Geraet schon.
             */}
             <div
-                className={cn('flex min-h-0 flex-1 flex-col', aktionenUnten && 'max-md:overflow-y-auto max-md:pb-24')}
+                className={cn('flex min-h-0 flex-1 flex-col', aktionenUnten && 'max-md:overflow-y-auto max-md:overscroll-y-contain max-md:pb-24')}
                 data-slot="mail-message-bildlauf"
             >
             <div className="space-y-3 border-b p-4">

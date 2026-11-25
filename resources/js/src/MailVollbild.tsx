@@ -125,7 +125,7 @@ export function MailVollbild({ betreff, bodyHtml = null, bodyText = null, labels
             </div>
 
             {/* Wie die Leseansicht auf dem Telefon: randlos, mitwachsend, ein Bildlauf. */}
-            <div className="min-h-0 flex-1 overflow-hidden pb-[env(safe-area-inset-bottom)] max-md:overflow-y-auto" data-slot="mail-vollbild-bildlauf">
+            <div className="min-h-0 flex-1 overflow-hidden pb-[env(safe-area-inset-bottom)] max-md:overflow-y-auto max-md:overscroll-y-contain" data-slot="mail-vollbild-bildlauf">
                 <EmailBodyViewer labels={labels.body} bodyHtml={bodyHtml} bodyText={bodyText} blockRemoteImages mobil />
             </div>
         </div>,
