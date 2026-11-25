@@ -333,10 +333,16 @@ describe('Antworten und Weiterleiten', () => {
             },
         });
 
-        expect(gesehen).toHaveLength(1);
-        expect(gesehen[0].source).toEqual({ type: 'imap', folder: 'Gesendete Elemente', uid: 46807 });
-        expect(gesehen[0].endpoints).toEqual({ forward: '/mailbox/1/forward' });
-        expect(gesehen[0].account).toEqual({ id: 1, name: 'Post', email: 'post@beispiel.de' });
+        // Wie OFT gezeichnet wird, ist nicht die Frage: Seit dem 25.11.2026
+        // misst die Flaeche ihre Oberkante und zeichnet danach noch einmal.
+        // Es zaehlt, womit — und zwar bei jedem Zeichnen dasselbe.
+        expect(gesehen.length).toBeGreaterThanOrEqual(1);
+
+        for (const eigenschaften of gesehen) {
+            expect(eigenschaften.source).toEqual({ type: 'imap', folder: 'Gesendete Elemente', uid: 46807 });
+            expect(eigenschaften.endpoints).toEqual({ forward: '/mailbox/1/forward' });
+            expect(eigenschaften.account).toEqual({ id: 1, name: 'Post', email: 'post@beispiel.de' });
+        }
         unmount();
     });
 

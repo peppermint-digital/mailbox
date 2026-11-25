@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { merken, zuletztGesehen } from './zwischenspeicher';
 import type { MessageHandle, RowMessage, Thread } from './rows';
 
 /**
@@ -164,7 +165,32 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
 
             const meiner = ++laufNr.current;
 
-            setLoading(true);
+            /*
+             * Was hier zuletzt stand, sofort zeigen — und still auffrischen
+             * (siehe `zwischenspeicher`). Der Kreisel nur, wenn nichts bekannt
+             * ist. Ein ausdrueckliches Aktualisieren (`refresh`) zeigt ihn
+             * nicht, wenn schon Zeilen da sind: Es soll frisch werden, nicht
+             * leer.
+             */
+            const schluessel = `liste.${params.accountId}.${params.folder}.${params.page}.${params.grouped ? 'k' : 'n'}`;
+            const bekannt = params.refresh ? null : zuletztGesehen<{ messages: M[]; threads: Thread<M>[]; total: number; perPage?: number }>(schluessel);
+
+            if (bekannt) {
+                setMessages(bekannt.messages);
+                setThreads(bekannt.threads);
+                setTotal(bekannt.total);
+
+                if (typeof bekannt.perPage === 'number' && bekannt.perPage > 0) {
+                    setPerPage(bekannt.perPage);
+                }
+
+                setPage(params.page);
+                setGroupedState(params.grouped);
+                setLoading(false);
+            } else {
+                setLoading(true);
+            }
+
             setFailure(null);
 
             try {
@@ -197,6 +223,13 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
 
                 setPage(params.page);
                 setGroupedState(params.grouped);
+
+                merken(schluessel, {
+                    messages: params.grouped ? [] : result.messages,
+                    threads: params.grouped ? result.threads : [],
+                    total: result.total,
+                    perPage: result.perPage,
+                });
             } catch {
                 if (meiner === laufNr.current) {
                     setFailure({ kind: 'network' });

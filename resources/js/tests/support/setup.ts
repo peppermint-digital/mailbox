@@ -32,3 +32,14 @@ if (typeof Range !== 'undefined' && !Range.prototype.getClientRects) {
     Range.prototype.getClientRects = () => ({ length: 0, item: () => null, [Symbol.iterator]: function* () {} }) as unknown as DOMRectList;
     Range.prototype.getBoundingClientRect = () => ({ x: 0, y: 0, width: 0, height: 0, top: 0, right: 0, bottom: 0, left: 0, toJSON: () => ({}) }) as DOMRect;
 }
+
+/**
+ * Der Zwischenspeicher des Mailbrowsers lebt ueber einen Test hinaus (er soll
+ * ja ueber einen Seitenwechsel hinaus leben). Ohne das Leeren saehe ein Test
+ * die Liste des vorigen — und „zeigt den Kreisel beim ersten Laden" waere
+ * gruen oder rot je nach Reihenfolge.
+ */
+import { beforeEach } from 'vitest';
+import { allesVergessen } from '../../src/zwischenspeicher';
+
+beforeEach(() => allesVergessen());

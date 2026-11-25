@@ -77,6 +77,12 @@ export function MailConversationPane({
             )}
 
             {state.on ? (
+                /*
+                    Ein eigener Bildlauf (25.11.2026). Der Verlauf stand ohne
+                    ihn in einem Kasten, der Ueberstehendes abschneidet — am
+                    Telefon liess er sich deshalb nicht scrollen (Bastian).
+                */
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain" data-slot="mail-conversation-bildlauf">
                 <MailConversation
                     entries={state.entries}
                     loading={state.loading}
@@ -91,6 +97,7 @@ export function MailConversationPane({
                         })
                     }
                 />
+                </div>
             ) : (
                 children
             )}

@@ -416,3 +416,39 @@ describe('several messages at once', () => {
         unmount();
     });
 });
+
+describe('useMailboxList — zuletzt Gesehenes sofort zeigen (25.11.2026)', () => {
+    it('zeigt beim zweiten Oeffnen sofort die bekannte Liste — ohne Kreisel — und ersetzt sie still', async () => {
+        const erste = { list: vi.fn(async () => seite([msg(1), msg(2)], 2)) };
+        const a = mount(erste);
+        await act(async () => { await a.ref.current.load({ accountId: 1, folder: 'INBOX', page: 1 }); });
+        a.unmount();
+
+        // Zweiter Besuch: Die Antwort des Servers haengt noch.
+        let freigeben: (wert: ReturnType<typeof seite>) => void = () => {};
+        const zweite = { list: vi.fn(() => new Promise<ReturnType<typeof seite>>((f) => { freigeben = f; })) };
+        const b = mount(zweite);
+
+        let laeuft: Promise<void> = Promise.resolve();
+        act(() => { laeuft = b.ref.current.load({ accountId: 1, folder: 'INBOX', page: 1 }); });
+
+        expect(b.ref.current.loading).toBe(false);
+        expect(b.ref.current.messages.map((m) => m.uid)).toEqual([1, 2]);
+
+        await act(async () => { freigeben(seite([msg(3), msg(1), msg(2)], 3)); await laeuft; });
+
+        expect(b.ref.current.messages.map((m) => m.uid)).toEqual([3, 1, 2]);
+        expect(zweite.list).toHaveBeenCalledTimes(1);
+        b.unmount();
+    });
+
+    it('zeigt den Kreisel, wenn fuer diesen Ordner noch nichts bekannt ist', async () => {
+        const quelle = { list: vi.fn(() => new Promise<ReturnType<typeof seite>>(() => {})) };
+        const { ref, unmount } = mount(quelle);
+
+        act(() => { void ref.current.load({ accountId: 1, folder: 'Archiv', page: 1 }); });
+
+        expect(ref.current.loading).toBe(true);
+        unmount();
+    });
+});

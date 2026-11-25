@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { merken, zuletztGesehen } from './zwischenspeicher';
 import type { MailFolder } from './MailFolderList';
 import type { MailboxFailure } from './useMailboxList';
 
@@ -77,6 +78,17 @@ export interface MailboxFolders {
     clearFailure: () => void;
 }
 
+/** Der gewuenschte Ordner, wenn es ihn gibt — sonst die Vorauswahl (siehe `load`). */
+function zielOrdner(ordner: MailFolder[], bevorzugt?: string | null): string | null {
+    const gewuenscht = (bevorzugt ?? '').trim();
+
+    if (gewuenscht !== '' && ordner.some((o) => o.path === gewuenscht)) {
+        return gewuenscht;
+    }
+
+    return preferredFolder(ordner);
+}
+
 export function useMailboxFolders({ source }: { source: FolderSource }): MailboxFolders {
     const [folders, setFolders] = useState<MailFolder[]>([]);
     const [targets, setTargets] = useState<MailFolder[]>([]);
@@ -87,6 +99,35 @@ export function useMailboxFolders({ source }: { source: FolderSource }): Mailbox
         async (accountId: number | string, options: { refresh?: boolean; bevorzugt?: string | null } = {}) => {
             if (!accountId) {
                 return null;
+            }
+
+            const schluessel = `ordner.${accountId}`;
+
+            /*
+             * Bekannte Ordner sofort zeigen und den Zielordner aus ihnen
+             * bestimmen — dann muss die Liste nicht auf die Ordner warten,
+             * sondern startet gleich (siehe `zwischenspeicher`). Die frische
+             * Ordnerliste kommt still hinterher.
+             */
+            const bekannt = options.refresh ? null : zuletztGesehen<MailFolder[]>(schluessel);
+
+            if (bekannt && bekannt.length > 0) {
+                setFolders(bekannt);
+                setFailure(null);
+
+                void source
+                    .list({ accountId, refresh: false })
+                    .then((frisch) => {
+                        if (Array.isArray(frisch)) {
+                            setFolders(frisch);
+                            merken(schluessel, frisch);
+                        }
+                    })
+                    .catch(() => {
+                        // Still: Die bekannten Ordner stehen ja.
+                    });
+
+                return zielOrdner(bekannt, options.bevorzugt);
             }
 
             setLoading(true);
@@ -101,6 +142,7 @@ export function useMailboxFolders({ source }: { source: FolderSource }): Mailbox
                 }
 
                 setFolders(result);
+                merken(schluessel, result);
 
                 /*
                  * Ein gewuenschter Ordner schlaegt die Vorauswahl — aber nur,
@@ -117,13 +159,7 @@ export function useMailboxFolders({ source }: { source: FolderSource }): Mailbox
                  * verwaister Verweis soll die Seite nicht kaputtmachen,
                  * sondern dort landen, wo man ohne ihn gelandet waere.
                  */
-                const gewuenscht = (options.bevorzugt ?? '').trim();
-
-                if (gewuenscht !== '' && result.some((ordner) => ordner.path === gewuenscht)) {
-                    return gewuenscht;
-                }
-
-                return preferredFolder(result);
+                return zielOrdner(result, options.bevorzugt);
             } catch {
                 setFailure({ kind: 'network' });
                 return null;
@@ -145,6 +181,7 @@ export function useMailboxFolders({ source }: { source: FolderSource }): Mailbox
 
                 if (Array.isArray(result)) {
                     setFolders(result);
+                    merken(`ordner.${accountId}`, result);
                 }
             } catch {
                 // Deliberately silent: the action that triggered this already

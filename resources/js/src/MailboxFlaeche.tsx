@@ -493,6 +493,45 @@ export function MailboxFlaeche({
      */
     const [vollbild, setVollbild] = useState(false);
 
+    /*
+     * Wo der Kasten wirklich anfaengt (25.11.2026).
+     *
+     * Bis dahin war er fest `100dvh - 5rem` hoch: Kopfzeile 4rem plus Rand.
+     * Das stimmt nur, solange ueber ihm NICHTS steht. Der Manager zeigt seit
+     * dem 24.11.2026 zwischen Kopfzeile und Seite einen Push-Hinweis (und beim
+     * Uebernehmen eines Kontos einen weiteren). Dann rutschte der Kasten um
+     * dessen Hoehe nach unten aus dem Bildschirm — Bastian: der Verfassen-Knopf
+     * „ist jetzt abgehackt", und die Seite scrollte.
+     *
+     * Jetzt misst der Kasten seine Oberkante und nimmt den Rest des Fensters,
+     * abzueglich desselben 1rem Randes wie vorher. Ohne Hinweis ergibt das auf
+     * den Pixel die alte Hoehe. Neu gemessen wird bei Groessenaenderung und
+     * jede Sekunde — ein Hinweis kann jederzeit auftauchen oder verschwinden,
+     * und das Messen kostet eine einzige Rechteckabfrage.
+     */
+    const [kasten, setKasten] = useState<HTMLDivElement | null>(null);
+    const [oben, setOben] = useState<number | null>(null);
+
+    useEffect(() => {
+        if (!kasten) {
+            return;
+        }
+
+        const messen = () => setOben(Math.max(0, Math.round(kasten.getBoundingClientRect().top + window.scrollY)));
+        const beobachter = new ResizeObserver(messen);
+
+        messen();
+        beobachter.observe(document.body);
+        window.addEventListener('resize', messen);
+        const takt = window.setInterval(messen, 1000);
+
+        return () => {
+            beobachter.disconnect();
+            window.removeEventListener('resize', messen);
+            window.clearInterval(takt);
+        };
+    }, [kasten]);
+
     /* Wo der Aufklapper der Werkzeugleiste am Telefon steht — in der schmalen Leiste. */
     const [werkzeugPlatz, setWerkzeugPlatz] = useState<HTMLDivElement | null>(null);
     const vollbildSchliessen = useCallback(() => setVollbild(false), []);
@@ -621,7 +660,12 @@ export function MailboxFlaeche({
                 ja nicht scrollt. Genau die „Bedienelemente teilweise nicht
                 anklickbar" aus der Meldung. Am Schreibtisch sind die beiden
                 Einheiten gleich, dort aendert sich nichts. */}
-            <div className="flex h-[calc(100dvh-5rem)] flex-col overflow-hidden">
+            <div
+                ref={setKasten}
+                className="flex h-[calc(100dvh-5rem)] flex-col overflow-hidden"
+                style={oben !== null ? { height: `calc(100dvh - ${oben}px - 1rem)` } : undefined}
+                data-slot="mailbox-flaeche"
+            >
 
                 {konten.length === 0 ? (
                     <div className="flex flex-1 items-center justify-center text-muted-foreground">
