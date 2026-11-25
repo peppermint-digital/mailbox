@@ -110,6 +110,15 @@ export interface MailboxBrowserProps {
     toolbar?: ReactNode;
     showFolders?: boolean;
     /**
+     * Die Ordnerspalte nur am SCHREIBTISCH eingeklappt (seit 25.11.2026).
+     *
+     * Unterhalb von `md` sind die Ordner keine Spalte, sondern die Schublade
+     * hinter dem ☰ — und die braucht man dort immer. Wer am Schreibtisch die
+     * Spalte einklappt, soll am Telefon nicht ohne Ordner dastehen. Anders als
+     * `showFolders={false}`, das die Ordner ueberall wegnimmt.
+     */
+    foldersHiddenOnDesktop?: boolean;
+    /**
      * Width of the message list column. Tailwind class, e.g. `w-80`.
      *
      * Gilt erst ab `md`: Darunter nimmt die Liste die ganze Breite, weil sie
@@ -172,6 +181,7 @@ export function MailboxBrowser({
     aside,
     toolbar,
     showFolders = true,
+    foldersHiddenOnDesktop = false,
     listWidth = 'w-80',
     labels = mailboxBrowserLabels,
     asideGewaehlt = true,
@@ -231,7 +241,7 @@ export function MailboxBrowser({
                 <div className="relative flex flex-1 overflow-hidden">
                     {showFolders && (
                         <div
-                            className={`${pane === 'folders' ? 'block' : 'hidden'} overflow-y-auto border-r bg-muted/30 max-md:w-full md:block md:w-48`}
+                            className={`${pane === 'folders' ? 'block' : 'hidden'} overflow-y-auto border-r bg-muted/30 max-md:w-full ${foldersHiddenOnDesktop ? 'md:hidden' : 'md:block'} md:w-48`}
                             data-slot="mailbox-folders"
                         >
                             {schubladeKopf && (

@@ -303,11 +303,17 @@ export function MailListToolbar({
     return (
         <div data-slot="mail-list-toolbar">
             <div className="flex items-center gap-2 border-b p-2">
+                {/*
+                    Nur am Schreibtisch (25.11.2026). Am Telefon sind die Ordner
+                    eine Schublade hinter dem ☰ oben; dieser Knopf schaltete dort
+                    nur das ☰ selbst weg — Bastian: „der klappt da aber nur
+                    dieses Drei-Streifen-Symbol ein und aus".
+                */}
                 {onToggleFolders && (
                     <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 shrink-0"
+                        className="h-8 w-8 shrink-0 max-md:hidden"
                         onClick={onToggleFolders}
                         title={labels.toggleFolders(showFolders !== false)}
                     >

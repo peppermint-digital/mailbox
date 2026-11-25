@@ -267,7 +267,13 @@ export function MailMessageView({
                 style={leistenHoehe ? ({ '--mail-leiste-hoehe': `${leistenHoehe}px` } as CSSProperties) : undefined}
                 data-slot="mail-message-bildlauf"
             >
-            <div className="space-y-3 border-b p-4">
+            {/*
+                Auf dem Telefon rund ein Drittel weniger Luft um den Betreff
+                (25.11.2026, Bastian: „vom Titel nach oben und unten ist
+                ziemlich viel Platz"): oben 10 statt 16 px, zwischen Betreff und
+                Absender 8 statt 12, unten 8 statt 16.
+            */}
+            <div className={cn('space-y-3 border-b p-4', aktionenUnten && 'max-md:space-y-2 max-md:pt-2.5 max-md:pb-2')}>
                 {/*
                     Betreff und Knopfleiste stehen UNTEREINANDER, solange sie
                     nicht nebeneinander passen — und das entscheidet der Platz,
@@ -497,7 +503,7 @@ export function MailMessageView({
                         type="button"
                         data-slot="mail-message-kopfdaten-aufklapper"
                         aria-expanded={kopfdatenOffen}
-                        className="-mx-1 flex min-h-10 w-full items-center gap-2 rounded px-1 text-left text-sm md:hidden"
+                        className="-mx-1 flex min-h-9 w-full items-center gap-2 rounded px-1 text-left text-sm md:hidden"
                         onClick={() => setKopfdatenOffen((war) => !war)}
                     >
                         <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', kopfdatenOffen && 'rotate-180')} />

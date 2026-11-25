@@ -567,7 +567,8 @@ export function MailboxFlaeche({
                 ordnerName={ordnerName}
                 absender={offeneAbsender}
                 werkzeugPlatz={setWerkzeugPlatz}
-                hatOrdner={ordnerSichtbar}
+                /* Am Telefon immer: Die Ordnerspalte einklappen gibt es nur am Schreibtisch. */
+                hatOrdner
                 onAssistent={chatVerfuegbar && konto ? assistent.zeigen : undefined}
                 onVollbild={vollbildMoeglich ? () => setVollbild(true) : undefined}
                 onAdressbuch={() => navigieren(`${basis}/address-book`)}
@@ -677,7 +678,7 @@ export function MailboxFlaeche({
                                 }}
                             />
                         }
-                        showFolders={ordnerSichtbar}
+                        foldersHiddenOnDesktop={!ordnerSichtbar}
                         list={
                             <>
                                 <MailListToolbar

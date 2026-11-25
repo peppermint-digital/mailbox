@@ -322,3 +322,15 @@ describe('MailboxBrowser auf einem schmalen Bildschirm', () => {
         unmount();
     });
 });
+
+describe('MailboxBrowser — Ordnerspalte nur am Schreibtisch eingeklappt (25.11.2026)', () => {
+    it('behaelt die Ordner fuer die Schublade am Telefon und blendet sie nur ab md aus', () => {
+        const { container, unmount } = render(<MailboxBrowser {...panes} foldersHiddenOnDesktop />);
+        const ordner = container.querySelector('[data-slot="mailbox-folders"]');
+
+        expect(ordner).not.toBeNull();
+        expect(ordner!.className).toContain('md:hidden');
+        expect(ordner!.className).not.toContain('md:block');
+        unmount();
+    });
+});
