@@ -492,6 +492,9 @@ export function MailboxFlaeche({
      * Knoepfe der neuen Mail nie.
      */
     const [vollbild, setVollbild] = useState(false);
+
+    /* Wo der Aufklapper der Werkzeugleiste am Telefon steht — in der schmalen Leiste. */
+    const [werkzeugPlatz, setWerkzeugPlatz] = useState<HTMLDivElement | null>(null);
     const vollbildSchliessen = useCallback(() => setVollbild(false), []);
 
     useEffect(() => {
@@ -563,6 +566,7 @@ export function MailboxFlaeche({
             <MailboxMobilLeiste
                 ordnerName={ordnerName}
                 absender={offeneAbsender}
+                werkzeugPlatz={setWerkzeugPlatz}
                 hatOrdner={ordnerSichtbar}
                 onAssistent={chatVerfuegbar && konto ? assistent.zeigen : undefined}
                 onVollbild={vollbildMoeglich ? () => setVollbild(true) : undefined}
@@ -869,6 +873,7 @@ export function MailboxFlaeche({
                                         }
                                     }}
                                     onNavigate={navigieren}
+                                    aufklapperZiel={werkzeugPlatz}
                                 />
 
                                 <MailConversationPane

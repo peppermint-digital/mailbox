@@ -1347,3 +1347,39 @@ describe('der Auswaehler mit Suche (#9145)', () => {
         unmount();
     });
 });
+
+describe('MailWerkzeugleiste — der Aufklapper in der schmalen Leiste (25.11.2026)', () => {
+    it('setzt den Aufklapper in das Ziel, und die Leiste nimmt am Telefon zugeklappt keine eigene Zeile', () => {
+        const ziel = document.createElement('div');
+        document.body.appendChild(ziel);
+
+        const { container, unmount } = render(
+            <MailWerkzeugleiste
+                werkzeuge={[werkzeug()]}
+                unerreichbar={[]}
+                gescheitert={[]}
+                laedt={false}
+                leerAberVollstaendig={false}
+                erreicht
+                ausloesen={async () => ({ ok: true, message: 'getan' })}
+                aufklapperZiel={ziel}
+            />,
+        );
+
+        const knopf = ziel.querySelector('[data-slot="mail-werkzeugleiste-aufklapper"]');
+        const zeile = container.querySelector('[data-slot="mail-werkzeugleiste"]')!;
+
+        expect(knopf).not.toBeNull();
+        expect(container.querySelector('[data-slot="mail-werkzeugleiste-aufklapper"]')).toBeNull();
+        expect(zeile.className).toContain('max-md:hidden');
+
+        click(knopf!);
+
+        // Aufgeklappt steht die Leiste wieder da — mit ihren Verben.
+        expect(knopf!.getAttribute('aria-expanded')).toBe('true');
+        expect(zeile.className).not.toContain('max-md:hidden');
+
+        unmount();
+        ziel.remove();
+    });
+});

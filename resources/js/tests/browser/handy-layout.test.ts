@@ -248,6 +248,10 @@ interface VollbildMessung {
     nachSchliessen: boolean;
     /** Im Vollbild freigegeben — ist der Hinweis danach auch in der Leseansicht weg? */
     leseansichtNochBlockiert: boolean;
+    /** Wie breit der Mailtext AUSSIEHT (nach dem Einpassen) und wie breit sein Rahmen ist. */
+    rumpfSichtbarBreit: number;
+    rahmenBreit: number;
+    zoom: number;
 }
 
 let vollbildMessung: VollbildMessung | null = null;
@@ -505,6 +509,14 @@ beforeAll(async () => {
      * Geraetegroesse und nicht an einem der Kaesten.
      */
     await seite.setViewportSize({ width: 390, height: HOEHE });
+
+    /* Zum Ansehen, nicht zum Messen: `MAILBOX_BILDER=<ordner>` legt die Fassungen auf 390 px als Bild ab. */
+    if (process.env.MAILBOX_BILDER) {
+        for (const fassung of ['lesen', 'werkzeuge']) {
+            await seite.locator(`[data-fassung="${fassung}"]`).screenshot({ path: `${process.env.MAILBOX_BILDER}/${fassung}.png` });
+        }
+    }
+
     await seite.click('[data-fassung="lesen"] [data-slot="mailbox-mobil-vollbild"]');
     await seite.waitForSelector('[data-slot="mail-vollbild"]');
 
@@ -533,6 +545,18 @@ beforeAll(async () => {
             /* „Bilder laden" gehoert zum Text, nicht zur Bedienung drumherum. */
             knoepfe: [...(vollbild?.querySelectorAll('button') ?? [])].filter((b) => !b.closest('[data-slot="mail-body-bilder-blockiert"]')).length,
             titel: (document.querySelector('[data-slot="mail-vollbild-titel"]')?.textContent ?? '').trim(),
+            ...(() => {
+                const rahmen = vollbild?.querySelector<HTMLIFrameElement>('[data-slot="mail-body-rahmen"]');
+                const wurzel = rahmen?.contentDocument?.documentElement;
+                const zoom = Number(wurzel?.style.zoom || 1);
+
+                return {
+                    // Laesst sich der Text im Rahmen seitlich scrollen? Genau das war gemeldet.
+                    rumpfSichtbarBreit: wurzel?.scrollWidth ?? 0,
+                    rahmenBreit: wurzel?.clientWidth ?? 0,
+                    zoom,
+                };
+            })(),
         };
     });
 
@@ -586,6 +610,9 @@ describe('Vollbild einer Mail', () => {
         expect(m.nachSchliessen).toBe(true);
         // Einmal „Bilder laden" fuer diese Mail gilt auch in der Leseansicht darunter.
         expect(m.leseansichtNochBlockiert).toBe(false);
+        // Ein Newsletter mit 640 px festen Breite wird eingepasst, statt seitlich zu scrollen.
+        expect(m.zoom).toBeLessThan(1);
+        expect(m.rumpfSichtbarBreit).toBeLessThanOrEqual(m.rahmenBreit + 1);
     });
 });
 

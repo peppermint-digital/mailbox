@@ -87,3 +87,24 @@ describe('MailboxMobilLeiste — der Griff zum Vollbild', () => {
         lesen.unmount();
     });
 });
+
+describe('MailboxMobilLeiste — Zurueck und Werkzeuge in einer Zeile', () => {
+    it('zeigt beim Lesen den Platz fuer die Werkzeuge statt noch einmal den Absender', () => {
+        const platz = vi.fn();
+        const { container, unmount } = render(
+            imRahmen('view', <MailboxMobilLeiste ordnerName="Posteingang" absender="Dr. Muster" werkzeugPlatz={platz} />),
+        );
+
+        expect(container.querySelector('[data-slot="mailbox-mobil-werkzeugplatz"]')).not.toBeNull();
+        expect(container.textContent).not.toContain('Dr. Muster');
+        expect(platz).toHaveBeenCalledWith(expect.any(HTMLDivElement));
+        unmount();
+    });
+
+    it('behaelt auf der Liste den Ordnernamen', () => {
+        const { container, unmount } = render(imRahmen('list', <MailboxMobilLeiste ordnerName="Posteingang" werkzeugPlatz={() => {}} />));
+
+        expect(container.querySelector('[data-slot="mailbox-mobil-titel"]')?.textContent).toBe('Posteingang');
+        unmount();
+    });
+});

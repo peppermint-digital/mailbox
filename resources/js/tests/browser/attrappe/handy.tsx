@@ -124,6 +124,19 @@ const WERKZEUG_ANHAENGE = [
     { filename: 'Lieferschein-CRUDE-HARZ-Q1.pdf', size: 42_500 },
 ];
 
+/*
+ * Ein Newsletter, wie er wirklich kommt: Tabelle mit fester Breite, ein Bild
+ * mit `width:600px`, ein Knopf, der nicht umbricht. Steht UNTER den 40 Zeilen,
+ * damit „der Text faengt im oberen Drittel an" weiter dasselbe misst
+ * (25.11.2026: „eine horizontale Scrollbar bei den Mails").
+ */
+const NEWSLETTER =
+    '<table width="640" style="width:640px;background:#f4f4f4"><tr><td style="padding:20px">' +
+    '<div style="width:600px;height:120px;background:#0a7"></div>' +
+    '<p>Liebe Kundin, lieber Kunde, in diesem Monat stellen wir Ihnen drei neue Produkte vor.</p>' +
+    '<a href="#" style="display:inline-block;padding:14px 28px;white-space:nowrap">Jetzt im Shop ansehen und Rabatt sichern</a>' +
+    '</td></tr></table>';
+
 const NACHRICHT: MailMessageViewMessage = {
     uid: 4711,
     message_id: '<handy-9134@peppermint-digital.de>',
@@ -146,7 +159,8 @@ const NACHRICHT: MailMessageViewMessage = {
      */
     body_html:
         '<p><img src="https://example.invalid/pixel.gif" width="1" height="1" alt=""></p>' +
-        Array.from({ length: 40 }, (_, i) => `<p>Zeile ${i + 1} des Mailtextes, damit es etwas zu scrollen gibt.</p>`).join(''),
+        Array.from({ length: 40 }, (_, i) => `<p>Zeile ${i + 1} des Mailtextes, damit es etwas zu scrollen gibt.</p>`).join('') +
+        NEWSLETTER,
     body_text: null,
     attachments: [],
     is_read: true,
@@ -194,6 +208,7 @@ function Fassung({ kennung }: { kennung: string }) {
     const assistent = useMailboxSidePanel(SPEICHER);
     const chatOffen = assistent.sichtbar;
     const [vollbild, setVollbild] = useState(false);
+    const [werkzeugPlatz, setWerkzeugPlatz] = useState<HTMLDivElement | null>(null);
 
     return (
         <>
@@ -206,6 +221,7 @@ function Fassung({ kennung }: { kennung: string }) {
                             <MailboxMobilLeiste
                                 ordnerName="Posteingang"
                                 absender={NACHRICHT.from_name || NACHRICHT.from_address}
+                                werkzeugPlatz={setWerkzeugPlatz}
                                 onAssistent={assistent.zeigen}
                                 onVollbild={() => setVollbild(true)}
                                 onAdressbuch={() => undefined}
@@ -252,6 +268,7 @@ function Fassung({ kennung }: { kennung: string }) {
                             erreicht
                             ausloesen={() => Promise.resolve({ ok: true, message: 'ok' })}
                             anhaenge={WERKZEUG_ANHAENGE}
+                            aufklapperZiel={werkzeugPlatz}
                         />
                         <MailMessageView
                             aktionenUnten

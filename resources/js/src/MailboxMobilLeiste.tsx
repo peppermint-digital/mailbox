@@ -42,9 +42,17 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
  *
  * - **Liste:** Menue-Knopf (holt die Schublade mit Konten und Ordnern), der
  *   ORDNERNAME als Titel, Assistent, Ueberlauf.
- * - **Lesen:** Zurueck-Pfeil und der ABSENDER. Kein Menue — wer liest, will
- *   zurueck, nicht in einen anderen Ordner. Dazu der Griff zum Vollbild
+ * - **Lesen:** Zurueck-Pfeil und daneben der Platz fuer den Aufklapper der
+ *   Werkzeugleiste (`werkzeugPlatz`). Kein Menue — wer liest, will zurueck,
+ *   nicht in einen anderen Ordner. Dazu der Griff zum Vollbild
  *   ({@see MailVollbild}), wenn die Flaeche einen anbietet.
+ *
+ *   Bis zum 25.11.2026 stand hier der ABSENDER. Bastian: „da nicht nochmal
+ *   [den Absender] schreiben, weil der Titel wird ja sowieso da drunter
+ *   angezeigt. Das wuerde uns eine Zeile oben sparen." Der Absender steht
+ *   in der Leseansicht direkt unter dem Betreff; die Werkzeugleiste hatte
+ *   dagegen eine eigene Zeile nur fuer ihren Aufklapper. Jetzt teilen sich
+ *   Zurueck und Werkzeuge eine Zeile.
  * - **Schublade:** Zurueck-Pfeil, sonst nichts; die Schublade bringt ihren
  *   Inhalt selbst mit.
  *
@@ -82,8 +90,18 @@ export const mailboxMobilLeisteLabels: MailboxMobilLeisteLabels = {
 export interface MailboxMobilLeisteProps {
     /** Der Ordner, in dem man steht — der Titel auf der Liste. */
     ordnerName: string;
-    /** Wer geschrieben hat — der Titel beim Lesen. Fehlt er, bleibt es leer. */
+    /**
+     * Wer geschrieben hat. Steht seit dem 25.11.2026 nur noch dann als Titel
+     * beim Lesen, wenn es keinen `werkzeugPlatz` gibt — sonst teilt sich die
+     * Zeile der Zurueck-Pfeil mit den Werkzeugen.
+     */
     absender?: string;
+    /**
+     * Der Platz neben dem Zurueck-Pfeil, in den {@see MailWerkzeugleiste}
+     * ihren Aufklapper setzt (`aufklapperZiel`). Ein Rueckruf-Ref: Die Flaeche
+     * haelt das Element im Zustand und reicht es an die Werkzeugleiste.
+     */
+    werkzeugPlatz?: (element: HTMLDivElement | null) => void;
     /**
      * Gibt es ueberhaupt Ordner? Nur dann steht der Menue-Knopf da.
      *
@@ -105,6 +123,7 @@ export interface MailboxMobilLeisteProps {
 export function MailboxMobilLeiste({
     ordnerName,
     absender,
+    werkzeugPlatz,
     hatOrdner = true,
     onAssistent,
     onVollbild,
@@ -147,9 +166,13 @@ export function MailboxMobilLeiste({
                 Ohne beides schiebt er die Knoepfe rechts aus dem Bild — genau
                 die Klasse Fehler, die diese Leiste beseitigen soll.
             */}
-            <span className="min-w-0 flex-1 truncate px-1 text-base font-semibold" data-slot="mailbox-mobil-titel" title={titel}>
-                {titel}
-            </span>
+            {liest && werkzeugPlatz ? (
+                <div ref={werkzeugPlatz} className="flex min-w-0 flex-1 items-center" data-slot="mailbox-mobil-werkzeugplatz" />
+            ) : (
+                <span className="min-w-0 flex-1 truncate px-1 text-base font-semibold" data-slot="mailbox-mobil-titel" title={titel}>
+                    {titel}
+                </span>
+            )}
 
             {liest && onVollbild && (
                 <Button

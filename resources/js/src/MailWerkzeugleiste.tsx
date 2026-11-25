@@ -14,6 +14,7 @@ import {
     Wrench,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { MailWerkzeug, MailWerkzeugFeld, MailWerkzeugTreffer } from './useMailWerkzeuge';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -307,6 +308,16 @@ export interface MailWerkzeugleisteProps {
     ) => Promise<MailWerkzeugTreffer[]>;
     labels?: Partial<MailWerkzeugleisteLabels>;
     className?: string;
+    /**
+     * Wohin der Aufklapper am Telefon wandert — in die schmale Leiste oben
+     * (seit 25.11.2026, siehe {@see MailboxMobilLeiste}).
+     *
+     * Ohne Ziel steht er wie bisher als eigene Zeile ueber den Verben. Mit Ziel
+     * steht er als Knopf neben dem Zurueck-Pfeil, und die Leiste selbst nimmt
+     * am Telefon nur dann eine Zeile ein, wenn sie aufgeklappt ist. Der
+     * Zustand bleibt hier — nur der Knopf zieht um.
+     */
+    aufklapperZiel?: HTMLElement | null;
 }
 
 export function MailWerkzeugleiste({
@@ -325,6 +336,7 @@ export function MailWerkzeugleiste({
     auswahlQuelle,
     labels,
     className,
+    aufklapperZiel = null,
 }: MailWerkzeugleisteProps) {
     const texte = { ...WERKZEUGLEISTE_VORGABEN, ...labels };
     const [laufend, setLaufend] = useState<string | null>(null);
@@ -588,23 +600,45 @@ export function MailWerkzeugleiste({
     }
 
     return (
-        <div data-slot="mail-werkzeugleiste" className={cn('flex flex-col gap-1.5 border-b px-3 py-2', className)}>
+        <div
+            data-slot="mail-werkzeugleiste"
+            className={cn('flex flex-col gap-1.5 border-b px-3 py-2', aufklapperZiel && !offen && 'max-md:hidden', className)}
+        >
             {/*
                 Der Aufklapper gibt es nur am Telefon. Ein Knopf und keine
                 Ueberschrift: Er tut etwas, also muss man ihn mit der Tastatur
                 erreichen und er braucht einen Zustand, den eine Vorlesehilfe
                 ansagen kann.
+
+                Mit Ziel steht er in der schmalen Leiste — dort in Daumengroesse
+                wie ihre anderen Knoepfe.
             */}
-            <button
-                type="button"
-                data-slot="mail-werkzeugleiste-aufklapper"
-                aria-expanded={offen}
-                className="-mx-1 flex min-h-10 items-center gap-1.5 rounded px-1 text-left text-xs font-medium text-muted-foreground md:hidden"
-                onClick={() => setOffen((war) => !war)}
-            >
-                <ChevronDown className={cn('h-4 w-4 shrink-0 transition-transform', offen && 'rotate-180')} />
-                {texte.titel}
-            </button>
+            {aufklapperZiel ? (
+                createPortal(
+                    <button
+                        type="button"
+                        data-slot="mail-werkzeugleiste-aufklapper"
+                        aria-expanded={offen}
+                        className="flex h-11 min-w-0 items-center gap-1.5 rounded-md px-2 text-left text-sm font-medium text-muted-foreground hover:bg-accent md:hidden"
+                        onClick={() => setOffen((war) => !war)}
+                    >
+                        <ChevronDown className={cn('h-4 w-4 shrink-0 transition-transform', offen && 'rotate-180')} />
+                        <span className="truncate">{texte.titel}</span>
+                    </button>,
+                    aufklapperZiel,
+                )
+            ) : (
+                <button
+                    type="button"
+                    data-slot="mail-werkzeugleiste-aufklapper"
+                    aria-expanded={offen}
+                    className="-mx-1 flex min-h-10 items-center gap-1.5 rounded px-1 text-left text-xs font-medium text-muted-foreground md:hidden"
+                    onClick={() => setOffen((war) => !war)}
+                >
+                    <ChevronDown className={cn('h-4 w-4 shrink-0 transition-transform', offen && 'rotate-180')} />
+                    {texte.titel}
+                </button>
+            )}
 
             <div className={cn('flex flex-col gap-1.5', !offen && 'max-md:hidden')} data-slot="mail-werkzeugleiste-inhalt">
             <div className="flex flex-wrap items-center gap-1.5">

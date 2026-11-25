@@ -123,6 +123,45 @@ function abonnieren(z: () => void): () => void {
     return () => zuhoerer.delete(z);
 }
 
+/*
+ * Eine Mail, die breiter ist als ihr Rahmen, wird auf die Breite verkleinert —
+ * wie in Outlook und Gmail auf dem Telefon.
+ *
+ * Gemeldet von Bastian am 25.11.2026: „es gibt da eine horizontale Scrollbar
+ * bei den Mails". Gemessen im pm-DevStack auf einem iPhone 14: Der Rahmen ist
+ * 358 px breit, ein ueblicher Newsletter (Tabelle mit `width="640"`) 656 px.
+ * `max-width` auf Tabellen hilft dagegen nicht — eine Tabelle mit fester
+ * Breite in einer Zelle, ein Bild mit `width:600px` oder ein Knopf mit
+ * `white-space:nowrap` halten die Seite breit, und jedes CSS, das ihnen die
+ * Breite nimmt, zerlegt das Layout, fuer das sie gebaut ist.
+ *
+ * Also das, was die grossen Programme tun: die ganze Seite per `zoom`
+ * verkleinern. Erst zuruecksetzen, dann messen — sonst misst man die schon
+ * verkleinerte Seite und schrumpft sie bei jedem Durchgang weiter.
+ *
+ * Untergrenze 0,35: Darunter ist nichts mehr zu lesen; dann lieber seitlich
+ * scrollen als eine Briefmarke.
+ */
+const KLEINSTER_ZOOM = 0.35;
+
+function einpassen(iframe: HTMLIFrameElement | null): void {
+    const doc = iframe?.contentDocument;
+    const wurzel = doc?.documentElement;
+
+    if (!iframe || !doc || !wurzel) {
+        return;
+    }
+
+    wurzel.style.removeProperty('zoom');
+
+    const verfuegbar = iframe.clientWidth;
+    const breite = Math.max(wurzel.scrollWidth, doc.body?.scrollWidth ?? 0);
+
+    if (verfuegbar > 0 && breite > verfuegbar + 1) {
+        wurzel.style.setProperty('zoom', String(Math.max(KLEINSTER_ZOOM, verfuegbar / breite)));
+    }
+}
+
 const REMOTE_ATTRIBUTE = /(?:src|background)\s*=\s*["']?\s*https?:\/\//i;
 const REMOTE_CSS_URL = /url\(\s*['"]?\s*https?:\/\//i;
 
@@ -192,6 +231,41 @@ export function EmailBodyViewer({
         return () => observer.disconnect();
     }, [autoHeight, bodyHtml, blocking, minHeight]);
 
+    /*
+     * Einpassen, sobald der Rumpf steht, wenn der Rahmen seine Breite aendert
+     * (Drehen des Telefons, Vollbild) und wenn ein Bild nachlaedt — ein Bild
+     * ohne `width` macht die Seite erst dann breit.
+     */
+    const [rahmen, setRahmen] = useState<HTMLIFrameElement | null>(null);
+
+    useEffect(() => {
+        if (autoHeight || !rahmen) {
+            return;
+        }
+
+        let nachgeladen: Document | null = null;
+        const nachBild = () => einpassen(rahmen);
+
+        const geladen = () => {
+            einpassen(rahmen);
+            nachgeladen?.removeEventListener('load', nachBild, true);
+            nachgeladen = rahmen.contentDocument;
+            nachgeladen?.addEventListener('load', nachBild, true);
+        };
+
+        const breite = new ResizeObserver(() => einpassen(rahmen));
+
+        rahmen.addEventListener('load', geladen);
+        breite.observe(rahmen);
+        geladen();
+
+        return () => {
+            rahmen.removeEventListener('load', geladen);
+            nachgeladen?.removeEventListener('load', nachBild, true);
+            breite.disconnect();
+        };
+    }, [autoHeight, rahmen]);
+
     return (
         <div className={autoHeight ? 'space-y-2' : 'flex h-full flex-col gap-2'}>
             {blocking && (
@@ -227,6 +301,8 @@ export function EmailBodyViewer({
 
                 {bodyHtml && !autoHeight && (
                     <iframe
+                        ref={setRahmen}
+                        data-slot="mail-body-rahmen"
                         srcDoc={buildDocument(bodyHtml, blocking)}
                         className="h-full w-full border-0 bg-white"
                         sandbox="allow-same-origin"
