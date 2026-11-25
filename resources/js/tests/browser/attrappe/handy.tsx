@@ -26,6 +26,7 @@ import { useMailboxPane } from '../../../src/MailboxPane';
 import { MailboxSidePanel } from '../../../src/MailboxSidePanel';
 import { MailFolderList, type MailFolder } from '../../../src/MailFolderList';
 import { MailMessageView, type MailMessageViewMessage } from '../../../src/MailMessageView';
+import { MailVollbild } from '../../../src/MailVollbild';
 import { MailWerkzeugleiste } from '../../../src/MailWerkzeugleiste';
 import { leereSignaturQuelle, VerfassenFeld } from '../../../src/VerfassenFeld';
 import { Button } from '../../../src/ui/button';
@@ -192,6 +193,7 @@ function Fassung({ kennung }: { kennung: string }) {
      */
     const assistent = useMailboxSidePanel(SPEICHER);
     const chatOffen = assistent.sichtbar;
+    const [vollbild, setVollbild] = useState(false);
 
     return (
         <>
@@ -205,9 +207,19 @@ function Fassung({ kennung }: { kennung: string }) {
                                 ordnerName="Posteingang"
                                 absender={NACHRICHT.from_name || NACHRICHT.from_address}
                                 onAssistent={assistent.zeigen}
+                                onVollbild={() => setVollbild(true)}
                                 onAdressbuch={() => undefined}
                                 onAktualisieren={() => undefined}
                             />
+                            {vollbild && (
+                                <MailVollbild
+                                    betreff={NACHRICHT.subject}
+                                    bodyHtml={NACHRICHT.body_html}
+                                    bodyText={NACHRICHT.body_text}
+                                    labels={germanLabels.vollbild}
+                                    onSchliessen={() => setVollbild(false)}
+                                />
+                            )}
                         </>
                     }
                     schubladeKopf={

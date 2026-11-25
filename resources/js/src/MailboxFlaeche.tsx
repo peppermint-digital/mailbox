@@ -1,4 +1,4 @@
-import { useState, type ComponentType, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import { Clock, FolderInput, FolderOpen, Globe, UserCheck } from 'lucide-react';
 import { looksLikeFolder, ordnerAnzeigename } from './folders';
 import { germanLabels } from './germanLabels';
@@ -20,6 +20,7 @@ import { MailFolderManager } from './MailFolderManager';
 import { MailListToolbar, type SuchVerzeichnis } from './MailListToolbar';
 import { MailMessageList } from './MailMessageList';
 import { MailMessageView } from './MailMessageView';
+import { MailVollbild } from './MailVollbild';
 import { MailWerkzeugleiste } from './MailWerkzeugleiste';
 import { Skeleton } from './ui/skeleton';
 import type { MailFolder } from './MailFolderList';
@@ -484,6 +485,22 @@ export function MailboxFlaeche({
             );
     })();
 
+    /*
+     * Das Vollbild der offenen Mail (siehe {@see MailVollbild}). Es gilt EINER
+     * Mail: Oeffnet man die naechste, steht sie wieder in der normalen
+     * Ansicht — sonst klebt das Vollbild an der Liste fest, und man sieht die
+     * Knoepfe der neuen Mail nie.
+     */
+    const [vollbild, setVollbild] = useState(false);
+    const vollbildSchliessen = useCallback(() => setVollbild(false), []);
+
+    useEffect(() => {
+        setVollbild(false);
+    }, [nachricht?.uid]);
+
+    /* Beim Antworten oder Weiterleiten ist da kein Text zum Lesen — also kein Vollbild. */
+    const vollbildMoeglich = !!nachricht && !offene.loading && !antwortOffen && !weiterleitenOffen;
+
     const offeneAbsender = (() => {
         const n = offene.message as { from_name?: string; from_address?: string } | null;
 
@@ -548,12 +565,29 @@ export function MailboxFlaeche({
                 absender={offeneAbsender}
                 hatOrdner={ordnerSichtbar}
                 onAssistent={chatVerfuegbar && konto ? assistent.zeigen : undefined}
+                onVollbild={vollbildMoeglich ? () => setVollbild(true) : undefined}
                 onAdressbuch={() => navigieren(`${basis}/address-book`)}
                 onAktualisieren={
                     konto ? () => void liste.load({ accountId: konto.id, folder: ordnerPfad, page: liste.page, refresh: true }) : undefined
                 }
                 aktualisiert={liste.refreshing}
             />
+
+            {/*
+                Hier und nicht neben dem Rahmen: Die Kopfzeile steht IM Rahmen,
+                also sieht das Vollbild, ob gerade gelesen wird, und schliesst
+                sich, sobald nicht mehr. Wo es im Baum steht, ist sonst egal —
+                es zeichnet sich per Portal ueber die ganze Seite.
+            */}
+            {vollbild && vollbildMoeglich && nachricht && (
+                <MailVollbild
+                    betreff={nachricht.subject}
+                    bodyHtml={nachricht.body_html}
+                    bodyText={nachricht.body_text}
+                    labels={germanLabels.vollbild}
+                    onSchliessen={vollbildSchliessen}
+                />
+            )}
         </>
     );
 

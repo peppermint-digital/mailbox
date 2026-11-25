@@ -4,6 +4,7 @@ import type { MailFolderManagerLabels } from './MailFolderManager';
 import type { MailListToolbarLabels } from './MailListToolbar';
 import type { MailMessageListLabels } from './MailMessageList';
 import type { MailMessageViewLabels } from './MailMessageView';
+import type { MailVollbildLabels } from './MailVollbild';
 import type { MailWerkzeugleisteLabels } from './MailWerkzeugleiste';
 import { mailboxBrowserLabels } from './MailboxBrowser';
 
@@ -128,6 +129,13 @@ const view: MailMessageViewLabels = {
         loadImages: 'Bilder laden',
         frameTitle: 'Nachrichteninhalt',
     },
+};
+
+/** Eine Mail im Vollbild, nur Betreff und Text (siehe MailVollbild). */
+const vollbild: MailVollbildLabels = {
+    schliessen: 'Vollbild verlassen',
+    ohneBetreff: '(Kein Betreff)',
+    body: view.body,
 };
 
 /** Ordner anlegen, umbenennen, loeschen. */
@@ -264,6 +272,7 @@ export const germanLabels = {
     list,
     conversation,
     view,
+    vollbild,
     folders,
     header,
     toolbar,

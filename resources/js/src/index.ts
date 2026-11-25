@@ -44,6 +44,8 @@ export * from './MailConversation';
 export * from './MailConversationPane';
 export * from './useMailConversation';
 export * from './MailMessageView';
+export * from './MailVollbild';
+export { default as MailVollbild } from './MailVollbild';
 export { default as MailMessageView } from './MailMessageView';
 export * from './bulk';
 export * from './transport';

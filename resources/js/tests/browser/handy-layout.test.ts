@@ -236,6 +236,20 @@ let server: Server;
 let verzeichnis: string;
 let messungen: Messung[] = [];
 
+/** Das Vollbild einer Mail (25.11.2026), gemessen auf einem iPhone 14. */
+interface VollbildMessung {
+    fenster: { breite: number; hoehe: number };
+    deckt: { x: number; y: number; breite: number; hoehe: number } | null;
+    kopfHoehe: number;
+    textAb: number;
+    textBis: number;
+    knoepfe: number;
+    titel: string;
+    nachSchliessen: boolean;
+}
+
+let vollbildMessung: VollbildMessung | null = null;
+
 beforeAll(async () => {
     verzeichnis = await bauen();
     const ausgeliefert = await ausliefern(verzeichnis);
@@ -483,6 +497,49 @@ beforeAll(async () => {
         messungen.push(...(teil as Messung[]));
     }
 
+    /*
+     * Das Vollbild: Es legt sich ueber die GANZE Seite, nicht nur ueber den
+     * Kasten — deshalb nach der Reihe gemessen, an einem Fenster in
+     * Geraetegroesse und nicht an einem der Kaesten.
+     */
+    await seite.setViewportSize({ width: 390, height: HOEHE });
+    await seite.click('[data-fassung="lesen"] [data-slot="mailbox-mobil-vollbild"]');
+    await seite.waitForSelector('[data-slot="mail-vollbild"]');
+
+    if (process.env.MAILBOX_VOLLBILD_BILD) {
+        await seite.screenshot({ path: process.env.MAILBOX_VOLLBILD_BILD });
+    }
+
+    const gemessen = await seite.evaluate(() => {
+        const r = (e: Element | null) => {
+            const k = e?.getBoundingClientRect();
+
+            return k ? { x: Math.round(k.x), y: Math.round(k.y), breite: Math.round(k.width), hoehe: Math.round(k.height) } : null;
+        };
+        const vollbild = document.querySelector('[data-slot="mail-vollbild"]');
+        const kopf = document.querySelector('[data-slot="mail-vollbild-titel"]')?.parentElement ?? null;
+        /* Der Bereich unter dem Betreff — samt Hinweis auf blockierte Bilder, der zum Text gehoert. */
+        const text = vollbild?.lastElementChild ?? null;
+        const textKasten = r(text);
+
+        return {
+            fenster: { breite: window.innerWidth, hoehe: window.innerHeight },
+            deckt: r(vollbild),
+            kopfHoehe: r(kopf)?.hoehe ?? 0,
+            textAb: textKasten?.y ?? -1,
+            textBis: textKasten ? textKasten.y + textKasten.hoehe : -1,
+            /* „Bilder laden" gehoert zum Text, nicht zur Bedienung drumherum. */
+            knoepfe: [...(vollbild?.querySelectorAll('button') ?? [])].filter((b) => !b.closest('[data-slot="mail-body-bilder-blockiert"]')).length,
+            titel: (document.querySelector('[data-slot="mail-vollbild-titel"]')?.textContent ?? '').trim(),
+        };
+    });
+
+    await seite.click('[data-slot="mail-vollbild-schliessen"]');
+    vollbildMessung = {
+        ...gemessen,
+        nachSchliessen: (await seite.$('[data-slot="mail-vollbild"]')) === null,
+    };
+
     await seite.close();
 }, 180_000);
 
@@ -507,6 +564,24 @@ function tafel(): string {
         ),
     ].join('\n');
 }
+
+describe('Vollbild einer Mail', () => {
+    it('deckt das ganze Fenster, oben nur der Betreff, darunter der Text bis zum Rand', () => {
+        const m = vollbildMessung!;
+
+        expect(m, 'Das Vollbild ist nie aufgegangen').not.toBeNull();
+        expect(m.deckt).toEqual({ x: 0, y: 0, breite: m.fenster.breite, hoehe: m.fenster.hoehe });
+        expect(m.titel).toMatch(/^Partneranfrage: CRUDE HARZ/);
+        // Ein Band von Daumenhoehe, nicht drei.
+        expect(m.kopfHoehe).toBeLessThanOrEqual(60);
+        // Der Text faengt direkt unter dem Betreff an und laeuft bis fast an den Rand.
+        expect(m.textAb).toBeLessThanOrEqual(m.kopfHoehe + 1);
+        expect(m.textBis).toBe(m.fenster.hoehe);
+        // Nur der Schliessen-Knopf — keine Knopfleiste, keine Werkzeuge.
+        expect(m.knoepfe).toBe(1);
+        expect(m.nachSchliessen).toBe(true);
+    });
+});
 
 describe('Handy-Layout der Mailflaeche', () => {
     /* Nur mit `MAILBOX_MESSREIHE=1 npm test` — 36 Zeilen Tafel decken sonst zu, was zaehlt. */

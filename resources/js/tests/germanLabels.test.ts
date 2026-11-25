@@ -71,7 +71,7 @@ function pruefeWoerter(gruppe: Record<string, unknown>, pfad = ''): void {
 }
 
 describe('germanLabels', () => {
-    it('bringt alle achtzehn Gruppen mit', () => {
+    it('bringt alle zwanzig Gruppen mit', () => {
         // Faellt eine weg, verliert ein Produkt lautlos seine Woerter und
         // zeigt `undefined` — oder gar nichts.
         //
@@ -105,6 +105,8 @@ describe('germanLabels', () => {
             'toolbar',
             'verfassen',
             'view',
+            // Seit dem 25.11.2026: die Mail im Vollbild, nur Betreff und Text.
+            'vollbild',
             'weiterleiten',
             'werkzeuge',
             // A7 (#9116): die Worte der Wiedervorlage. Sie standen im Manager

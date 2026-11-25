@@ -1,4 +1,4 @@
-import { ArrowLeft, BookUser, Menu, MoreVertical, PenSquare, RefreshCw, Sparkles } from 'lucide-react';
+import { ArrowLeft, BookUser, Maximize2, Menu, MoreVertical, PenSquare, RefreshCw, Sparkles } from 'lucide-react';
 import { useMailboxPane } from './MailboxPane';
 import { Button } from './ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
@@ -43,7 +43,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
  * - **Liste:** Menue-Knopf (holt die Schublade mit Konten und Ordnern), der
  *   ORDNERNAME als Titel, Assistent, Ueberlauf.
  * - **Lesen:** Zurueck-Pfeil und der ABSENDER. Kein Menue — wer liest, will
- *   zurueck, nicht in einen anderen Ordner.
+ *   zurueck, nicht in einen anderen Ordner. Dazu der Griff zum Vollbild
+ *   ({@see MailVollbild}), wenn die Flaeche einen anbietet.
  * - **Schublade:** Zurueck-Pfeil, sonst nichts; die Schublade bringt ihren
  *   Inhalt selbst mit.
  *
@@ -64,6 +65,8 @@ export interface MailboxMobilLeisteLabels {
     mehr: string;
     adressbuch: string;
     aktualisieren: string;
+    /** Die offene Mail im Vollbild lesen. */
+    vollbild: string;
 }
 
 export const mailboxMobilLeisteLabels: MailboxMobilLeisteLabels = {
@@ -73,6 +76,7 @@ export const mailboxMobilLeisteLabels: MailboxMobilLeisteLabels = {
     mehr: 'Weitere Aktionen',
     adressbuch: 'Adressbuch',
     aktualisieren: 'Aktualisieren',
+    vollbild: 'Im Vollbild lesen',
 };
 
 export interface MailboxMobilLeisteProps {
@@ -90,6 +94,8 @@ export interface MailboxMobilLeisteProps {
      */
     hatOrdner?: boolean;
     onAssistent?: () => void;
+    /** Nur beim Lesen sichtbar; fehlt er, gibt es den Knopf nicht. */
+    onVollbild?: () => void;
     onAdressbuch?: () => void;
     onAktualisieren?: () => void;
     aktualisiert?: boolean;
@@ -101,6 +107,7 @@ export function MailboxMobilLeiste({
     absender,
     hatOrdner = true,
     onAssistent,
+    onVollbild,
     onAdressbuch,
     onAktualisieren,
     aktualisiert = false,
@@ -143,6 +150,20 @@ export function MailboxMobilLeiste({
             <span className="min-w-0 flex-1 truncate px-1 text-base font-semibold" data-slot="mailbox-mobil-titel" title={titel}>
                 {titel}
             </span>
+
+            {liest && onVollbild && (
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-11 w-11"
+                    title={labels.vollbild}
+                    aria-label={labels.vollbild}
+                    data-slot="mailbox-mobil-vollbild"
+                    onClick={onVollbild}
+                >
+                    <Maximize2 className="h-5 w-5" />
+                </Button>
+            )}
 
             {/*
                 Der Assistent steht hier und NICHT als schwebender Griff unten
