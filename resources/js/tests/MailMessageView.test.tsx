@@ -374,3 +374,22 @@ describe('die Betreff-Spalte auf schmalen Schirmen', () => {
         unmount();
     });
 });
+
+describe('MailMessageView — laedt, dann Mail da (25.11.2026)', () => {
+    it('wechselt von „laedt" auf eine Mail, ohne dass React abbricht', () => {
+        // Genau der Weg beim Oeffnen: erst der Kreisel, dann die Nachricht —
+        // DERSELBE Baustein. Mit Haken hinter den fruehen Rueckgaben brach
+        // React hier ab („Rendered more hooks …"), und die Seite war leer.
+        const fehler = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const { container, rerender, unmount } = render(<MailMessageView {...base} message={null} loading aktionenUnten />);
+
+        expect(() => rerender(<MailMessageView {...base} message={message()} aktionenUnten />)).not.toThrow();
+        expect(container.querySelector('[data-slot="mail-message-view"]')).not.toBeNull();
+
+        expect(() => rerender(<MailMessageView {...base} message={null} loading aktionenUnten />)).not.toThrow();
+        expect(container.querySelector('[data-slot="mail-message-loading"]')).not.toBeNull();
+
+        fehler.mockRestore();
+        unmount();
+    });
+});

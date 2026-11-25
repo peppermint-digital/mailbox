@@ -191,6 +191,32 @@ export function MailMessageView({
         return () => beobachter.disconnect();
     }, [leiste]);
 
+    /*
+     * ALLE Haken stehen VOR den fruehen Rueckgaben (25.11.2026).
+     *
+     * Bis v0.219.2 stand dieser Haken hinter `if (loading)` und `if (!message)`.
+     * Das ging gut, solange davor KEIN Haken stand: Eine Komponente ohne
+     * Haken wechselt beim naechsten Zeichnen noch einmal in den Aufbau-Modus.
+     * Mit den beiden Haken fuer die Leistenhoehe davor wurde aus „laedt" →
+     * „Mail da" ein Zeichnen mit MEHR Haken als vorher — React bricht mit
+     * „Rendered more hooks than during the previous render" ab, und die ganze
+     * Seite war leer (im dunklen Modus schwarz). Gemeldet von Bastian im
+     * Manager, beim Oeffnen des Mailbrowsers.
+     */
+    /*
+     * Die Kopfdaten sind auf dem Telefon zugeklappt (#9134).
+     *
+     * Gemessen am 30.10.2026: „Von", „Datum", „An" und „CC" stehen dort
+     * untereinander und sind zusammen rund 80 px — ueber einer Mail, von der
+     * auf 844 px Bildschirm ohnehin wenig uebrig bleibt. Outlook Mobile macht
+     * es genauso: EINE Zeile mit Absender und Zeit, der Rest auf Tippen.
+     *
+     * Der Zustand steht hier und nicht in einer Klasse, weil es ein Zustand
+     * IST. Dass es ihn am Schreibtisch nicht gibt, erledigt `max-md:hidden` —
+     * dort steht das Raster immer offen, egal was hier steht.
+     */
+    const [kopfdatenOffen, setKopfdatenOffen] = useState(false);
+
     if (loading) {
         return (
             <div className="flex flex-1 items-center justify-center" data-slot="mail-message-loading">
@@ -210,19 +236,6 @@ export function MailMessageView({
         );
     }
 
-    /*
-     * Die Kopfdaten sind auf dem Telefon zugeklappt (#9134).
-     *
-     * Gemessen am 30.10.2026: „Von", „Datum", „An" und „CC" stehen dort
-     * untereinander und sind zusammen rund 80 px — ueber einer Mail, von der
-     * auf 844 px Bildschirm ohnehin wenig uebrig bleibt. Outlook Mobile macht
-     * es genauso: EINE Zeile mit Absender und Zeit, der Rest auf Tippen.
-     *
-     * Der Zustand steht hier und nicht in einer Klasse, weil es ein Zustand
-     * IST. Dass es ihn am Schreibtisch nicht gibt, erledigt `max-md:hidden` —
-     * dort steht das Raster immer offen, egal was hier steht.
-     */
-    const [kopfdatenOffen, setKopfdatenOffen] = useState(false);
 
     const isArchived = message.source === 'stored';
     const hasMoreRecipients = message.cc.length > 0 || message.to.length > 1;
