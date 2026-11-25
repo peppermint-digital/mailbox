@@ -246,6 +246,8 @@ interface VollbildMessung {
     knoepfe: number;
     titel: string;
     nachSchliessen: boolean;
+    /** Im Vollbild freigegeben — ist der Hinweis danach auch in der Leseansicht weg? */
+    leseansichtNochBlockiert: boolean;
 }
 
 let vollbildMessung: VollbildMessung | null = null;
@@ -534,10 +536,12 @@ beforeAll(async () => {
         };
     });
 
+    await seite.click('[data-slot="mail-vollbild"] [data-slot="mail-body-bilder-blockiert"] button');
     await seite.click('[data-slot="mail-vollbild-schliessen"]');
     vollbildMessung = {
         ...gemessen,
         nachSchliessen: (await seite.$('[data-slot="mail-vollbild"]')) === null,
+        leseansichtNochBlockiert: (await seite.$('[data-fassung="lesen"] [data-slot="mail-body-bilder-blockiert"]')) !== null,
     };
 
     await seite.close();
@@ -580,6 +584,8 @@ describe('Vollbild einer Mail', () => {
         // Nur der Schliessen-Knopf — keine Knopfleiste, keine Werkzeuge.
         expect(m.knoepfe).toBe(1);
         expect(m.nachSchliessen).toBe(true);
+        // Einmal „Bilder laden" fuer diese Mail gilt auch in der Leseansicht darunter.
+        expect(m.leseansichtNochBlockiert).toBe(false);
     });
 });
 

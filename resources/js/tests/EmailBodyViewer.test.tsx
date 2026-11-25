@@ -60,6 +60,29 @@ describe('EmailBodyViewer', () => {
         unmount();
     });
 
+    it('releases the images in every viewer of the SAME body, and only there', () => {
+        // Seit dem 25.11.2026: Das Vollbild ist ein zweiter Betrachter ueber
+        // derselben Mail. Freigegeben in einem, freigegeben im anderen — eine
+        // andere Mail bleibt zu.
+        const rumpf = '<img src="https://tracker.example/geteilt.gif">';
+        const leseansicht = render(<EmailBodyViewer labels={labels} bodyHtml={rumpf} blockRemoteImages />);
+        const vollbild = render(<EmailBodyViewer labels={labels} bodyHtml={rumpf} blockRemoteImages />);
+        const andere = render(<EmailBodyViewer labels={labels} bodyHtml='<img src="https://tracker.example/andere.gif">' blockRemoteImages />);
+
+        const button = [...vollbild.container.querySelectorAll('button')].find((b) => b.textContent?.includes('Bilder laden'));
+        click(button as HTMLButtonElement);
+
+        expect(textOf(leseansicht.container)).not.toContain('Externe Bilder');
+        expect(textOf(vollbild.container)).not.toContain('Externe Bilder');
+        expect(textOf(andere.container)).toContain('Externe Bilder');
+
+        // Und ein Betrachter, der erst DANACH aufgeht, kennt die Freigabe auch.
+        const spaeter = render(<EmailBodyViewer labels={labels} bodyHtml={rumpf} blockRemoteImages />);
+        expect(textOf(spaeter.container)).not.toContain('Externe Bilder');
+
+        [leseansicht, vollbild, andere, spaeter].forEach((r) => r.unmount());
+    });
+
     it('does not warn when nothing remote is in the body', () => {
         // A notice about blocked images above a mail that has none reads as a
         // warning about something that did not happen.

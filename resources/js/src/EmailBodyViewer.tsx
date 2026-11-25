@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 /**
  * Shows the body of a mail inside a sandboxed iframe — ALWAYS in the light
@@ -19,6 +19,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
  * until the reader explicitly asks for them. The permission applies to exactly
  * this body: when the content changes, it closes again. A simple yes/no would
  * travel to the next mail and load its pixels.
+ *
+ * The permission is shared by every viewer showing the SAME body (see
+ * `freigaben` below): the full-screen view ({@see MailVollbild}) is a second
+ * viewer over the same mail, and asking twice for one mail reads as a bug.
  *
  * ## Why the words come from outside
  *
@@ -84,6 +88,41 @@ ${csp}
 </html>`;
 }
 
+/*
+ * Welche Rumpfe ihre Bilder laden duerfen — fuer alle Betrachter gemeinsam.
+ *
+ * Bis zum 25.11.2026 hielt jeder Betrachter seine Freigabe selbst. Mit dem
+ * Vollbild liegen aber ZWEI ueber derselben Mail: Wer in der Leseansicht
+ * „Bilder laden" gedrueckt hatte, sah im Vollbild wieder den Hinweis — und
+ * umgekehrt.
+ *
+ * Der Schluessel bleibt der Rumpf selbst, also gilt die Freigabe weiter fuer
+ * genau DIESE Mail und reist nicht zur naechsten. Gedeckelt, damit eine lange
+ * Sitzung nicht jeden je freigegebenen Rumpf im Speicher behaelt.
+ */
+const FREIGABEN_HOECHSTENS = 50;
+const freigaben = new Set<string>();
+const zuhoerer = new Set<() => void>();
+let freigabeStand = 0;
+
+function freigeben(html: string): void {
+    freigaben.delete(html);
+    freigaben.add(html);
+
+    while (freigaben.size > FREIGABEN_HOECHSTENS) {
+        freigaben.delete(freigaben.values().next().value as string);
+    }
+
+    freigabeStand++;
+    zuhoerer.forEach((z) => z());
+}
+
+function abonnieren(z: () => void): () => void {
+    zuhoerer.add(z);
+
+    return () => zuhoerer.delete(z);
+}
+
 const REMOTE_ATTRIBUTE = /(?:src|background)\s*=\s*["']?\s*https?:\/\//i;
 const REMOTE_CSS_URL = /url\(\s*['"]?\s*https?:\/\//i;
 
@@ -99,10 +138,11 @@ export function EmailBodyViewer({
     const [iframeHeight, setIframeHeight] = useState(minHeight);
 
     /**
-     * Which body the permission applies to. A plain yes/no would travel to the
-     * next mail and load its tracking pixels.
+     * Whether THIS body may load its images. A plain yes/no would travel to
+     * the next mail and load its tracking pixels — so the key is the body.
      */
-    const [allowedFor, setAllowedFor] = useState<string | null>(null);
+    useSyncExternalStore(abonnieren, () => freigabeStand, () => freigabeStand);
+    const freigegeben = bodyHtml !== null && freigaben.has(bodyHtml);
 
     const hasRemoteContent = useMemo(() => {
         const html = bodyHtml ?? '';
@@ -110,7 +150,7 @@ export function EmailBodyViewer({
         return REMOTE_ATTRIBUTE.test(html) || REMOTE_CSS_URL.test(html);
     }, [bodyHtml]);
 
-    const blocking = blockRemoteImages && hasRemoteContent && allowedFor !== bodyHtml;
+    const blocking = blockRemoteImages && hasRemoteContent && !freigegeben;
 
     /**
      * In the growing mode the document is written directly instead of through
@@ -163,7 +203,7 @@ export function EmailBodyViewer({
                     <button
                         type="button"
                         className="shrink-0 font-medium underline hover:no-underline"
-                        onClick={() => setAllowedFor(bodyHtml ?? null)}
+                        onClick={() => bodyHtml !== null && freigeben(bodyHtml)}
                     >
                         {labels.loadImages}
                     </button>
