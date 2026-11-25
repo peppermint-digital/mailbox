@@ -38,6 +38,15 @@ export interface MailConversationPaneProps {
     formatDateTime?: (iso: string) => string;
     /** Die gewohnte Nachrichtenansicht des Produkts. */
     children: ReactNode;
+    /**
+     * Die Umschaltzeile nur am Schreibtisch (seit 25.11.2026).
+     *
+     * Am Telefon kostet sie eine ganze Zeile ueber der Mail. Dort steht der
+     * Umschalter im Ueberlaufmenue der schmalen Leiste
+     * ({@see MailboxMobilLeiste} `onVerlauf`) — wer das setzt, muss ihn dort
+     * auch anbieten, sonst ist der Verlauf am Telefon nicht mehr erreichbar.
+     */
+    umschalterNurAmSchreibtisch?: boolean;
 }
 
 export function MailConversationPane({
@@ -47,11 +56,15 @@ export function MailConversationPane({
     onOpenOriginal,
     formatDateTime,
     children,
+    umschalterNurAmSchreibtisch = false,
 }: MailConversationPaneProps) {
     return (
         <>
             {state.available && (
-                <div className="flex justify-end border-b px-3 py-1.5" data-slot="mail-conversation-toggle">
+                <div
+                    className={`flex justify-end border-b px-3 py-1.5${umschalterNurAmSchreibtisch ? ' max-md:hidden' : ''}`}
+                    data-slot="mail-conversation-toggle"
+                >
                     <Button
                         size="sm"
                         variant={state.on ? 'default' : 'ghost'}

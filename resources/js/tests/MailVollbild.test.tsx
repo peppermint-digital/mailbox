@@ -108,3 +108,23 @@ describe('MailboxMobilLeiste — Zurueck und Werkzeuge in einer Zeile', () => {
         unmount();
     });
 });
+
+describe('MailboxMobilLeiste — Gespraechsverlauf im ⋮ (25.11.2026)', () => {
+    it('bietet das ⋮ beim Lesen auch dann an, wenn nur der Verlauf darin steht', () => {
+        const { container, unmount } = render(
+            imRahmen('view', <MailboxMobilLeiste ordnerName="Posteingang" onVerlauf={() => {}} verlaufText="Gesprächsverlauf" />),
+        );
+
+        expect(container.querySelector('[aria-label="Weitere Aktionen"]')).not.toBeNull();
+        unmount();
+    });
+
+    it('bietet ihn auf der Liste nicht an', () => {
+        const { container, unmount } = render(
+            imRahmen('list', <MailboxMobilLeiste ordnerName="Posteingang" onVerlauf={() => {}} verlaufText="Gesprächsverlauf" />),
+        );
+
+        expect(container.querySelector('[aria-label="Weitere Aktionen"]')).toBeNull();
+        unmount();
+    });
+});

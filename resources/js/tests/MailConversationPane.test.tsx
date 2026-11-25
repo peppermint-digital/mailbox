@@ -241,3 +241,29 @@ describe('MailConversationPane — nach einem Entfernen', () => {
         expect(textOf(container)).toContain('Die ganze Nachricht mit allem');
     });
 });
+
+describe('MailConversationPane — Umschaltzeile nur am Schreibtisch (25.11.2026)', () => {
+    const zustand = { available: true, on: false, loading: false, entries: [], show: () => {}, hide: () => {}, refresh: () => {} } as never;
+
+    it('blendet die Zeile am Telefon aus, wenn das Produkt den Umschalter woanders anbietet', () => {
+        const { container, unmount } = render(
+            <MailConversationPane state={zustand} labels={texte} umschalterNurAmSchreibtisch>
+                <p>Nachricht</p>
+            </MailConversationPane>,
+        );
+
+        expect(container.querySelector('[data-slot="mail-conversation-toggle"]')!.className).toContain('max-md:hidden');
+        unmount();
+    });
+
+    it('laesst sie ohne den Schalter ueberall stehen', () => {
+        const { container, unmount } = render(
+            <MailConversationPane state={zustand} labels={texte}>
+                <p>Nachricht</p>
+            </MailConversationPane>,
+        );
+
+        expect(container.querySelector('[data-slot="mail-conversation-toggle"]')!.className).not.toContain('max-md:hidden');
+        unmount();
+    });
+});

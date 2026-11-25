@@ -1,4 +1,4 @@
-import { ArrowLeft, BookUser, Maximize2, Menu, MoreVertical, PenSquare, RefreshCw, Sparkles } from 'lucide-react';
+import { ArrowLeft, BookUser, Maximize2, Menu, MessagesSquare, MoreVertical, PenSquare, RefreshCw, Sparkles } from 'lucide-react';
 import { useMailboxPane } from './MailboxPane';
 import { Button } from './ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
@@ -116,6 +116,14 @@ export interface MailboxMobilLeisteProps {
     onVollbild?: () => void;
     onAdressbuch?: () => void;
     onAktualisieren?: () => void;
+    /**
+     * Gespraechsverlauf ein- und ausschalten — nur beim Lesen, im
+     * Ueberlaufmenue (seit 25.11.2026). Bastian: „dann gewinnen wir nochmal
+     * eine Zeile". Fehlt er, gibt es den Eintrag nicht.
+     */
+    onVerlauf?: () => void;
+    /** Was der Eintrag sagt — „Gespraechsverlauf" oder „Ganze Nachricht". */
+    verlaufText?: string;
     aktualisiert?: boolean;
     labels?: MailboxMobilLeisteLabels;
 }
@@ -129,6 +137,8 @@ export function MailboxMobilLeiste({
     onVollbild,
     onAdressbuch,
     onAktualisieren,
+    onVerlauf,
+    verlaufText,
     aktualisiert = false,
     labels = mailboxMobilLeisteLabels,
 }: MailboxMobilLeisteProps) {
@@ -201,7 +211,7 @@ export function MailboxMobilLeiste({
                 </Button>
             )}
 
-            {(onAdressbuch || onAktualisieren) && !inSchublade && (
+            {(onAdressbuch || onAktualisieren || (liest && onVerlauf)) && !inSchublade && (
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-11 w-11" title={labels.mehr} aria-label={labels.mehr}>
@@ -209,6 +219,12 @@ export function MailboxMobilLeiste({
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                        {liest && onVerlauf && verlaufText && (
+                            <DropdownMenuItem onSelect={onVerlauf} data-slot="mailbox-mobil-verlauf">
+                                <MessagesSquare className="mr-2 h-4 w-4" />
+                                {verlaufText}
+                            </DropdownMenuItem>
+                        )}
                         {onAktualisieren && (
                             <DropdownMenuItem onSelect={onAktualisieren} disabled={aktualisiert}>
                                 <RefreshCw className={`mr-2 h-4 w-4 ${aktualisiert ? 'animate-spin' : ''}`} />

@@ -571,6 +571,11 @@ export function MailboxFlaeche({
                 hatOrdner
                 onAssistent={chatVerfuegbar && konto ? assistent.zeigen : undefined}
                 onVollbild={vollbildMoeglich ? () => setVollbild(true) : undefined}
+                /* Der Verlauf-Umschalter steht am Telefon im ⋮ statt in einer eigenen Zeile. */
+                onVerlauf={
+                    verlauf.available && !antwortOffen && !weiterleitenOffen ? () => (verlauf.on ? verlauf.hide() : verlauf.show()) : undefined
+                }
+                verlaufText={verlauf.on ? germanLabels.conversation.showFullMessage : germanLabels.conversation.showConversation}
                 onAdressbuch={() => navigieren(`${basis}/address-book`)}
                 onAktualisieren={
                     konto ? () => void liste.load({ accountId: konto.id, folder: ordnerPfad, page: liste.page, refresh: true }) : undefined
@@ -879,6 +884,7 @@ export function MailboxFlaeche({
 
                                 <MailConversationPane
                                     state={verlauf}
+                                    umschalterNurAmSchreibtisch
                                     labels={germanLabels.conversation}
                                     ownAddresses={konto ? [konto.email] : []}
                                     formatDateTime={(iso) => new Date(iso).toLocaleString('de-DE')}
