@@ -477,7 +477,7 @@ export function MailListToolbar({
             {search.isSearchMode && verzeichnis && (
                 <div
                     className={`flex items-center gap-2 px-3 py-1 text-xs ${
-                        verzeichnis.stale ? 'bg-warning-subtle text-warning-foreground' : 'text-muted-foreground'
+                        verzeichnis.stale ? 'bg-warning-subtle text-warning-subtle-foreground' : 'text-muted-foreground'
                     }`}
                     data-slot="mail-list-verzeichnis"
                 >

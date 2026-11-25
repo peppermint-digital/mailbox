@@ -52,4 +52,19 @@ describe('Farben folgen dem Theme des Produkts', () => {
 
         expect(funde).toEqual([]);
     });
+
+    /**
+     * Schrift einer VOLLEN Flaeche auf der zarten: `text-warning-foreground` ist
+     * Weiss (fuer `bg-warning`), auf `bg-warning-subtle` also Weiss auf
+     * Hellgelb. So stand es am 25.11.2026 im Verzeichnis-Hinweis der
+     * Suchleiste (MailListToolbar), gefunden im E2E von pm #10236.
+     */
+    it('setzt auf eine zarte Flaeche nie die Schrift der vollen', () => {
+        const FALSCHES_PAAR = /bg-(success|warning|info|destructive)-subtle\b[^'"`]*\btext-\1-foreground\b/g;
+        const funde = dateien().flatMap((pfad) =>
+            [...readFileSync(join(QUELLE, pfad), 'utf8').matchAll(FALSCHES_PAAR)].map((treffer) => `${pfad}: ${treffer[0]}`),
+        );
+
+        expect(funde).toEqual([]);
+    });
 });
