@@ -441,7 +441,7 @@ export function MailMessageView({
                             </Button>
 
                             <Button onClick={onToggleFlag} size="sm" variant="outline" title={message.is_flagged ? labels.unflag : labels.flag}>
-                                <Star className={cn('h-4 w-4', message.is_flagged ? 'fill-yellow-400 text-yellow-400' : '')} />
+                                <Star className={cn('h-4 w-4', message.is_flagged ? 'fill-warning text-warning' : '')} />
                             </Button>
 
                             {moveControl}

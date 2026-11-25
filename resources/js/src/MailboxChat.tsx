@@ -380,7 +380,7 @@ export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat'
                 <span className="shrink-0">{title}</span>
                 {/* `truncate` only bites in a flex row with `min-w-0`: without it the
                     box grows with the address instead of shortening it. */}
-                <span className="min-w-0 truncate text-xs text-gray-400">{account.email}</span>
+                <span className="min-w-0 truncate text-xs text-muted-foreground">{account.email}</span>
             </div>
 
             {/* Status line: what it is doing, and what on. */}
@@ -390,26 +390,26 @@ export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat'
                         <span
                             className={`h-2 w-2 shrink-0 rounded-full ${
                                 isWorking
-                                    ? 'animate-pulse bg-blue-500'
+                                    ? 'animate-pulse bg-info'
                                     : status === 'needs_input'
-                                      ? 'bg-amber-500'
+                                      ? 'bg-warning'
                                       : status === 'failed'
-                                        ? 'bg-red-500'
-                                        : 'bg-gray-300'
+                                        ? 'bg-destructive'
+                                        : 'bg-muted-foreground/40'
                             }`}
                         />
                         <span className="font-medium">{statusText}</span>
                         {/* The last step in the same line: it answers "what is it
                             working on" without anyone having to unfold something. */}
                         {isWorking && lastStep && (
-                            <span className="min-w-0 flex-1 truncate text-gray-500" title={lastStep.label}>
+                            <span className="min-w-0 flex-1 truncate text-muted-foreground" title={lastStep.label}>
                                 {TYPE_ICON[lastStep.type] ?? '•'} {lastStep.label}
                             </span>
                         )}
                         {activity.length > 0 && (
                             <button
                                 type="button"
-                                className="ml-auto shrink-0 text-gray-400 hover:text-gray-700"
+                                className="ml-auto shrink-0 text-muted-foreground hover:text-foreground"
                                 title={showActivity ? 'Verlauf der Schritte ausblenden' : 'Verlauf der Schritte anzeigen'}
                                 onClick={() => setShowActivity((v) => !v)}
                             >
@@ -421,7 +421,7 @@ export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat'
                     {showActivity && (
                         <ol className="mt-1.5 space-y-0.5 border-t pt-1.5">
                             {activity.map((schritt, i) => (
-                                <li key={i} className="flex gap-1.5 text-gray-500">
+                                <li key={i} className="flex gap-1.5 text-muted-foreground">
                                     <span className="shrink-0">{TYPE_ICON[schritt.type] ?? '•'}</span>
                                     <span className="min-w-0 [overflow-wrap:anywhere]">{schritt.label}</span>
                                 </li>
@@ -434,16 +434,16 @@ export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat'
             {/* Nothing sideways: the conversation should scroll down, not across.
                 Otherwise a single long link widens the whole column. */}
             <div ref={threadEl} onScroll={merkeObAmEnde} className="flex-1 space-y-2 overflow-x-hidden overflow-y-auto p-3">
-                {loading && <div className="text-sm text-gray-400">Lädt…</div>}
+                {loading && <div className="text-sm text-muted-foreground">Lädt…</div>}
                 {verborgen > 0 && (
                     // Sagen, dass etwas fehlt. Ein stillschweigend gekuerzter
                     // Verlauf sieht aus wie ein Agent, der etwas vergessen hat.
-                    <div className="text-center text-xs text-gray-400">
+                    <div className="text-center text-xs text-muted-foreground">
                         {verborgen} ältere {verborgen === 1 ? 'Nachricht' : 'Nachrichten'} nicht angezeigt
                     </div>
                 )}
                 {!loading && messages.length === 0 && (
-                    <div className="text-sm text-gray-400">Noch kein Chat für dieses Postfach (oder AI Brain nicht erreichbar).</div>
+                    <div className="text-sm text-muted-foreground">Noch kein Chat für dieses Postfach (oder AI Brain nicht erreichbar).</div>
                 )}
                 {sichtbar.map((m) => (
                     <div key={m.id} className={m.role === 'user' ? 'text-right' : 'text-left'}>
@@ -454,7 +454,7 @@ export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat'
                                 // none and grew out of the bubble. `anywhere` allows the
                                 // break mid-word, but only when it otherwise will not fit.
                                 '[overflow-wrap:anywhere]',
-                                m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900',
+                                m.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground',
                             ].join(' ')}
                         >
                             {m.is_pending ? <span className="animate-pulse">…</span> : m.content}
@@ -464,7 +464,7 @@ export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat'
             </div>
 
             <div className="border-t p-2">
-                {error && <p className="mb-1 text-xs text-red-500">{error}</p>}
+                {error && <p className="mb-1 text-xs text-destructive">{error}</p>}
                 <form className="flex gap-2" onSubmit={(e) => void send(e)}>
                     <input
                         value={input}
@@ -477,7 +477,7 @@ export function MailboxChat({ account, source, controls, title = 'AI-Brain-Chat'
                     <button
                         type="submit"
                         disabled={sending || !input.trim()}
-                        className="shrink-0 rounded-md bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50"
+                        className="shrink-0 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50"
                     >
                         Senden
                     </button>
@@ -507,7 +507,7 @@ export function MailboxChatMicButton({
         <button
             type="button"
             disabled={processing}
-            className={`rounded-md border px-3 py-2 text-sm ${recording ? 'text-red-500' : 'text-gray-500 hover:text-gray-800'}`}
+            className={`rounded-md border px-3 py-2 text-sm ${recording ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'}`}
             title={recording ? 'Aufnahme stoppen & transkribieren' : 'Per Sprache diktieren'}
             onClick={onToggle}
         >

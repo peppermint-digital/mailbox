@@ -839,7 +839,7 @@ export function MailWerkzeugleiste({
                         Feldern. Ein zweites Kaestchen fuer eine Frage, deren
                         Gegenstand daruebersteht, waere ein Umweg.
                     */}
-                    {offeneMaske.confirm && <p className="text-xs text-amber-700 dark:text-amber-500">{offeneMaske.confirm}</p>}
+                    {offeneMaske.confirm && <p className="text-xs text-warning">{offeneMaske.confirm}</p>}
 
                     <div className="flex items-center gap-1.5">
                         <Button
@@ -885,7 +885,7 @@ export function MailWerkzeugleiste({
             {offeneRueckfrage && (
                 <div
                     data-slot="mail-werkzeugleiste-rueckfrage"
-                    className="flex flex-col gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2"
+                    className="flex flex-col gap-2 rounded-md border border-warning-border bg-warning-subtle p-2"
                 >
                     <p className="text-xs">{offeneRueckfrage.confirm}</p>
 
@@ -923,7 +923,7 @@ export function MailWerkzeugleiste({
              * lassen, wo etwas kaputt ist.
              */}
             {unerreichbar.length > 0 && (
-                <p className="flex items-start gap-1 text-xs text-amber-700 dark:text-amber-500">
+                <p className="flex items-start gap-1 text-xs text-warning">
                     <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     {texte.unerreichbar(unerreichbar)}
                 </p>

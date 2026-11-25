@@ -142,7 +142,7 @@ export function MailboxSidePanel({ title, children, onClose, width = 'w-96', clo
             <div className="flex items-center justify-between border-b px-3 py-2">
                 <span className="text-sm font-semibold">{title}</span>
                 {onClose && (
-                    <button type="button" className="text-gray-400 hover:text-gray-700" aria-label={closeLabel} onClick={onClose}>
+                    <button type="button" className="text-muted-foreground hover:text-foreground" aria-label={closeLabel} onClick={onClose}>
                         ✕
                     </button>
                 )}
@@ -163,7 +163,7 @@ export function MailboxSidePanelHandle({ label, onClick }: { label: string; onCl
     return (
         <button
             type="button"
-            className="fixed right-6 bottom-6 z-40 rounded-full bg-blue-600 px-4 py-3 text-sm font-medium text-white shadow-lg hover:bg-blue-700"
+            className="fixed right-6 bottom-6 z-40 rounded-full bg-primary px-4 py-3 text-sm font-medium text-primary-foreground shadow-lg hover:bg-primary/90"
             aria-label={`${label} einblenden`}
             onClick={onClick}
         >

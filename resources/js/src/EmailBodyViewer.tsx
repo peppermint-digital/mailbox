@@ -402,7 +402,7 @@ export function EmailBodyViewer({
             {blocking && (
                 <div
                     data-slot="mail-body-bilder-blockiert"
-                    className="flex shrink-0 items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                    className="flex shrink-0 items-center justify-between gap-3 rounded-md border border-warning-border bg-warning-subtle px-3 py-2 text-xs text-warning-subtle-foreground"
                 >
                     <span>{labels.remoteBlocked}</span>
                     <button
@@ -466,7 +466,7 @@ export function EmailBodyViewer({
                     </pre>
                 )}
 
-                {!bodyHtml && !bodyText && <p className="text-gray-500 italic">{labels.empty}</p>}
+                {!bodyHtml && !bodyText && <p className="text-muted-foreground italic">{labels.empty}</p>}
             </div>
         </div>
     );

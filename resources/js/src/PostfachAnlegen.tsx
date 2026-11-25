@@ -385,7 +385,7 @@ export function PostfachAnlegen({
                             {teilen}
 
                             {pruefung && (
-                                <p role="status" className={pruefung.ok ? 'text-sm text-emerald-600 dark:text-emerald-400' : 'text-sm text-destructive'}>
+                                <p role="status" className={pruefung.ok ? 'text-sm text-success' : 'text-sm text-destructive'}>
                                     {/* Der Satz des Servers traegt bei Erfolg sein Urteil schon
                                         („Verbindung steht, 5 Ordner gefunden.") — davor ein
                                         zweites „Verbindung steht:" las sich doppelt. Ein Fehlschlag

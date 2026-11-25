@@ -526,7 +526,7 @@ export function MailListToolbar({
                     )}
                     {hint && (
                         <span
-                            className="flex items-center gap-1 text-amber-600 dark:text-amber-500"
+                            className="flex items-center gap-1 text-warning"
                             data-slot="mail-list-hint"
                             title={hint}
                         >

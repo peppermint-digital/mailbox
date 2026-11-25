@@ -269,7 +269,7 @@ export function MailMessageList<M extends RowMessage>({
                             <div className="mb-1 flex items-start justify-between gap-2">
                                 <div className="flex min-w-0 items-center gap-2">
                                     {!row.msg.is_read ? (
-                                        <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-blue-500" title={labels.unread} />
+                                        <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-info" title={labels.unread} />
                                     ) : (
                                         <span className="h-2.5 w-2.5 shrink-0" />
                                     )}
@@ -305,7 +305,7 @@ export function MailMessageList<M extends RowMessage>({
                                     {/* How much of it is new. The dot says "something is", this says how much. */}
                                     {!row.isMember && Boolean(row.unreadCount) && (
                                         <span
-                                            className="shrink-0 rounded-full bg-blue-500 px-1.5 text-[10px] font-semibold text-white"
+                                            className="shrink-0 rounded-full bg-info px-1.5 text-[10px] font-semibold text-info-foreground"
                                             title={row.count > 1 ? labels.unreadCountTitle(row.unreadCount as number, row.count) : labels.unread}
                                         >
                                             {labels.unreadCount(row.unreadCount as number)}
@@ -323,7 +323,7 @@ export function MailMessageList<M extends RowMessage>({
                                 </div>
 
                                 <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                                    {row.msg.is_flagged && <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" aria-label={labels.flagged} />}
+                                    {row.msg.is_flagged && <Star className="h-3 w-3 fill-warning text-warning" aria-label={labels.flagged} />}
                                     {formatDate(row.msg.date)}
                                 </span>
                             </div>
