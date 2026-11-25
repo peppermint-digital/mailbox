@@ -92,3 +92,49 @@ describe('EmailBodyViewer', () => {
         unmount();
     });
 });
+
+describe('EmailBodyViewer — dunkel auf dem Telefon (25.11.2026)', () => {
+    function mitTelefonUndDunkel(an: boolean) {
+        document.documentElement.classList.toggle('dark', an);
+        window.matchMedia = ((frage: string) => ({
+            matches: an,
+            media: frage,
+            addEventListener: () => {},
+            removeEventListener: () => {},
+        })) as unknown as typeof window.matchMedia;
+    }
+
+    const schema = (container: HTMLElement) => container.querySelector('iframe')?.getAttribute('srcdoc')?.match(/color-scheme: (\w+)/)?.[1];
+
+    it('zeigt eine einfache Mail dunkel, eine gestaltete hell', () => {
+        mitTelefonUndDunkel(true);
+
+        const einfach = render(<EmailBodyViewer labels={labels} bodyHtml="<p style='color:black'>Hallo Bastian</p>" mobil />);
+        const gestaltet = render(<EmailBodyViewer labels={labels} bodyHtml='<table bgcolor="#ffffff"><tr><td>Newsletter</td></tr></table>' mobil />);
+
+        expect(schema(einfach.container)).toBe('dark');
+        expect(schema(gestaltet.container)).toBe('light');
+
+        einfach.unmount();
+        gestaltet.unmount();
+        mitTelefonUndDunkel(false);
+    });
+
+    it('bleibt hell ohne `mobil` — am Schreibtisch aendert sich nichts', () => {
+        mitTelefonUndDunkel(true);
+
+        const { container, unmount } = render(<EmailBodyViewer labels={labels} bodyHtml="<p>Hallo</p>" />);
+        expect(schema(container)).toBe('light');
+
+        unmount();
+        mitTelefonUndDunkel(false);
+    });
+
+    it('bleibt hell im hellen Modus', () => {
+        mitTelefonUndDunkel(false);
+
+        const { container, unmount } = render(<EmailBodyViewer labels={labels} bodyHtml="<p>Hallo</p>" mobil />);
+        expect(schema(container)).toBe('light');
+        unmount();
+    });
+});

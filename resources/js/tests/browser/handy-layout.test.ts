@@ -256,6 +256,19 @@ interface VollbildMessung {
 
 let vollbildMessung: VollbildMessung | null = null;
 
+/** Ein Bildlauf beim Lesen (25.11.2026), gemessen auf 390 px. */
+interface BildlaufMessung {
+    kastenScrollt: boolean;
+    rahmenScrolltSelbst: boolean;
+    rahmenHoehe: number;
+    betreffNachBildlauf: number;
+    leisteVorher: number;
+    leisteNachher: number;
+    randLinks: number;
+}
+
+let bildlaufMessung: BildlaufMessung | null = null;
+
 beforeAll(async () => {
     verzeichnis = await bauen();
     const ausgeliefert = await ausliefern(verzeichnis);
@@ -517,6 +530,32 @@ beforeAll(async () => {
         }
     }
 
+    bildlaufMessung = await seite.evaluate(async () => {
+        const kasten = document.querySelector<HTMLElement>('[data-fassung="lesen"] [data-slot="mail-message-bildlauf"]')!;
+        const rahmen = kasten.querySelector<HTMLIFrameElement>('[data-slot="mail-body-rahmen"]')!;
+        const wurzel = rahmen.contentDocument!.documentElement;
+        const leiste = () => Math.round(document.querySelector('[data-fassung="lesen"] [data-slot="mail-message-actions"]')!.getBoundingClientRect().top);
+        const betreff = kasten.querySelector('h2')!;
+        const leisteVorher = leiste();
+
+        kasten.scrollTop = kasten.scrollHeight;
+        await new Promise((f) => requestAnimationFrame(() => requestAnimationFrame(() => f(null))));
+
+        const ergebnis = {
+            kastenScrollt: kasten.scrollHeight > kasten.clientHeight + 1,
+            rahmenScrolltSelbst: wurzel.scrollHeight > wurzel.clientHeight + 1,
+            rahmenHoehe: Math.round(rahmen.getBoundingClientRect().height),
+            betreffNachBildlauf: Math.round(betreff.getBoundingClientRect().bottom - kasten.getBoundingClientRect().top),
+            leisteVorher,
+            leisteNachher: leiste(),
+            randLinks: Math.round(rahmen.getBoundingClientRect().left - kasten.getBoundingClientRect().left),
+        };
+
+        kasten.scrollTop = 0;
+
+        return ergebnis;
+    });
+
     await seite.click('[data-fassung="lesen"] [data-slot="mailbox-mobil-vollbild"]');
     await seite.waitForSelector('[data-slot="mail-vollbild"]');
 
@@ -592,6 +631,24 @@ function tafel(): string {
         ),
     ].join('\n');
 }
+
+describe('Ein Bildlauf beim Lesen auf dem Telefon', () => {
+    it('scrollt Betreff, Absender und Text zusammen; der Rahmen waechst mit, die Knopfleiste bleibt stehen', () => {
+        const m = bildlaufMessung!;
+
+        expect(m, 'Nicht gemessen').not.toBeNull();
+        expect(m.kastenScrollt).toBe(true);
+        // Kein zweiter Bildlauf im Mailtext.
+        expect(m.rahmenScrolltSelbst).toBe(false);
+        expect(m.rahmenHoehe).toBeGreaterThan(HOEHE);
+        // Der Betreff ist nach oben weggescrollt ...
+        expect(m.betreffNachBildlauf).toBeLessThan(0);
+        // ... die Knopfleiste nicht.
+        expect(m.leisteNachher).toBe(m.leisteVorher);
+        // Randlos bis auf den schmalen Abstand.
+        expect(m.randLinks).toBeLessThanOrEqual(12);
+    });
+});
 
 describe('Vollbild einer Mail', () => {
     it('deckt das ganze Fenster, oben nur der Betreff, darunter der Text bis zum Rand', () => {

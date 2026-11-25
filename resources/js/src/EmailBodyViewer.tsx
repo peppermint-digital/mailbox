@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { cn } from './ui/utils';
 
 /**
  * Shows the body of a mail inside a sandboxed iframe — ALWAYS in the light
@@ -48,28 +49,56 @@ export interface EmailBodyViewerProps {
     autoHeight?: boolean;
     minHeight?: number;
     blockRemoteImages?: boolean;
+    /**
+     * Die Leseansicht auf dem Telefon (seit 25.11.2026, nur unterhalb von `md`):
+     *
+     * - Der Rahmen waechst mit seinem Inhalt, statt selbst zu scrollen — es
+     *   scrollt der Kasten darum herum, mit Betreff und Absender zusammen
+     *   (siehe `mail-message-bildlauf` in {@see MailMessageView}).
+     * - Kein weisser Kasten mit Rand und runden Ecken mehr, nur ein schmaler
+     *   Abstand zum Displayrand.
+     * - Im dunklen Modus des Produkts werden EINFACHE Mails dunkel gezeigt.
+     *   Gestaltete Mails (eigene Hintergruende) bleiben hell — siehe `gestaltet`.
+     *
+     * Am Schreibtisch aendert der Schalter nichts.
+     */
+    mobil?: boolean;
 }
 
-function buildDocument(html: string, blocking: boolean): string {
+function buildDocument(html: string, blocking: boolean, dunkel = false): string {
     // Block remote sources (tracking pixels), allow embedded ones (data:).
     const csp = blocking
         ? `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:;">`
         : '';
 
+    const schema = dunkel ? 'dark' : 'light';
+
+    /*
+     * Dunkel: durchsichtig, damit der Hintergrund des Produkts durchscheint,
+     * und heller Text. Nur fuer Mails ohne eigene Hintergruende — siehe
+     * `gestaltet`. Dunkle Schriftfarben, die die Mail selbst setzt, hellt
+     * `aufhellen` nach dem Laden auf.
+     */
+    const farben = dunkel
+        ? `html, body { background: transparent; color: #e5e5e5; }
+    a { color: #60a5fa; }`
+        : `html, body { background: #ffffff; color: #1a1a1a; }
+    a { color: #2563eb; }`;
+
     return `<!DOCTYPE html>
-<html style="color-scheme: light;">
+<html style="color-scheme: ${schema};">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light">
+<meta name="color-scheme" content="${schema}">
 ${csp}
 <style>
-    :root { color-scheme: light; }
-    html, body {
-        background: #ffffff;
-        color: #1a1a1a;
-    }
+    :root { color-scheme: ${schema}; }
+    ${farben}
     body {
+        /* Kein Randueberhang des ersten und letzten Kindes — sonst misst die
+           Hoehe des Rumpfes zu kurz, und unten fehlt eine Zeile. */
+        display: flow-root;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
         font-size: 14px;
         line-height: 1.5;
@@ -79,7 +108,6 @@ ${csp}
         word-wrap: break-word;
     }
     img { max-width: 100%; height: auto; }
-    a { color: #2563eb; }
     table { max-width: 100%; border-collapse: collapse; }
     td, th { padding: 4px 8px; }
 </style>
@@ -156,10 +184,104 @@ function einpassen(iframe: HTMLIFrameElement | null): void {
 
     const verfuegbar = iframe.clientWidth;
     const breite = Math.max(wurzel.scrollWidth, doc.body?.scrollWidth ?? 0);
+    let zoom = 1;
 
     if (verfuegbar > 0 && breite > verfuegbar + 1) {
-        wurzel.style.setProperty('zoom', String(Math.max(KLEINSTER_ZOOM, verfuegbar / breite)));
+        zoom = Math.max(KLEINSTER_ZOOM, verfuegbar / breite);
+        wurzel.style.setProperty('zoom', String(zoom));
     }
+
+    /*
+     * Die Hoehe fuer den mitwachsenden Rahmen (`mobil`): gemessen OHNE Zoom,
+     * also an der natuerlichen Seite, und dann mit dem Zoom verrechnet. Steht
+     * als CSS-Variable am Rahmen — ob sie gilt, entscheidet die Klasse
+     * (`max-md:`), nicht JavaScript. Am Schreibtisch fuellt der Rahmen weiter
+     * seinen Platz.
+     */
+    wurzel.style.removeProperty('zoom');
+    const hoehe = doc.body ? doc.body.getBoundingClientRect().height : 0;
+
+    if (zoom < 1) {
+        wurzel.style.setProperty('zoom', String(zoom));
+    }
+
+    iframe.style.setProperty('--mail-rumpf-hoehe', `${Math.ceil(hoehe * zoom) + 2}px`);
+}
+
+/*
+ * Ist die Mail gestaltet — bringt sie eigene Hintergruende mit?
+ *
+ * Dann bleibt sie im dunklen Modus hell. Ein Newsletter, eine Rechnung, eine
+ * Signatur mit Logo sind auf Weiss gebaut; sie umzufaerben ergibt schwarzen
+ * Text auf dunklem Grund oder ein Logo mit weissem Kasten. Outlook versucht
+ * es trotzdem und liegt oft daneben. Eine helle Mail im dunklen Modus ist
+ * lesbar, eine kaputt umgefaerbte nicht.
+ */
+const GESTALTET = /bgcolor\s*=|background(?:-color|-image)?\s*:|\sbackground\s*=/i;
+
+/*
+ * Dunkle Schriftfarben, die eine einfache Mail selbst setzt (Outlook schreibt
+ * gern `color:black` an jeden Absatz), auf dem dunklen Grund aufhellen.
+ * Grau wird hell, eine Farbe wird zu Weiss hin gemischt und bleibt erkennbar.
+ */
+function aufhellen(doc: Document): void {
+    const elemente = [doc.body, ...Array.from(doc.body?.querySelectorAll<HTMLElement>('*') ?? [])].slice(0, 5000);
+
+    for (const element of elemente) {
+        if (!element) {
+            continue;
+        }
+
+        const treffer = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(doc.defaultView?.getComputedStyle(element).color ?? '');
+
+        if (!treffer) {
+            continue;
+        }
+
+        const [r, g, b] = [Number(treffer[1]), Number(treffer[2]), Number(treffer[3])];
+        const helligkeit = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+
+        if (helligkeit >= 0.45) {
+            continue;
+        }
+
+        const grau = Math.max(r, g, b) - Math.min(r, g, b) < 40;
+        const mischen = (wert: number) => Math.round(wert + (255 - wert) * 0.6);
+
+        element.style.setProperty('color', grau ? '#e5e5e5' : `rgb(${mischen(r)}, ${mischen(g)}, ${mischen(b)})`, 'important');
+    }
+}
+
+/*
+ * Telefon und dunkler Modus — beides gilt nur, solange es gilt. Gelesen aus
+ * der Breite des Fensters und der Klasse `dark` am Wurzelelement (so schalten
+ * die Produkte), und neu gelesen, wenn sich eins davon aendert.
+ */
+const SCHMAL = '(max-width: 767.98px)';
+
+function dunkelUndSchmalAbonnieren(z: () => void): () => void {
+    if (typeof window === 'undefined') {
+        return () => {};
+    }
+
+    const breite = window.matchMedia?.(SCHMAL);
+    const klasse = new MutationObserver(z);
+
+    breite?.addEventListener?.('change', z);
+    klasse.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+
+    return () => {
+        breite?.removeEventListener?.('change', z);
+        klasse.disconnect();
+    };
+}
+
+function istDunkelUndSchmal(): boolean {
+    if (typeof window === 'undefined') {
+        return false;
+    }
+
+    return document.documentElement.classList.contains('dark') && (window.matchMedia?.(SCHMAL).matches ?? false);
 }
 
 const REMOTE_ATTRIBUTE = /(?:src|background)\s*=\s*["']?\s*https?:\/\//i;
@@ -172,6 +294,7 @@ export function EmailBodyViewer({
     autoHeight = false,
     minHeight = 100,
     blockRemoteImages = false,
+    mobil = false,
 }: EmailBodyViewerProps) {
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
     const [iframeHeight, setIframeHeight] = useState(minHeight);
@@ -190,6 +313,10 @@ export function EmailBodyViewer({
     }, [bodyHtml]);
 
     const blocking = blockRemoteImages && hasRemoteContent && !freigegeben;
+
+    const dunkelUndSchmal = useSyncExternalStore(dunkelUndSchmalAbonnieren, istDunkelUndSchmal, () => false);
+    const gestaltet = useMemo(() => GESTALTET.test(bodyHtml ?? ''), [bodyHtml]);
+    const dunkel = mobil && dunkelUndSchmal && !gestaltet;
 
     /**
      * In the growing mode the document is written directly instead of through
@@ -247,6 +374,10 @@ export function EmailBodyViewer({
         const nachBild = () => einpassen(rahmen);
 
         const geladen = () => {
+            if (dunkel && rahmen.contentDocument?.body) {
+                aufhellen(rahmen.contentDocument);
+            }
+
             einpassen(rahmen);
             nachgeladen?.removeEventListener('load', nachBild, true);
             nachgeladen = rahmen.contentDocument;
@@ -264,10 +395,10 @@ export function EmailBodyViewer({
             nachgeladen?.removeEventListener('load', nachBild, true);
             breite.disconnect();
         };
-    }, [autoHeight, rahmen]);
+    }, [autoHeight, rahmen, dunkel]);
 
     return (
-        <div className={autoHeight ? 'space-y-2' : 'flex h-full flex-col gap-2'}>
+        <div className={autoHeight ? 'space-y-2' : cn('flex h-full flex-col gap-2', mobil && 'max-md:h-auto')}>
             {blocking && (
                 <div
                     data-slot="mail-body-bilder-blockiert"
@@ -284,10 +415,17 @@ export function EmailBodyViewer({
                 </div>
             )}
 
-            {/* White frame with padding — so the content does not stick to the edge. */}
+            {/* White frame with padding — so the content does not stick to the edge.
+                Auf dem Telefon (`mobil`) ohne Kasten: nur ein schmaler Abstand. */}
             <div
-                className={`overflow-hidden rounded-md bg-white p-4 text-black ${autoHeight ? '' : 'min-h-0 flex-1'}`}
-                style={{ colorScheme: 'light' }}
+                className={cn(
+                    'overflow-hidden rounded-md p-4',
+                    dunkel ? 'bg-transparent text-foreground' : 'bg-white text-black',
+                    !autoHeight && 'min-h-0 flex-1',
+                    mobil && 'max-md:flex-none max-md:rounded-none max-md:px-3 max-md:py-2',
+                )}
+                style={{ colorScheme: dunkel ? 'dark' : 'light' }}
+                data-slot="mail-body-flaeche"
             >
                 {bodyHtml && autoHeight && (
                     <iframe
@@ -303,14 +441,29 @@ export function EmailBodyViewer({
                     <iframe
                         ref={setRahmen}
                         data-slot="mail-body-rahmen"
-                        srcDoc={buildDocument(bodyHtml, blocking)}
-                        className="h-full w-full border-0 bg-white"
+                        srcDoc={buildDocument(bodyHtml, blocking, dunkel)}
+                        className={cn(
+                            'h-full w-full border-0',
+                            dunkel ? 'bg-transparent' : 'bg-white',
+                            mobil && 'max-md:h-[var(--mail-rumpf-hoehe,100px)]',
+                        )}
+                        style={{ colorScheme: dunkel ? 'dark' : 'light' }}
                         sandbox="allow-same-origin"
                         title={labels.frameTitle}
                     />
                 )}
 
-                {!bodyHtml && bodyText && <pre className="h-full overflow-auto font-sans text-sm whitespace-pre-wrap text-black">{bodyText}</pre>}
+                {!bodyHtml && bodyText && (
+                    <pre
+                        className={cn(
+                            'h-full overflow-auto font-sans text-sm whitespace-pre-wrap',
+                            dunkel ? 'text-foreground' : 'text-black',
+                            mobil && 'max-md:h-auto max-md:overflow-visible',
+                        )}
+                    >
+                        {bodyText}
+                    </pre>
+                )}
 
                 {!bodyHtml && !bodyText && <p className="text-gray-500 italic">{labels.empty}</p>}
             </div>

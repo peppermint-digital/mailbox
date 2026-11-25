@@ -202,6 +202,29 @@ export function MailMessageView({
             className={cn('@container flex flex-1 flex-col overflow-hidden', aktionenUnten && 'max-md:relative')}
             data-slot="mail-message-view"
         >
+            {/*
+                EIN Bildlauf auf dem Telefon (25.11.2026), wie in Outlook.
+
+                Bastian: „dass man nicht das Fenster scrollt, sondern einfach
+                komplett den Block." Bis dahin standen Betreff und Absender
+                fest, und darunter scrollte der Mailtext in seinem eigenen
+                Rahmen — zwei Bildlaeufe ineinander, und der feste Kopf nahm
+                Platz, den man beim Lesen nicht braucht.
+
+                Jetzt scrollt dieser Kasten: Betreff, Absender, Anhaenge und
+                der Text, der dafuer so hoch waechst wie sein Inhalt
+                ({@see EmailBodyViewer} `mobil`). Die Knopfleiste bleibt
+                unten stehen — sie ist `absolute` zur Leseansicht, nicht zu
+                diesem Kasten, und wandert deshalb nicht mit. Die Luft fuer
+                sie (`pb-24`, die gemessene Zahl von unten) steht jetzt hier.
+
+                Am Schreibtisch ist der Kasten ein Durchgang ohne eigene
+                Wirkung: Dort scrollt weiter nur der Text.
+            */}
+            <div
+                className={cn('flex min-h-0 flex-1 flex-col', aktionenUnten && 'max-md:overflow-y-auto max-md:pb-24')}
+                data-slot="mail-message-bildlauf"
+            >
             <div className="space-y-3 border-b p-4">
                 {/*
                     Betreff und Knopfleiste stehen UNTEREINANDER, solange sie
@@ -494,6 +517,9 @@ export function MailMessageView({
             </div>
 
             {/*
+                Seit dem 25.11.2026 steht diese Luft am Bildlauf-Kasten oben
+                und nicht mehr hier — dort scrollt der Text jetzt.
+
                 Luft unter dem Text, so hoch wie die Leiste werden kann. Ohne
                 sie liegt die Leiste auf den letzten Zeilen der Mail — und
                 „nichts liegt uebereinander" ist der Punkt dieser Aenderung,
@@ -511,8 +537,15 @@ export function MailMessageView({
                 irgendwer sie gesehen haette. Sie prueft die Polsterung gegen
                 die gemessene Leistenhoehe — wer hier kuerzt, faellt auf.
             */}
-            <div className={cn('flex-1 overflow-hidden', aktionenUnten && 'max-md:pb-24')}>
-                <EmailBodyViewer labels={labels.body} bodyHtml={message.body_html} bodyText={message.body_text} blockRemoteImages />
+            <div className={cn('flex-1 overflow-hidden', aktionenUnten && 'max-md:flex-none max-md:overflow-visible')}>
+                <EmailBodyViewer
+                    labels={labels.body}
+                    bodyHtml={message.body_html}
+                    bodyText={message.body_text}
+                    blockRemoteImages
+                    mobil={aktionenUnten}
+                />
+            </div>
             </div>
         </div>
     );
