@@ -502,7 +502,7 @@ beforeAll(async () => {
                                 : null,
                         aktionenHoehe: aktionen ? Math.round(aktionen.getBoundingClientRect().height) : 0,
                         rumpfLuftUnten: rumpf
-                            ? Math.round(parseFloat(getComputedStyle(rumpf.closest('[class*="pb-"]') ?? rumpf).paddingBottom) || 0)
+                            ? Math.round(parseFloat(getComputedStyle(rumpf.closest('[data-slot="mail-message-bildlauf"]') ?? rumpf).paddingBottom) || 0)
                             : 0,
                         textAb: rumpf ? Math.round(rumpf.getBoundingClientRect().top - rahmen.top) : null,
                     });
@@ -839,6 +839,10 @@ describe('Handy-Layout der Mailflaeche', () => {
             for (const m of fuer('lesen')) {
                 expect(m.rumpfLuftUnten, `bei ${m.breite} px: Leiste ${m.aktionenHoehe} px, Luft ${m.rumpfLuftUnten} px`).toBeGreaterThanOrEqual(
                     m.aktionenHoehe,
+                );
+                // Und nicht mehr: Sonst scrollt man ueber das Ende der Mail hinaus ins Leere (25.11.2026).
+                expect(m.rumpfLuftUnten, `bei ${m.breite} px: Leiste ${m.aktionenHoehe} px, Luft ${m.rumpfLuftUnten} px`).toBeLessThanOrEqual(
+                    m.aktionenHoehe + 1,
                 );
             }
         });

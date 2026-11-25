@@ -422,7 +422,8 @@ export function EmailBodyViewer({
                     'overflow-hidden rounded-md p-4',
                     dunkel ? 'bg-transparent text-foreground' : 'bg-white text-black',
                     !autoHeight && 'min-h-0 flex-1',
-                    mobil && 'max-md:flex-none max-md:rounded-none max-md:px-3 max-md:py-2',
+                    // Unten kein Abstand: Die Mail endet, wo ihr Inhalt endet.
+                    mobil && 'max-md:flex-none max-md:rounded-none max-md:px-3 max-md:pt-2 max-md:pb-0',
                 )}
                 style={{ colorScheme: dunkel ? 'dark' : 'light' }}
                 data-slot="mail-body-flaeche"

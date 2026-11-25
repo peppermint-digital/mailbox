@@ -1,5 +1,5 @@
 import { Archive, ChevronDown, Download, Forward, Loader2, Mail, MailOpen, Paperclip, Pencil, Reply, Star, Trash2, Users } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import EmailBodyViewer, { type EmailBodyViewerLabels } from './EmailBodyViewer';
 import { Button } from './ui/button';
 import { cn } from './ui/utils';
@@ -161,6 +161,36 @@ export function MailMessageView({
     moveControl,
     aktionenUnten = false,
 }: MailMessageViewProps) {
+    /*
+     * Wie hoch die Knopfleiste unten WIRKLICH ist — so viel Luft braucht der
+     * Bildlauf unter dem Text, und nicht mehr (25.11.2026).
+     *
+     * Bis dahin stand dort fest `pb-24` (96 px), gerechnet fuer den schlimmsten
+     * Fall mit zwei Reihen. Mit einer Reihe ist die Leiste 49 px hoch, und man
+     * scrollte rund 50 px ueber das Ende der Mail hinaus ins Leere — Bastian:
+     * „das hoert nicht am Ende der E-Mail auf". Gemessen statt gerechnet, weil
+     * die Zahl der Knoepfe am Produkt haengt.
+     *
+     * Vor den fruehen Rueckgaben unten, damit die Reihenfolge der Haken immer
+     * dieselbe ist.
+     */
+    const [leiste, setLeiste] = useState<HTMLDivElement | null>(null);
+    const [leistenHoehe, setLeistenHoehe] = useState<number | null>(null);
+
+    useEffect(() => {
+        if (!leiste) {
+            return;
+        }
+
+        const messen = () => setLeistenHoehe(Math.ceil(leiste.getBoundingClientRect().height));
+        const beobachter = new ResizeObserver(messen);
+
+        beobachter.observe(leiste);
+        messen();
+
+        return () => beobachter.disconnect();
+    }, [leiste]);
+
     if (loading) {
         return (
             <div className="flex flex-1 items-center justify-center" data-slot="mail-message-loading">
@@ -230,7 +260,11 @@ export function MailMessageView({
                 einem echten Geraet schon.
             */}
             <div
-                className={cn('flex min-h-0 flex-1 flex-col', aktionenUnten && 'max-md:overflow-y-auto max-md:overscroll-y-contain max-md:pb-24')}
+                className={cn(
+                    'flex min-h-0 flex-1 flex-col',
+                    aktionenUnten && 'max-md:overflow-y-auto max-md:overscroll-y-contain max-md:pb-[var(--mail-leiste-hoehe,6rem)]',
+                )}
+                style={leistenHoehe ? ({ '--mail-leiste-hoehe': `${leistenHoehe}px` } as CSSProperties) : undefined}
                 data-slot="mail-message-bildlauf"
             >
             <div className="space-y-3 border-b p-4">
@@ -333,6 +367,7 @@ export function MailMessageView({
                                     'max-md:absolute max-md:inset-x-0 max-md:bottom-0 max-md:z-10 max-md:border-t max-md:bg-background max-md:px-3 max-md:py-2',
                             )}
                             data-slot="mail-message-actions"
+                            ref={aktionenUnten ? setLeiste : undefined}
                         >
                             {isDraft && onEditDraft && (
                                 <Button onClick={onEditDraft} size="sm" title={labels.editDraft}>
