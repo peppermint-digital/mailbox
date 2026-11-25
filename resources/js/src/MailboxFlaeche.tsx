@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from 'react';
-import { Clock, FolderInput, FolderOpen, Globe, UserCheck } from 'lucide-react';
+import { Clock, FolderInput, FolderOpen, Globe, Loader2, UserCheck } from 'lucide-react';
 import { looksLikeFolder, ordnerAnzeigename } from './folders';
 import { germanLabels } from './germanLabels';
 import type { InlineAntwortProps } from './InlineAntwort';
@@ -532,6 +532,39 @@ export function MailboxFlaeche({
         };
     }, [kasten]);
 
+    /*
+     * Weiterscrollen statt Blaettern, auf dem Telefon (25.11.2026, Bastian:
+     * „Koennen wir die Mailliste auch vielleicht infinite scroll machen?").
+     *
+     * Eine unsichtbare Marke am Ende der Liste; kommt sie dem Rand des
+     * Bildlaufs auf 400 px nahe, haengt die Liste die naechste Seite an. Die
+     * Marke ist `md:hidden` — am Schreibtisch schneidet sie nie, und dort
+     * bleibt das Blaettern. In der Suche gibt es keine Seiten.
+     */
+    const [listenBildlauf, setListenBildlauf] = useState<HTMLDivElement | null>(null);
+    const [listenEnde, setListenEnde] = useState<HTMLDivElement | null>(null);
+    const nachladen = liste.loadMore;
+    const sucht = suche.isSearchMode;
+
+    useEffect(() => {
+        if (!listenBildlauf || !listenEnde || sucht || typeof IntersectionObserver === 'undefined') {
+            return;
+        }
+
+        const beobachter = new IntersectionObserver(
+            (eintraege) => {
+                if (eintraege.some((e) => e.isIntersecting)) {
+                    void nachladen();
+                }
+            },
+            { root: listenBildlauf, rootMargin: '0px 0px 400px 0px' },
+        );
+
+        beobachter.observe(listenEnde);
+
+        return () => beobachter.disconnect();
+    }, [listenBildlauf, listenEnde, nachladen, sucht]);
+
     /* Wo der Aufklapper der Werkzeugleiste am Telefon steht — in der schmalen Leiste. */
     const [werkzeugPlatz, setWerkzeugPlatz] = useState<HTMLDivElement | null>(null);
     const vollbildSchliessen = useCallback(() => setVollbild(false), []);
@@ -750,6 +783,8 @@ export function MailboxFlaeche({
                                     totalPages={liste.totalPages}
                                     loading={liste.loading}
                                     onPage={(seite_) => void liste.load({ accountId: konto?.id ?? '', folder: ordnerPfad, page: seite_ })}
+                                    /* Am Telefon wird weitergescrollt (siehe `listenEnde`). */
+                                    pagesOnDesktopOnly
                                     grouped={liste.grouped}
                                     onToggleGrouped={
                                         kettenMoeglich
@@ -802,7 +837,19 @@ export function MailboxFlaeche({
                                     entstehen, damit die letzte Zeile unter dem Knopf
                                     hervorscrollen kann. 6rem = der Knopf (56) plus sein Abstand
                                     zum Rand (20) plus Luft. */}
-                                <div className="min-h-0 flex-1 overflow-y-auto max-md:pb-24">
+                                {/*
+                                    Seit dem 25.11.2026 `pb-20` statt `pb-24` und
+                                    `overscroll-y-contain`: Unter der letzten Zeile stand eine
+                                    leere Flaeche, und am Ende federte die ganze Seite mit —
+                                    im dunklen Modus „komplett eine schwarze Luecke" (Bastian).
+                                    80 px = der Knopf (56) plus sein Abstand zum Rand (20)
+                                    plus 4 px; mehr braucht die letzte Zeile nicht.
+                                */}
+                                <div
+                                    ref={setListenBildlauf}
+                                    className="min-h-0 flex-1 overflow-y-auto max-md:overscroll-y-contain max-md:pb-20"
+                                    data-slot="mailbox-listen-bildlauf"
+                                >
                                     <MailMessageList<RowMessage>
                                         rows={sichtbareZeilen(zeilen)}
                                         isSearchMode={suche.isSearchMode}
@@ -887,6 +934,11 @@ export function MailboxFlaeche({
                                             />
                                         )}
                                     />
+                                    {!suche.isSearchMode && liste.hasMore && (
+                                        <div ref={setListenEnde} className="flex h-12 items-center justify-center md:hidden" data-slot="mailbox-listen-ende">
+                                            {liste.loadingMore && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
+                                        </div>
+                                    )}
                                 </div>
                             </>
                         }

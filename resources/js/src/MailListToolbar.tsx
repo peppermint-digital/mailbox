@@ -182,6 +182,11 @@ export interface MailListToolbarProps {
     totalPages: number;
     loading?: boolean;
     onPage?: (page: number) => void;
+    /**
+     * Die Blaetterung nur am Schreibtisch — fuer ein Produkt, das am Telefon
+     * weiterscrollt statt blaettert (wie {@see MailboxFlaeche} seit 25.11.2026).
+     */
+    pagesOnDesktopOnly?: boolean;
 
     /**
      * Ein Satz neben der Zahl — fuer etwas, das gerade NICHT zu holen war.
@@ -271,6 +276,7 @@ export function MailListToolbar({
     loading = false,
     hint = null,
     onPage,
+    pagesOnDesktopOnly = false,
     grouped = false,
     mineOnly = false,
     onToggleMine,
@@ -532,7 +538,7 @@ export function MailListToolbar({
 
                 {/* Hits span folders, so there are no pages to leaf through. */}
                 {totalPages > 1 && !search.isSearchMode && onPage && (
-                    <div className="flex items-center gap-1" data-slot="mail-list-pagination">
+                    <div className={`flex items-center gap-1${pagesOnDesktopOnly ? ' max-md:hidden' : ''}`} data-slot="mail-list-pagination">
                         <Button variant="ghost" size="icon" className="h-6 w-6" disabled={page <= 1} onClick={() => onPage(page - 1)}>
                             <ChevronLeft className="h-4 w-4" />
                         </Button>

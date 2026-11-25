@@ -452,3 +452,62 @@ describe('useMailboxList — zuletzt Gesehenes sofort zeigen (25.11.2026)', () =
         unmount();
     });
 });
+
+describe('useMailboxList — weiterscrollen statt blaettern (25.11.2026)', () => {
+    /** Drei Seiten zu je zwei Zeilen, Gesamtzahl 6. */
+    function dreiSeiten() {
+        return {
+            list: vi.fn(async (p: ListParams) => ({
+                messages: [msg(p.page * 10 + 1), msg(p.page * 10 + 2)],
+                threads: [],
+                total: 6,
+                perPage: 2,
+            })),
+        };
+    }
+
+    it('haengt die naechste Seite unten an und hoert am Ende auf', async () => {
+        const quelle = dreiSeiten();
+        const { ref, unmount } = mount(quelle);
+
+        await act(async () => { await ref.current.load({ accountId: 1, folder: 'INBOX', page: 1 }); });
+        expect(ref.current.hasMore).toBe(true);
+
+        await act(async () => { await ref.current.loadMore(); });
+        await act(async () => { await ref.current.loadMore(); });
+
+        expect(ref.current.messages.map((m) => m.uid)).toEqual([11, 12, 21, 22, 31, 32]);
+        expect(ref.current.loadedThrough).toBe(3);
+        expect(ref.current.hasMore).toBe(false);
+
+        await act(async () => { await ref.current.loadMore(); });
+        expect(quelle.list).toHaveBeenCalledTimes(3);
+        unmount();
+    });
+
+    it('holt beim Aktualisieren die angehaengten Seiten mit — die Liste schrumpft nach einer Aktion nicht', async () => {
+        const quelle = dreiSeiten();
+        const { ref, unmount } = mount(quelle);
+
+        await act(async () => { await ref.current.load({ accountId: 1, folder: 'INBOX', page: 1 }); });
+        await act(async () => { await ref.current.loadMore(); });
+        await act(async () => { await ref.current.reload({ refresh: true }); });
+
+        expect(ref.current.messages.map((m) => m.uid)).toEqual([11, 12, 21, 22]);
+        expect(ref.current.loadedThrough).toBe(2);
+        unmount();
+    });
+
+    it('beginnt in einem anderen Ordner wieder bei einer Seite', async () => {
+        const quelle = dreiSeiten();
+        const { ref, unmount } = mount(quelle);
+
+        await act(async () => { await ref.current.load({ accountId: 1, folder: 'INBOX', page: 1 }); });
+        await act(async () => { await ref.current.loadMore(); });
+        await act(async () => { await ref.current.load({ accountId: 1, folder: 'Archiv', page: 1, refresh: true }); });
+
+        expect(ref.current.messages.map((m) => m.uid)).toEqual([11, 12]);
+        expect(ref.current.loadedThrough).toBe(1);
+        unmount();
+    });
+});

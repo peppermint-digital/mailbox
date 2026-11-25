@@ -127,6 +127,42 @@ export interface MailboxList<M extends RowMessage> {
     /** Empties both lists — switching accounts, so the old one stops showing through. */
     clear: () => void;
     clearFailure: () => void;
+    /**
+     * Bis zu welcher Seite die Liste reicht — beim Weiterscrollen auf dem
+     * Telefon wird angehaengt statt geblaettert (seit 25.11.2026).
+     */
+    loadedThrough: number;
+    /** Gibt es hinter dem Angehaengten noch etwas? */
+    hasMore: boolean;
+    /** Haengt gerade die naechste Seite an. */
+    loadingMore: boolean;
+    /**
+     * Die naechste Seite unten anhaengen.
+     *
+     * Bastian (25.11.2026): „Koennen wir die Mailliste auch vielleicht
+     * infinite scroll machen?" Fuer das Telefon gedacht; am Schreibtisch
+     * bleibt das Blaettern. Ein Neuladen derselben Seite (`refresh`, nach
+     * Archivieren, Loeschen …) holt die angehaengten Seiten mit — sonst
+     * schrumpfte die Liste nach jeder Aktion auf die erste Seite zurueck.
+     */
+    loadMore: () => Promise<void>;
+}
+
+/** Jede Zeile nur einmal — beim Anhaengen kann eine Mail zwischen zwei Seiten gerutscht sein. */
+function einmal<T>(zeilen: T[], kennung: (zeile: T) => string): T[] {
+    const gesehen = new Set<string>();
+
+    return zeilen.filter((zeile) => {
+        const k = kennung(zeile);
+
+        if (gesehen.has(k)) {
+            return false;
+        }
+
+        gesehen.add(k);
+
+        return true;
+    });
 }
 
 export function useMailboxList<M extends RowMessage>({ source, initialGrouped = false }: UseMailboxListOptions<M>): MailboxList<M> {
@@ -147,6 +183,18 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
     // What the last load asked for, so a reload does not need it passed again.
     const zuletzt = useRef<ListParams | null>(null);
 
+    // Bis wohin angehaengt ist (siehe `loadMore`). Als Ref fuer die Rueckrufe,
+    // als Zustand fuer die Anzeige.
+    const bisRef = useRef(1);
+    const [bis, setBis] = useState(1);
+    const mehrRef = useRef(false);
+    const [loadingMore, setLoadingMore] = useState(false);
+
+    const bisSetzen = (seite: number) => {
+        bisRef.current = seite;
+        setBis(seite);
+    };
+
     const load = useCallback(
         async (options: Partial<ListParams> & { refresh?: boolean } = {}) => {
             const params: ListParams = {
@@ -161,7 +209,23 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
                 return;
             }
 
+            const vorher = zuletzt.current;
             zuletzt.current = params;
+
+            /*
+             * Dieselbe Liste noch einmal (nach einer Aktion): die angehaengten
+             * Seiten mitholen. Eine andere Seite, ein anderer Ordner — dann
+             * beginnt das Anhaengen von vorn.
+             */
+            const mitHolen =
+                params.refresh &&
+                vorher !== null &&
+                vorher.accountId === params.accountId &&
+                vorher.folder === params.folder &&
+                vorher.grouped === params.grouped &&
+                vorher.page === params.page
+                    ? bisRef.current
+                    : params.page;
 
             const meiner = ++laufNr.current;
 
@@ -187,6 +251,7 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
                 setPage(params.page);
                 setGroupedState(params.grouped);
                 setLoading(false);
+                bisSetzen(params.page);
             } else {
                 setLoading(true);
             }
@@ -205,15 +270,36 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
                     return;
                 }
 
+                // Die angehaengten Seiten nachholen, der Reihe nach.
+                let zeilen = result.messages;
+                let ketten = result.threads;
+
+                for (let weitere = params.page + 1; weitere <= mitHolen; weitere++) {
+                    const naechste = await source.list({ ...params, page: weitere });
+
+                    if (meiner !== laufNr.current) {
+                        return;
+                    }
+
+                    if ('failure' in naechste) {
+                        break;
+                    }
+
+                    zeilen = einmal([...zeilen, ...naechste.messages], (m) => String(m.uid));
+                    ketten = einmal([...ketten, ...naechste.threads], (k) => k.thread_id);
+                }
+
                 // Only one of the two lists ever holds rows: the other mode's
                 // leftovers would otherwise show through while this one loads.
                 if (params.grouped) {
-                    setThreads(result.threads);
+                    setThreads(ketten);
                     setMessages([]);
                 } else {
-                    setMessages(result.messages);
+                    setMessages(zeilen);
                     setThreads([]);
                 }
+
+                bisSetzen(Math.max(params.page, mitHolen));
 
                 setTotal(result.total);
 
@@ -317,6 +403,45 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
         );
     }, []);
 
+    const loadMore = useCallback(async () => {
+        const params = zuletzt.current;
+        const naechste = bisRef.current + 1;
+        const seiten = perPage > 0 ? Math.ceil(total / perPage) : 0;
+
+        if (!params || mehrRef.current || loading || naechste > seiten) {
+            return;
+        }
+
+        // Kein eigener Lauf: Startet waehrenddessen ein neues Laden (anderer
+        // Ordner, Aktualisieren), gehoert diese Antwort nicht mehr dazu.
+        const meiner = laufNr.current;
+
+        mehrRef.current = true;
+        setLoadingMore(true);
+
+        try {
+            const result = await source.list({ ...params, page: naechste, refresh: false });
+
+            if (meiner !== laufNr.current || 'failure' in result) {
+                return;
+            }
+
+            if (params.grouped) {
+                setThreads((vorher) => einmal([...vorher, ...result.threads], (k) => k.thread_id));
+            } else {
+                setMessages((vorher) => einmal([...vorher, ...result.messages], (m) => String(m.uid)));
+            }
+
+            setTotal(result.total);
+            bisSetzen(naechste);
+        } catch {
+            // Still: Die Liste steht ja. Beim naechsten Scrollen wird es erneut versucht.
+        } finally {
+            mehrRef.current = false;
+            setLoadingMore(false);
+        }
+    }, [loading, perPage, source, total]);
+
     const removeRows = useCallback((uids: Iterable<MessageHandle>) => {
         const weg = new Set(uids);
 
@@ -337,6 +462,7 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
         setThreads([]);
         setTotal(gesamt);
         setPage(1);
+        bisSetzen(1);
         setLoading(false);
         setRefreshing(false);
     }, []);
@@ -368,5 +494,9 @@ export function useMailboxList<M extends RowMessage>({ source, initialGrouped = 
     return {
         messages, threads, total, perPage, totalPages: perPage > 0 ? Math.ceil(total / perPage) : 0, page, grouped, loading, refreshing, failure,
         load, refresh, reload, messageLeft, messagesLeft, setGrouped, patchRow, patchRows, patchRowById, removeRows, showRows, clear, clearFailure,
+        loadedThrough: bis,
+        hasMore: perPage > 0 && bis < Math.ceil(total / perPage),
+        loadingMore,
+        loadMore,
     };
 }
